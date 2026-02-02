@@ -1,0 +1,18 @@
+[gd_resource type="BehaviorTree" load_steps=6 format=3 uid="uid://crrtomg4dk120"]
+
+[ext_resource type="Script" path="res://src/systems/npc/ai/tasks/bt_random_wander.gd" id="1_0dj04"]
+
+[sub_resource type="BlackboardPlan" id="BlackboardPlan_sv4rv"]
+
+[sub_resource type="BTAction" id="BTAction_x7m33"]
+script = ExtResource("1_0dj04")
+
+[sub_resource type="BTSequence" id="BTSequence_p3or2"]
+children = [SubResource("BTAction_x7m33")]
+
+[sub_resource type="BTSelector" id="BTSelector_qy5rl"]
+children = [SubResource("BTSequence_p3or2")]
+
+[resource]
+blackboard_plan = SubResource("BlackboardPlan_sv4rv")
+root_task = SubResource("BTSelector_qy5rl")

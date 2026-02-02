@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="BuildingResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/systems/building/building_resource.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+id = "dirt"
+display_name = "泥土"
+description = "放置一个泥土方块。"
+cost = {
+"dirt": 1
+}
+category = "Defense"
+atlas_coords = Vector2i(36, 35)
+requires_flat_ground = false
+required_level = 1
+population_bonus = 0
+food_production = 0.0
+defense_bonus = 0
+influence_radius = 0.0

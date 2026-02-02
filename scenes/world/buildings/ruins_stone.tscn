@@ -1,0 +1,50 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/systems/world/destructible_building.gd" id="1_script"]
+
+[node name="RuinsStone" type="Node2D"]
+
+[node name="PillarLeft" type="StaticBody2D" parent="."]
+collision_layer = 10
+script = ExtResource("1_script")
+max_health = 150.0
+hardness = 2.0
+drop_item_path = "res://data/items/stone.tres"
+building_name = "石柱"
+
+[node name="Visual" type="ColorRect" parent="PillarLeft"]
+offset_left = -40.0
+offset_top = -32.0
+offset_right = -24.0
+color = Color(0.4, 0.4, 0.4, 1)
+
+[node name="PillarRight" type="StaticBody2D" parent="."]
+collision_layer = 10
+script = ExtResource("1_script")
+max_health = 150.0
+hardness = 2.0
+drop_item_path = "res://data/items/stone.tres"
+building_name = "断裂石柱"
+
+[node name="Visual" type="ColorRect" parent="PillarRight"]
+offset_left = 24.0
+offset_top = -48.0
+offset_right = 40.0
+color = Color(0.35, 0.35, 0.35, 1)
+
+[node name="Floor" type="StaticBody2D" parent="."]
+collision_layer = 10
+script = ExtResource("1_script")
+max_health = 200.0
+hardness = 1.5
+drop_item_path = "res://data/items/stone.tres"
+building_name = "石地板"
+
+[node name="Visual" type="ColorRect" parent="Floor"]
+offset_left = -40.0
+offset_top = -8.0
+offset_right = 40.0
+color = Color(0.3, 0.3, 0.3, 1)
+
+[node name="ChestSpawn" type="Marker2D" parent="."]
+position = Vector2(0, -16)

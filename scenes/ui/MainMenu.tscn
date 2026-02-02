@@ -1,0 +1,72 @@
+[gd_scene load_steps=4 format=3 uid="uid://dktnn68wfxadx"]
+
+[ext_resource type="Script" uid="uid://bmew4014es7ah" path="res://scenes/ui/main_menu.gd" id="1_script"]
+[ext_resource type="Theme" uid="uid://c0ufmijcuxrpe" path="res://assets/ui/main_theme.tres" id="2_iwbf0"]
+[ext_resource type="Texture2D" uid="uid://ddm0of6usu8oy" path="res://icon.svg" id="3_2ysvc"]
+
+[node name="MainMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Overlay" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = -1
+anchor_right = 1.0
+anchor_bottom = 1.028
+offset_bottom = -18.143982
+mouse_filter = 2
+color = Color(0, 0, 0, 0.3019608)
+
+[node name="CenterContainer" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = -1
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CenterContainer"]
+layout_mode = 2
+theme = ExtResource("2_iwbf0")
+theme_override_constants/separation = 20
+
+[node name="Title" type="Label" parent="CenterContainer/VBoxContainer"]
+layout_mode = 2
+theme = ExtResource("2_iwbf0")
+theme_override_colors/font_color = Color(0.9882353, 0.98039216, 0.3764706, 1)
+theme_override_font_sizes/font_size = 48
+text = "2D 沙盒大世界"
+horizontal_alignment = 1
+
+[node name="StartButton" type="Button" parent="CenterContainer/VBoxContainer"]
+custom_minimum_size = Vector2(200, 50)
+layout_mode = 2
+theme = ExtResource("2_iwbf0")
+text = "开始游戏"
+
+[node name="LoadButton" type="Button" parent="CenterContainer/VBoxContainer"]
+custom_minimum_size = Vector2(200, 50)
+layout_mode = 2
+theme = ExtResource("2_iwbf0")
+text = "加载存档"
+
+[node name="ExitButton" type="Button" parent="CenterContainer/VBoxContainer"]
+custom_minimum_size = Vector2(200, 50)
+layout_mode = 2
+theme = ExtResource("2_iwbf0")
+text = "退出游戏"
+
+[node name="Background" type="TextureRect" parent="."]
+z_index = -10
+layout_mode = 1
+anchors_preset = -1
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+texture = ExtResource("3_2ysvc")
+expand_mode = 2

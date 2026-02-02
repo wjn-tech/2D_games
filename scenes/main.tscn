@@ -1,0 +1,57 @@
+[gd_scene load_steps=11 format=3 uid="uid://dqcloh3prd0yi"]
+
+[ext_resource type="PackedScene" uid="uid://bvji1vul7c2tr" path="res://scenes/world/world_generator.tscn" id="1_world"]
+[ext_resource type="PackedScene" uid="uid://dlqh3lkqly3mk" path="res://scenes/player.tscn" id="2_player"]
+[ext_resource type="PackedScene" uid="uid://cngks361rg2bs" path="res://scenes/ui/HUD.tscn" id="3_hud"]
+[ext_resource type="PackedScene" uid="uid://dktnn68wfxadx" path="res://scenes/ui/MainMenu.tscn" id="4_menu"]
+[ext_resource type="PackedScene" path="res://scenes/world/fog_of_war.tscn" id="5_fog"]
+[ext_resource type="TileSet" uid="uid://drcqd3856sajm" path="res://assets/world/default_tileset.tres" id="6_tileset"]
+[ext_resource type="Script" uid="uid://baeqlnrufvkb7" path="res://src/systems/building/building_manager.gd" id="7_building_mgr"]
+[ext_resource type="PackedScene" uid="uid://cn6vk33wkl5h2" path="res://scenes/world/background.tscn" id="8_bg"]
+[ext_resource type="Script" uid="uid://dsxrwvx0w78u5" path="res://src/systems/world/grass_growth_manager.gd" id="9_grass_mgr"]
+[ext_resource type="PackedScene" path="res://src/ui/world_info_ui.tscn" id="10_world_ui"]
+
+[node name="Main" type="Node2D"]
+
+[node name="Background" parent="." instance=ExtResource("8_bg")]
+
+[node name="GlobalLight" type="CanvasModulate" parent="." groups=["global_light"]]
+color = Color(1.2, 1.2, 1.2, 1)
+
+[node name="Systems" type="Node" parent="."]
+
+[node name="BuildingManager" type="Node2D" parent="Systems" groups=["building_manager"]]
+script = ExtResource("7_building_mgr")
+
+[node name="GrassGrowthManager" type="Node" parent="Systems"]
+script = ExtResource("9_grass_mgr")
+
+[node name="World" type="Node2D" parent="."]
+
+[node name="WorldGenerator" parent="World" instance=ExtResource("1_world")]
+
+[node name="Buildings" type="Node2D" parent="World" groups=["buildings_container"]]
+
+[node name="FogOfWar" parent="World" instance=ExtResource("5_fog")]
+visible = false
+z_index = 10
+tile_set = ExtResource("6_tileset")
+fog_enabled = false
+
+[node name="RainParticles" type="GPUParticles2D" parent="World" groups=["weather_rain_vfx"]]
+
+[node name="SnowParticles" type="GPUParticles2D" parent="World" groups=["weather_snow_vfx"]]
+
+[node name="Entities" type="Node2D" parent="."]
+
+[node name="Player" parent="Entities" instance=ExtResource("2_player")]
+position = Vector2(100, 100)
+
+[node name="UI" type="CanvasLayer" parent="."]
+process_mode = 3
+layer = 100
+
+[node name="MainMenu" parent="UI" instance=ExtResource("4_menu")]
+
+[node name="HUD" parent="UI" instance=ExtResource("3_hud")]
+visible = false

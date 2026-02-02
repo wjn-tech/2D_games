@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3 uid="uid://drupa3ir4hjhm"]
+
+[ext_resource type="Script" uid="uid://cftqxt0tqm54q" path="res://src/systems/combat/layer_gate.gd" id="1_0k74p"]
+
+[node name="Area2D" type="Area2D"]
+collision_layer = 2
+collision_mask = 0
+script = ExtResource("1_0k74p")
+target_layer = 3

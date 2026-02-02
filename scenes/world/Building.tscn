@@ -1,0 +1,18 @@
+[gd_scene load_steps=4 format=3 uid="uid://building123"]
+
+[ext_resource type="Script" path="res://src/systems/building/building_node.gd" id="1_script"]
+
+[node name="Building" type="StaticBody2D"]
+collision_layer = 1
+collision_mask = 0
+script = ExtResource("1_script")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+scale = Vector2(2, 2)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+position = Vector2(0, 8)
+shape = SubResource("RectangleShape2D_1")
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_1"]
+size = Vector2(32, 16)

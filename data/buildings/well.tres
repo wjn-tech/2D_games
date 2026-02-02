@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="BuildingResource" load_steps=3 format=3]
+
+[ext_resource type="PackedScene" uid="uid://building123" path="res://scenes/world/Building.tscn" id="1_scene"]
+[ext_resource type="Script" path="res://src/systems/building/building_resource.gd" id="2_script"]
+
+[resource]
+script = ExtResource("2_script")
+id = "well"
+display_name = "水井"
+description = "提供水源，略微增加繁荣度。"
+scene = ExtResource("1_scene")
+cost = {
+"stone": 10,
+"dirt": 5
+}
+category = "Utility"
+required_level = 1
+population_bonus = 0
+food_production = 0.0
+defense_bonus = 0
+influence_radius = 100.0
+requires_flat_ground = true

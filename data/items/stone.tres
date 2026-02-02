@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="BaseItem" load_steps=3 format=3]
+
+[ext_resource type="Texture2D" path="res://icon.svg" id="2_icon"]
+[ext_resource type="Script" path="res://src/core/resources/base_item.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+id = "stone"
+display_name = "石材"
+description = "坚固的建筑材料。"
+icon = ExtResource("2_icon")
+stackable = true
+max_stack = 99
+value = 5
+item_type = "General"
+ammo_type = ""
+damage_modifier = 0.0
+element_type = "None"
+durability = 100.0

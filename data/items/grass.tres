@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="BaseItem" load_steps=3 format=3 uid="uid://grass123"]
+
+[ext_resource type="Texture2D" path="res://icon.svg" id="2_icon"]
+[ext_resource type="Script" path="res://src/core/resources/base_item.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+id = "grass"
+display_name = "草块"
+description = "带有草皮的泥土。"
+icon = ExtResource("2_icon")
+stackable = true
+max_stack = 99
+value = 1
+item_type = "General"
+ammo_type = ""
+damage_modifier = 0.0
+element_type = "None"
+durability = 100.0

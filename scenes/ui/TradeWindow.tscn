@@ -1,0 +1,88 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/ui/trade_window.gd" id="1_script"]
+
+[node name="TradeWindow" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Panel" type="Panel" parent="."]
+custom_minimum_size = Vector2(900, 600)
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -450.0
+offset_top = -300.0
+offset_right = 450.0
+offset_bottom = 300.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Panel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 20
+
+[node name="MerchantSide" type="VBoxContainer" parent="Panel/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="Label" type="Label" parent="Panel/HBoxContainer/MerchantSide"]
+layout_mode = 2
+text = "商人库存"
+horizontal_alignment = 1
+
+[node name="ScrollContainer" type="ScrollContainer" parent="Panel/HBoxContainer/MerchantSide"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ItemList" type="VBoxContainer" parent="Panel/HBoxContainer/MerchantSide/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PlayerSide" type="VBoxContainer" parent="Panel/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="Label" type="Label" parent="Panel/HBoxContainer/PlayerSide"]
+layout_mode = 2
+text = "我的背包"
+horizontal_alignment = 1
+
+[node name="ScrollContainer" type="ScrollContainer" parent="Panel/HBoxContainer/PlayerSide"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ItemList" type="VBoxContainer" parent="Panel/HBoxContainer/PlayerSide/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CloseButton" type="Button" parent="Panel"]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -40.0
+offset_bottom = 40.0
+grow_horizontal = 0
+text = "X"

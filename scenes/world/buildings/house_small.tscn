@@ -1,0 +1,57 @@
+[gd_scene load_steps=2 format=3 uid="uid://baovxm2o25i6l"]
+
+[ext_resource type="Script" uid="uid://dvmblss5x8iqe" path="res://src/systems/world/destructible_building.gd" id="1_script"]
+
+[node name="HouseSmall" type="Node2D"]
+
+[node name="Floor" type="StaticBody2D" parent="."]
+collision_layer = 10
+script = ExtResource("1_script")
+max_health = 50.0
+building_name = "地板"
+
+[node name="Visual" type="ColorRect" parent="Floor"]
+offset_left = -32.0
+offset_top = -4.0
+offset_right = 32.0
+color = Color(0.25, 0.15, 0.1, 1)
+
+[node name="WallLeft" type="StaticBody2D" parent="."]
+collision_layer = 10
+script = ExtResource("1_script")
+max_health = 80.0
+building_name = "左墙"
+
+[node name="Visual" type="ColorRect" parent="WallLeft"]
+offset_left = -32.0
+offset_top = -48.0
+offset_right = -24.0
+color = Color(0.45, 0.3, 0.2, 1)
+
+[node name="WallRight" type="StaticBody2D" parent="."]
+collision_layer = 10
+script = ExtResource("1_script")
+max_health = 80.0
+building_name = "右墙"
+
+[node name="Visual" type="ColorRect" parent="WallRight"]
+offset_left = 24.0
+offset_top = -48.0
+offset_right = 32.0
+color = Color(0.45, 0.3, 0.2, 1)
+
+[node name="Roof" type="StaticBody2D" parent="."]
+collision_layer = 10
+script = ExtResource("1_script")
+max_health = 60.0
+building_name = "屋顶"
+
+[node name="Visual" type="Polygon2D" parent="Roof"]
+color = Color(0.3, 0.2, 0.1, 1)
+polygon = PackedVector2Array(-40, -48, 0, -72, 40, -48)
+
+[node name="NPCSpawn" type="Marker2D" parent="."]
+position = Vector2(0, -8)
+
+[node name="ChestSpawn" type="Marker2D" parent="."]
+position = Vector2(-16, -8)

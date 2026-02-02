@@ -1,0 +1,15 @@
+[gd_resource type="BehaviorTree" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://src/systems/npc/ai/tasks/bt_projectile_attack.gd" id="1_tasks"]
+[ext_resource type="PackedScene" path="res://src/systems/npc/projectiles/sand_ball.tscn" id="2_proj"]
+
+[sub_resource type="BTAction" id="BTAction_antlion"]
+script = ExtResource("1_tasks")
+projectile_scene = ExtResource("2_proj")
+charge_time = 1.0
+cooldown_time = 2.0
+min_range = 50.0
+max_range = 800.0
+
+[resource]
+root_task = SubResource("BTAction_antlion")

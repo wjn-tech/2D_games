@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="BuildingResource" load_steps=3 format=3]
+
+[ext_resource type="PackedScene" uid="uid://building123" path="res://scenes/world/Building.tscn" id="1_scene"]
+[ext_resource type="Script" path="res://src/systems/building/building_resource.gd" id="2_script"]
+
+[resource]
+script = ExtResource("2_script")
+id = "wall"
+display_name = "城墙"
+description = "提供防御力，保护城邦。"
+scene = ExtResource("1_scene")
+cost = {
+"stone": 10
+}
+category = "Defense"
+defense_bonus = 10
+influence_radius = 50.0

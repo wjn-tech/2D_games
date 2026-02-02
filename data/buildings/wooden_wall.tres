@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="BuildingResource" load_steps=3 format=3]
+
+[ext_resource type="PackedScene" uid="uid://building123" path="res://scenes/world/Building.tscn" id="1_scene"]
+[ext_resource type="Script" path="res://src/systems/building/building_resource.gd" id="2_script"]
+
+[resource]
+script = ExtResource("2_script")
+id = "wooden_wall"
+display_name = "木墙"
+description = "基础防御设施，比石墙脆弱但建造更快。"
+scene = ExtResource("1_scene")
+cost = {
+"wood": 8
+}
+category = "Defense"
+defense_bonus = 5
+influence_radius = 30.0
+requires_flat_ground = true
+required_level = 1

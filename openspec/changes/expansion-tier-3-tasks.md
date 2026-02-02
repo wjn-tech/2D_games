@@ -1,0 +1,21 @@
+# Tasks: Expansion Tier 3 (0-1 Hurdles)
+
+- [x] **[07] 生产锻造 & 配方数据库**
+    - [x] 建立 `CraftingWindow.gd` 交互界面
+    - [x] 实现 `CraftingManager` (Autoload) 处理资源扣除
+    - [x] 在 `project.godot` 中绑定 `C` 键打开制作菜单
+- [x] **[11] 繁育遗传算法**
+    - [x] 在 `CharacterData` 中实现 `create_offspring` 遗传逻辑 (40/40/20 分布)
+- [x] **[06] 交易经济 & 复杂公式**
+    - [x] 建立 `EconomyManager` 实现全球价格波动 (涨跌 0.8-1.25)
+    - [x] 更新 `TradeWindow` 使用动态价格公式 (受满意度与市场波动双重影响)
+- [x] **[10] 社交婚姻系统**
+    - [x] 建立 `SocialManager` 处理声望阈值与求婚逻辑
+    - [x] 实现 `spouse` 基础数据绑定
+- [x] **[08] 城邦建造逻辑模块**
+    - [x] 在 `Building.gd` 中加入 `SettlementBuff` 逻辑
+    - [x] 在 `SettlementManager` 增加 `get_efficiency_bonus` 接口
+    - [x] 在 `Gatherable.gd` 采集逻辑中实装效率加成
+- [x] **[13-15] 工业自动化闭环**
+    - [x] 实现基础 `SignalManager` 支持工业节点间的布尔信号传递
+    - [x] 更新 `LogicGate.gd` 实装信号传播逻辑

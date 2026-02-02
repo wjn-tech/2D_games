@@ -1,0 +1,15 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+*.translation
+
+# Build artifacts
+bin/
+build/
+
+# IDE files
+.vscode/
+
+# Project specific
+*.tmp
+*.log

@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="BaseItem" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/core/resources/base_item.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+id = "pickaxe"
+display_name = "石镐"
+description = "用于挖掘矿石的基础工具。"
+stackable = false
+max_stack = 1
+value = 50
+item_type = "Weapon"
+ammo_type = ""
+damage_modifier = 10.0
+element_type = "None"
+durability = 100.0

@@ -1,0 +1,21 @@
+# Tasks: Generate Villages and Ruins
+
+- [ ] Create basic building scenes (Medieval Wooden style):
+    - [ ] `res://scenes/world/buildings/house_small.tscn` (Wooden cottage)
+    - [ ] `res://scenes/world/buildings/workshop.tscn` (Timber-framed workshop)
+    - [ ] `res://scenes/world/buildings/ruins_stone.tscn` (Stone/Wood ruins)
+- [ ] Implement a `Chest` node in `res://scenes/world/chest.tscn` with basic loot logic.
+- [ ] Update `WorldGenerator.gd`:
+    - [ ] Add `@export` variables for building scenes.
+    - [ ] Implement `_find_flat_areas()` to identify village sites.
+    - [ ] Implement `_spawn_village(pos)` to instantiate a cluster of buildings.
+    - [ ] Implement `_spawn_ruins()` for isolated structures.
+- [ ] Update NPC spawning:
+    - [ ] Modify `_spawn_npc_on_ground` to support spawning at specific building markers.
+    - [ ] Link NPCs to their "home" buildings.
+- [ ] Ensure buildings are destructible:
+    - [ ] Add "hardness" and "drop_item" metadata to building nodes or tiles.
+- [ ] Verify generation:
+    - [ ] Test village generation on the surface.
+    - [ ] Test ruin generation in the underground layer.
+    - [ ] Verify loot and NPC placement.

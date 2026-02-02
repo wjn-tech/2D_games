@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="BuildingResource" load_steps=2 format=3 uid="uid://dkra40b3l13tm"]
+
+[ext_resource type="Script" uid="uid://43t41eqjjcmh" path="res://src/systems/building/building_resource.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+id = "wood_tile"
+display_name = "木块"
+description = "放置一个木质方块。"
+atlas_coords = Vector2i(3, 4)
+source_id = 1
+cost = {
+"wood": 1
+}
+category = "Defense"
+requires_flat_ground = false
+influence_radius = 0.0

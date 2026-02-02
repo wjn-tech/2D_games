@@ -1,0 +1,57 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/systems/world/destructible_building.gd" id="1_script"]
+
+[node name="Workshop" type="Node2D"]
+
+[node name="Foundation" type="StaticBody2D" parent="."]
+collision_layer = 10
+script = ExtResource("1_script")
+max_health = 100.0
+building_name = "工坊地基"
+
+[node name="Visual" type="ColorRect" parent="Foundation"]
+offset_left = -48.0
+offset_top = -8.0
+offset_right = 48.0
+color = Color(0.3, 0.25, 0.2, 1)
+
+[node name="WallLeft" type="StaticBody2D" parent="."]
+collision_layer = 10
+script = ExtResource("1_script")
+max_health = 120.0
+building_name = "工坊左墙"
+
+[node name="Visual" type="ColorRect" parent="WallLeft"]
+offset_left = -48.0
+offset_top = -64.0
+offset_right = -40.0
+color = Color(0.5, 0.35, 0.25, 1)
+
+[node name="WallRight" type="StaticBody2D" parent="."]
+collision_layer = 10
+script = ExtResource("1_script")
+max_health = 120.0
+building_name = "工坊右墙"
+
+[node name="Visual" type="ColorRect" parent="WallRight"]
+offset_left = 40.0
+offset_top = -64.0
+offset_right = 48.0
+color = Color(0.5, 0.35, 0.25, 1)
+
+[node name="Roof" type="StaticBody2D" parent="."]
+collision_layer = 10
+script = ExtResource("1_script")
+max_health = 90.0
+building_name = "工坊屋顶"
+
+[node name="Visual" type="Polygon2D" parent="Roof"]
+color = Color(0.25, 0.15, 0.1, 1)
+polygon = PackedVector2Array(-56, -64, 0, -96, 56, -64)
+
+[node name="NPCSpawn" type="Marker2D" parent="."]
+position = Vector2(16, -24)
+
+[node name="ChestSpawn" type="Marker2D" parent="."]
+position = Vector2(-24, -8)

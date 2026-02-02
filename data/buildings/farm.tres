@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BuildingResource" load_steps=3 format=3]
+
+[ext_resource type="PackedScene" uid="uid://building123" path="res://scenes/world/Building.tscn" id="1_scene"]
+[ext_resource type="Script" path="res://src/systems/building/building_resource.gd" id="2_script"]
+
+[resource]
+script = ExtResource("2_script")
+id = "farm"
+display_name = "农田"
+description = "产出食物，维持城邦运转。"
+scene = ExtResource("1_scene")
+cost = {
+"wood": 5,
+"dirt": 10
+}
+category = "Production"
+food_production = 2.0
+influence_radius = 100.0

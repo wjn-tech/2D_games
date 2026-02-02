@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="BaseItem" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/core/resources/base_item.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+id = "door"
+display_name = "门"
+description = "一个可以放置的门，用于进出建筑。"
+stackable = true
+max_stack = 99
+value = 20
+item_type = "General"
+ammo_type = ""
+damage_modifier = 0.0
+element_type = "None"
+durability = 100.0

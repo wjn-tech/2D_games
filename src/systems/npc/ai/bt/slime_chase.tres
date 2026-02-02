@@ -1,0 +1,13 @@
+[gd_resource type="BehaviorTree" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/systems/npc/ai/tasks/bt_slime_jump.gd" id="1_tasks"]
+
+[sub_resource type="BTAction" id="BTAction_slime"]
+script = ExtResource("1_tasks")
+jump_force_y = 500.0
+jump_force_x = 250.0
+wait_time_min = 0.5
+wait_time_max = 1.0
+
+[resource]
+root_task = SubResource("BTAction_slime")

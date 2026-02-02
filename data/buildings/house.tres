@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BuildingResource" load_steps=3 format=3]
+
+[ext_resource type="PackedScene" uid="uid://building123" path="res://scenes/world/Building.tscn" id="1_scene"]
+[ext_resource type="Script" path="res://src/systems/building/building_resource.gd" id="2_script"]
+
+[resource]
+script = ExtResource("2_script")
+id = "house"
+display_name = "民居"
+description = "为招募的 NPC 提供住所，增加人口上限。"
+scene = ExtResource("1_scene")
+cost = {
+"wood": 10,
+"stone": 5
+}
+category = "Housing"
+population_bonus = 5
+influence_radius = 200.0

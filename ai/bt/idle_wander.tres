@@ -1,0 +1,15 @@
+[gd_resource type="BehaviorTree" load_steps=5 format=3 uid="uid://dcbr4w1vybaev"]
+
+[sub_resource type="BlackboardPlan" id="BlackboardPlan_sv4rv"]
+
+[sub_resource type="BTAction" id="BTAction_x7m33"]
+
+[sub_resource type="BTSequence" id="BTSequence_p3or2"]
+children = [SubResource("BTAction_x7m33")]
+
+[sub_resource type="BTSelector" id="BTSelector_qy5rl"]
+children = [SubResource("BTSequence_p3or2")]
+
+[resource]
+blackboard_plan = SubResource("BlackboardPlan_sv4rv")
+root_task = SubResource("BTSelector_qy5rl")

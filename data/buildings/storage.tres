@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="BuildingResource" load_steps=3 format=3]
+
+[ext_resource type="PackedScene" uid="uid://building123" path="res://scenes/world/Building.tscn" id="1_scene"]
+[ext_resource type="Script" path="res://src/systems/building/building_resource.gd" id="2_script"]
+
+[resource]
+script = ExtResource("2_script")
+id = "storage"
+display_name = "仓库"
+description = "存储物资，略微增加人口上限。"
+scene = ExtResource("1_scene")
+cost = {
+"wood": 15,
+"stone": 5
+}
+category = "Utility"
+required_level = 2
+population_bonus = 1
+influence_radius = 150.0

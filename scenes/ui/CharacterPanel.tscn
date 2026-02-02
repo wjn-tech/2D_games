@@ -1,0 +1,166 @@
+[gd_scene load_steps=4 format=3 uid="uid://char_panel_uid"]
+
+[ext_resource type="Script" uid="uid://dcfy6ct704ij5" path="res://src/ui/inventory/character_panel_ui.gd" id="1_script"]
+[ext_resource type="PackedScene" uid="uid://cubw1pdtpah52" path="res://scenes/ui/InventoryWindow.tscn" id="2_inv"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bg"]
+bg_color = Color(0.08, 0.08, 0.1, 0.95)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.4, 0.4, 0.5, 1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+content_margin_left = 15.0
+content_margin_top = 15.0
+content_margin_right = 15.0
+content_margin_bottom = 15.0
+
+[node name="CharacterPanel" type="PanelContainer"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -400.0
+offset_top = -250.0
+offset_right = 400.0
+offset_bottom = 250.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_bg")
+script = ExtResource("1_script")
+
+[node name="HBoxContainer" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="StatsSection" type="VBoxContainer" parent="HBoxContainer"]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+theme_override_constants/separation = 15
+
+[node name="TitleContainer" type="VBoxContainer" parent="HBoxContainer/StatsSection"]
+layout_mode = 2
+
+[node name="LevelLabel" type="Label" parent="HBoxContainer/StatsSection/TitleContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.4, 0.8, 1, 1)
+theme_override_font_sizes/font_size = 22
+text = "等级: 1"
+
+[node name="ExpBar" type="ProgressBar" parent="HBoxContainer/StatsSection/TitleContainer"]
+custom_minimum_size = Vector2(0, 20)
+layout_mode = 2
+value = 50.0
+show_percentage = false
+
+[node name="Label" type="Label" parent="HBoxContainer/StatsSection/TitleContainer/ExpBar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 12
+text = "EXP: 50/100"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="StatPointsLabel" type="Label" parent="HBoxContainer/StatsSection/TitleContainer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.9, 0.4, 1)
+text = "可用属性点: 0"
+
+[node name="HSeparator" type="HSeparator" parent="HBoxContainer/StatsSection"]
+layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="HBoxContainer/StatsSection"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="VBoxContainer" type="VBoxContainer" parent="HBoxContainer/StatsSection/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="Strength" type="HBoxContainer" parent="HBoxContainer/StatsSection/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HBoxContainer/StatsSection/ScrollContainer/VBoxContainer/Strength"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "力量 STR"
+
+[node name="Value" type="Label" parent="HBoxContainer/StatsSection/ScrollContainer/VBoxContainer/Strength"]
+layout_mode = 2
+text = "10.0"
+
+[node name="AddButton" type="Button" parent="HBoxContainer/StatsSection/ScrollContainer/VBoxContainer/Strength"]
+layout_mode = 2
+text = " + "
+
+[node name="Agility" type="HBoxContainer" parent="HBoxContainer/StatsSection/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HBoxContainer/StatsSection/ScrollContainer/VBoxContainer/Agility"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "敏捷 AGI"
+
+[node name="Value" type="Label" parent="HBoxContainer/StatsSection/ScrollContainer/VBoxContainer/Agility"]
+layout_mode = 2
+text = "10.0"
+
+[node name="AddButton" type="Button" parent="HBoxContainer/StatsSection/ScrollContainer/VBoxContainer/Agility"]
+layout_mode = 2
+text = " + "
+
+[node name="Intelligence" type="HBoxContainer" parent="HBoxContainer/StatsSection/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HBoxContainer/StatsSection/ScrollContainer/VBoxContainer/Intelligence"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "智力 INT"
+
+[node name="Value" type="Label" parent="HBoxContainer/StatsSection/ScrollContainer/VBoxContainer/Intelligence"]
+layout_mode = 2
+text = "10.0"
+
+[node name="AddButton" type="Button" parent="HBoxContainer/StatsSection/ScrollContainer/VBoxContainer/Intelligence"]
+layout_mode = 2
+text = " + "
+
+[node name="Constitution" type="HBoxContainer" parent="HBoxContainer/StatsSection/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HBoxContainer/StatsSection/ScrollContainer/VBoxContainer/Constitution"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "体质 CON"
+
+[node name="Value" type="Label" parent="HBoxContainer/StatsSection/ScrollContainer/VBoxContainer/Constitution"]
+layout_mode = 2
+text = "10.0"
+
+[node name="AddButton" type="Button" parent="HBoxContainer/StatsSection/ScrollContainer/VBoxContainer/Constitution"]
+layout_mode = 2
+text = " + "
+
+[node name="InventorySection" type="VBoxContainer" parent="HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Label" type="Label" parent="HBoxContainer/InventorySection"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "物品栏"
+horizontal_alignment = 1
+
+[node name="InventoryWindow" parent="HBoxContainer/InventorySection" instance=ExtResource("2_inv")]
+layout_mode = 2
+size_flags_vertical = 3

@@ -1,0 +1,30 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://src/systems/world/loot_chest.gd" id="1_script"]
+
+[sub_resource type="Gradient" id="Gradient_1"]
+offsets = PackedFloat32Array(0, 1)
+colors = PackedColorArray(0.470588, 0.313726, 0.156863, 1, 0.27451, 0.156863, 0.0392157, 1)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_1"]
+gradient = SubResource("Gradient_1")
+width = 16
+height = 12
+fill_from = Vector2(0, 0)
+fill_to = Vector2(0, 1)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_1"]
+size = Vector2(24, 16)
+
+[node name="Chest" type="StaticBody2D"]
+collision_layer = 8
+collision_mask = 0
+script = ExtResource("1_script")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+scale = Vector2(1.5, 1.5)
+texture = SubResource("GradientTexture2D_1")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+position = Vector2(0, 4)
+shape = SubResource("RectangleShape2D_1")

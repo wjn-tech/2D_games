@@ -1,0 +1,22 @@
+[gd_resource type="BehaviorTree" load_steps=8 format=3 uid="uid://e78it36wq7bq"]
+
+[ext_resource type="Script" path="res://src/systems/npc/ai/tasks/bt_chase_target.gd" id="1_vul3n"]
+[ext_resource type="Script" path="res://src/systems/npc/ai/tasks/bt_perform_attack.gd" id="2_7pcbk"]
+
+[sub_resource type="BlackboardPlan" id="BlackboardPlan_tlumu"]
+
+[sub_resource type="BTAction" id="BTAction_sv7tb"]
+script = ExtResource("1_vul3n")
+
+[sub_resource type="BTAction" id="BTAction_2vwwt"]
+script = ExtResource("2_7pcbk")
+
+[sub_resource type="BTSequence" id="BTSequence_dxawn"]
+children = [SubResource("BTAction_sv7tb"), SubResource("BTAction_2vwwt")]
+
+[sub_resource type="BTSelector" id="BTSelector_sl71p"]
+children = [SubResource("BTSequence_dxawn")]
+
+[resource]
+blackboard_plan = SubResource("BlackboardPlan_tlumu")
+root_task = SubResource("BTSelector_sl71p")

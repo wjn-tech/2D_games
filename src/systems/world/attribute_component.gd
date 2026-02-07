@@ -36,6 +36,11 @@ func _ready() -> void:
 	update_modifiers()
 
 func update_modifiers_from_signal(_name: String, _val: float) -> void:
+	# Ignore health changes to prevent recursive scaling loops
+	if _name == "health":
+		attribute_changed.emit(_name, _val)
+		return
+		
 	update_modifiers()
 	attribute_changed.emit(_name, _val)
 
@@ -54,10 +59,11 @@ func update_modifiers() -> void:
 	
 	# 体质 (Constitution) 影响最大血量上限
 	var new_max_hp = 100.0 + (con_diff * CON_HEALTH_STEP)
-	if data.max_health != new_max_hp:
+	if not is_equal_approx(data.max_health, new_max_hp):
 		var health_ratio = data.health / data.max_health if data.max_health > 0 else 1.0
 		data.max_health = new_max_hp
-		data.health = new_max_hp * health_ratio # 保持当前血量百分比
+		# 仅在非初始化状态下按比例缩放健康值，防止每次属性微调都重置血量
+		data.health = new_max_hp * health_ratio 
 		attribute_changed.emit("max_health", new_max_hp)
 
 ## 获取当前移动速度

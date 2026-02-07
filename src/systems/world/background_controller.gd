@@ -2,19 +2,34 @@ extends ParallaxBackground
 class_name BackgroundController
 
 @export var surface_height: float = 0.0
-@export var underground_color: Color = Color(0.05, 0.02, 0.02) # 更暗的地底
+@export var underground_color: Color = Color(0.1, 0.1, 0.1) # Dark Grey Underground
+@export var void_color: Color = Color(0.0, 0.0, 0.0) # Black Void
 
-# 昼夜背景颜色
+# Minimalist Style: Soft Sky Blue
 var sky_night = Color(0.05, 0.05, 0.1)
-var sky_day = Color(0.7, 0.8, 1.0) # 标准天蓝色背景
+var sky_day = Color(0.7, 0.85, 1.0) # Light Sky Blue for contrast
 
-@onready var layers: Array[ParallaxLayer] = []
-@onready var sky_layer: ParallaxLayer = get_node_or_null("SkyLayer")
+@onready var bg_rect: ColorRect = ColorRect.new()
 
 func _ready() -> void:
+	# Clean up existing texture layers for minimalist style
 	for child in get_children():
-		if child is ParallaxLayer:
-			layers.append(child)
+		child.visible = false
+		# Optional: child.queue_free() if we want to aggressively remove them
+	
+	# Create solid color background
+	add_child(bg_rect)
+	bg_rect.anchor_right = 1.0
+	bg_rect.anchor_bottom = 1.0
+	bg_rect.color = sky_day
+	bg_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	# Ensure it covers the viewport even if camera moves (ParallaxBackground handles this partially, 
+	# but ColorRect inside ParallaxBackground needs to be handled or simplified)
+	# Actually, putting ColorRect inside a CanvasLayer (which ParallaxBackground is) works if we set the layer index.
+	# But ParallaxBackground expects scroll.
+	# Better to set the bg_rect size to a very large value or fix it relative to screen.
+	bg_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
 	
 	var world_gen = get_tree().get_first_node_in_group("world_generator")
 	if world_gen:
@@ -31,31 +46,27 @@ func _process(_delta: float) -> void:
 	if not camera: return
 	
 	var cam_y = camera.global_position.y
-	var progress = Chronometer.get_day_progress()
 	
-	# 1. 计算基于时间的表面颜色（天际线颜色）
+	# --- 1. Day/Night Cycle ---
+	var progress = Chronometer.get_day_progress()
 	var time_weight = 0.5 + 0.5 * cos((progress * 2.0 - 1.0) * PI)
 	var time_color = sky_night.lerp(sky_day, time_weight)
 	
-	# 2. 计算基于生态的颜色修正
-	var biome_mod = Color.WHITE
-	var world_gen = get_tree().get_first_node_in_group("world_generator")
-	if world_gen:
-		var weights = world_gen.get_biome_weights_at_pos(camera.global_position)
-		var target_biome_color = Color(0,0,0,0)
-		for b_type in weights:
-			var b_color = world_gen.biome_params[b_type].get("color", Color.WHITE)
-			target_biome_color += b_color * weights[b_type]
-		biome_mod = target_biome_color
+	# --- 2. Depth Interpolation (Underground) ---
+	# Surface at surface_height.
+	# Deep underground (e.g. +1000 pixels) is dark.
+	var final_color = time_color
 	
-	# 3. 垂直深度过渡 (地表 vs 地底)
-	var depth_factor = clamp((cam_y - surface_height) / 500.0, 0.0, 1.0)
-	var final_surface_color = (time_color * biome_mod).lerp(underground_color, depth_factor)
+	if cam_y > surface_height:
+		var depth = cam_y - surface_height
+		var depth_weight = clamp(depth / 2000.0, 0.0, 1.0)
+		final_color = time_color.lerp(underground_color, depth_weight)
+		
+		if depth > 3000.0:
+			var void_weight = clamp((depth - 3000.0) / 1000.0, 0.0, 1.0)
+			final_color = final_color.lerp(void_color, void_weight)
+			
+	# Apply
+	bg_rect.color = final_color
 	
-	# 更新所有层
-	for p_layer in layers:
-		if p_layer == sky_layer:
-			# 天空层受时间和生态影响，地底变黑
-			p_layer.modulate = p_layer.modulate.lerp(time_color * biome_mod * (1.0 - depth_factor), 0.1)
-		else:
-			p_layer.modulate = p_layer.modulate.lerp(final_surface_color, 0.1)
+	# No Biome tint for now - keep it clean/minimalist white/grey

@@ -61,10 +61,20 @@ func _fallback_combat(target: Node2D, dist: float, delta: float) -> void:
 func _perform_attack(target: Node2D) -> void:
 	# Simple direct damage for now
 	attack_cooldown = 1.0
-	if npc.animator:
-		# Try play attack anim?
-		# npc.animator.play("attack")
-		pass
+	
+	# Minimalist Attack Visual (Bump)
+	var min_vis = npc.get_node_or_null("MinimalistEntity")
+	if min_vis:
+		var dir = (target.global_position - npc.global_position).normalized()
+		var tw = create_tween()
+		var start_pos = min_vis.position
+		tw.tween_property(min_vis, "position", start_pos + dir * 8.0, 0.1)
+		tw.tween_property(min_vis, "position", start_pos, 0.1)
+
+	# if npc.animator:
+	# 	# Try play attack anim?
+	# 	# npc.animator.play("attack")
+	# 	pass
 		
 	if target.has_method("take_damage"):
 		target.take_damage(10.0) # Base damage

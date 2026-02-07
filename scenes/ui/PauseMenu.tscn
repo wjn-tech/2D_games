@@ -46,4 +46,4 @@ text = "继续游戏"
 [node name="QuitButton" type="Button" parent="CenterContainer/VBoxContainer"]
 custom_minimum_size = Vector2(200, 50)
 layout_mode = 2
-text = "退出游戏"
+text = "保存并退出"

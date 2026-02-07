@@ -2,11 +2,18 @@
 
 [ext_resource type="Script" path="res://src/core/resources/base_item.gd" id="1_script"]
 
+[ext_resource type="Texture2D" uid="uid://c2q32bl7s3wnl" path="res://assets/minimalist_palette.png" id="2_tex"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_icon"]
+atlas = ExtResource("2_tex")
+region = Rect2(16, 32, 16, 16)
+
 [resource]
 script = ExtResource("1_script")
 id = "wood"
 display_name = "木材"
 description = "基础建筑和燃料材料。"
+icon = SubResource("AtlasTexture_icon")
 stackable = true
 max_stack = 99
 value = 5

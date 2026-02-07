@@ -10,10 +10,14 @@ class_name InventoryUI
 @onready var grid_container: GridContainer = get_node(grid_container_path)
 
 var _is_ready: bool = false
+var _item_name_label: Label
 
 func _ready() -> void:
 	# 强制设置布局为左上角，并增加美化边距
 	_setup_layout()
+	
+	# 创建物品名称显示标签 (右下角)
+	_setup_item_name_label()
 	
 	# 监听背包变化信号
 	GameState.inventory.inventory_changed.connect(refresh_ui)
@@ -25,6 +29,32 @@ func _ready() -> void:
 	refresh_ui()
 	# 延迟一帧标记为就绪，防止打开瞬间又被关闭
 	get_tree().process_frame.connect(func(): _is_ready = true)
+
+func _setup_item_name_label() -> void:
+	_item_name_label = Label.new()
+	add_child(_item_name_label)
+	_item_name_label.name = "ItemNameLabel"
+	_item_name_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	# 稍微留一点边距
+	_item_name_label.position -= Vector2(20, 20)
+	_item_name_label.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_item_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_item_name_label.add_theme_font_size_override("font_size", 24)
+	_item_name_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	_item_name_label.add_theme_constant_override("outline_size", 6)
+	_item_name_label.text = ""
+	_item_name_label.visible = false
+	# 确保在最上层
+	_item_name_label.z_index = 100
+
+func show_item_name(text: String) -> void:
+	if _item_name_label:
+		_item_name_label.text = text
+		_item_name_label.visible = true
+
+func hide_item_name() -> void:
+	if _item_name_label:
+		_item_name_label.visible = false
 
 func _on_player_refreshed() -> void:
 	# 断开旧连接（如果存在）

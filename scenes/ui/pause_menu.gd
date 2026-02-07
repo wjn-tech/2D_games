@@ -11,4 +11,8 @@ func _on_resume_pressed() -> void:
 	GameManager.change_state(GameManager.State.PLAYING)
 
 func _on_quit_pressed() -> void:
-	get_tree().quit()
+    # 打开存档选择界面，处于“保存模式”
+	var win = UIManager.open_window("SaveSelection", "res://scenes/ui/SaveSelection.tscn")
+	if win:
+		win.set_mode("save")
+

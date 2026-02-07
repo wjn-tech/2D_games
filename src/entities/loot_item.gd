@@ -85,15 +85,12 @@ func collect():
 		queue_free()
 		return
 		
-	# Add to inventory
-	var remaining = GameState.inventory.add_item(item_resource, amount)
-	if remaining == 0:
-		is_collecting = true
-		# Trigger floating text
-		if UIManager:
-			UIManager.show_floating_text("+" + str(amount) + " " + item_resource.display_name, global_position)
-		
-		queue_free()
-	else:
-		# 背包满了，暂时不能拾取，重置状态允许下次尝试
-		pass
+	# Add to inventory via EventBus (Centralized approach)
+	EventBus.item_collected.emit(item_resource, amount)
+	
+	is_collecting = true
+	# Trigger floating text
+	if UIManager:
+		UIManager.show_floating_text("+" + str(amount) + " " + item_resource.display_name, global_position)
+	
+	queue_free()

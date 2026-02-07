@@ -1,0 +1,165 @@
+[gd_scene load_steps=4 format=3 uid="uid://wandeditor"]
+
+[ext_resource type="Script" path="res://src/ui/wand_editor/wand_editor.gd" id="1_main"]
+[ext_resource type="Script" path="res://src/ui/wand_editor/visual_grid.gd" id="2_visual"]
+[ext_resource type="Script" path="res://src/ui/wand_editor/logic_board.gd" id="3_logic"]
+
+[node name="WandEditor" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main")
+
+[node name="Panel" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Header" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="WandNameLabel" type="Label" parent="VBoxContainer/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+theme_override_colors/font_color = Color(1, 0.8, 0.4, 1)
+text = "Editing: Unknown Wand"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="HBoxControls" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="SaveButton" type="Button" parent="VBoxContainer/HBoxControls"]
+layout_mode = 2
+text = "Save & Close"
+
+[node name="TabContainer" type="TabContainer" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Visual" type="Control" parent="VBoxContainer/TabContainer"]
+layout_mode = 2
+
+[node name="MainLayout" type="HSplitContainer" parent="VBoxContainer/TabContainer/Visual"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+split_offset = 200
+
+[node name="LibraryPanel" type="VBoxContainer" parent="VBoxContainer/TabContainer/Visual/MainLayout"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="VBoxContainer/TabContainer/Visual/MainLayout/LibraryPanel"]
+layout_mode = 2
+text = "Modules"
+horizontal_alignment = 1
+
+[node name="ModuleScroll" type="ScrollContainer" parent="VBoxContainer/TabContainer/Visual/MainLayout/LibraryPanel"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ModulePalette" type="GridContainer" parent="VBoxContainer/TabContainer/Visual/MainLayout/LibraryPanel/ModuleScroll"]
+layout_mode = 2
+columns = 3
+
+[node name="WorkspaceSplit" type="HSplitContainer" parent="VBoxContainer/TabContainer/Visual/MainLayout"]
+layout_mode = 2
+size_flags_horizontal = 3
+split_offset = -250
+
+[node name="GridArea" type="Control" parent="VBoxContainer/TabContainer/Visual/MainLayout/WorkspaceSplit"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="VisualGrid" type="Control" parent="VBoxContainer/TabContainer/Visual/MainLayout/WorkspaceSplit/GridArea"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("2_visual")
+
+[node name="StatsPanel" type="VBoxContainer" parent="VBoxContainer/TabContainer/Visual/MainLayout/WorkspaceSplit"]
+layout_mode = 2
+
+[node name="StatsTitle" type="Label" parent="VBoxContainer/TabContainer/Visual/MainLayout/WorkspaceSplit/StatsPanel"]
+layout_mode = 2
+text = "Construct Info"
+horizontal_alignment = 1
+
+[node name="StatsDisplay" type="RichTextLabel" parent="VBoxContainer/TabContainer/Visual/MainLayout/WorkspaceSplit/StatsPanel"]
+layout_mode = 2
+size_flags_vertical = 3
+text = "
+Structure Integrity: 100%
+Energy Capacity: 500
+Recharge Rate: 12.5/s
+
+> Installed Modules:
+ - Core
+ - Amplifier
+ - Heatsink
+"
+
+[node name="Logic" type="Control" parent="VBoxContainer/TabContainer"]
+visible = false
+layout_mode = 2
+
+[node name="HSplitContainer" type="HSplitContainer" parent="VBoxContainer/TabContainer/Logic"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+split_offset = 200
+
+[node name="LibraryContainer" type="VBoxContainer" parent="VBoxContainer/TabContainer/Logic/HSplitContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/TabContainer/Logic/HSplitContainer/LibraryContainer"]
+layout_mode = 2
+text = "Nodes Library"
+horizontal_alignment = 1
+
+[node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer/TabContainer/Logic/HSplitContainer/LibraryContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="PaletteGrid" type="GridContainer" parent="VBoxContainer/TabContainer/Logic/HSplitContainer/LibraryContainer/ScrollContainer"]
+layout_mode = 2
+columns = 2
+
+[node name="LogicBoard" type="GraphEdit" parent="VBoxContainer/TabContainer/Logic/HSplitContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+right_disconnects = true
+zoom = 1.0
+zoom_min = 0.5
+zoom_max = 2.0
+minimap_enabled = false
+show_grid = false
+snapping_enabled = true
+snapping_distance = 64
+script = ExtResource("3_logic")
+
+[connection signal="pressed" from="VBoxContainer/HBoxControls/SaveButton" to="." method="_on_save_pressed"]

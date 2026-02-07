@@ -1,7 +1,7 @@
 extends StaticBody2D
 class_name InteractiveDoor
 
-@onready var sprite = $Sprite2D
+@onready var visual = $MinimalistEntity
 @onready var collision = $CollisionShape2D
 
 var is_open: bool = false
@@ -15,12 +15,12 @@ func _ready() -> void:
 func load_custom_data(data: Dictionary):
     if data.has("height"):
         var h = data["height"]
-        # 调整 Sprite 和碰撞体以匹配高度
         var pixel_h = h * 16 # TILE_SIZE
-        # 更新纹理拉伸
-        if sprite.texture is GradientTexture2D:
-            sprite.texture.height = pixel_h
-        sprite.offset.y = -pixel_h
+        
+        # Update Visual Size and Position
+        if visual:
+             visual.size.y = pixel_h
+             visual.position.y = -pixel_h / 2.0
         
         # 更新碰撞体
         if collision.shape is RectangleShape2D:
@@ -57,20 +57,22 @@ func close_door():
 
 func _update_state():
     if is_open:
-        sprite.modulate.a = 0.3 # 半透明表示打开
+        visual.color.a = 0.3 # Change alpha directly on color property
         collision.set_deferred("disabled", true)
     else:
-        sprite.modulate.a = 1.0
+        visual.color.a = 1.0
         collision.set_deferred("disabled", false)
+    visual.queue_redraw()
 
 # 被挖掘/攻击时的逻辑
 func hit(damage: float, _damage_source: Variant = null) -> void:
     hp -= damage
     # 简单的抖动视觉效果
+    var base_x = visual.position.x
     var tween = create_tween()
-    tween.tween_property(sprite, "position:x", 2.0, 0.05)
-    tween.tween_property(sprite, "position:x", -2.0, 0.05)
-    tween.tween_property(sprite, "position:x", 0.0, 0.05)
+    tween.tween_property(visual, "position:x", base_x + 2.0, 0.05)
+    tween.tween_property(visual, "position:x", base_x - 2.0, 0.05)
+    tween.tween_property(visual, "position:x", base_x, 0.05)
     
     if hp <= 0:
         _destroy()

@@ -1,0 +1,27 @@
+[gd_scene load_steps=2 format=3 uid="uid://inventoryslotui001"]
+
+[ext_resource type="Script" path="res://src/systems/inventory/ui/inventory_slot.gd" id="1_script"]
+
+[node name="InventorySlot" type="PanelContainer"]
+custom_minimum_size = Vector2(50, 50)
+script = ExtResource("1_script")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 4
+theme_override_constants/margin_bottom = 4
+
+[node name="Icon" type="TextureRect" parent="MarginContainer"]
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CountLabel" type="Label" parent="MarginContainer"]
+visible = false
+layout_mode = 2
+size_flags_vertical = 8
+text = "1"
+horizontal_alignment = 2
+vertical_alignment = 2

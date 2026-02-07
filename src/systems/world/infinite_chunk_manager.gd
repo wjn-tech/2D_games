@@ -6,7 +6,8 @@ extends Node
 const CHUNK_SIZE = 64
 const TILE_SIZE = 16
 const LOAD_RADIUS = 2 # 加载半径（区块单位）
-const SAVE_DIR = "user://saves/world_deltas/"
+
+var active_save_root: String = "user://saves/world_deltas/"
 
 # 内存中的区块缓存: { Vector2i: WorldChunk }
 var loaded_chunks: Dictionary = {}
@@ -19,35 +20,46 @@ signal chunk_loaded(coord: Vector2i)
 signal chunk_unloaded(coord: Vector2i)
 
 func _ready() -> void:
-	# 强制清理旧存档以修复重叠生成 Bug (User Requested)
-	_wipe_save_data_debug()
-	
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	# 默认路径初始化，实际应由 SaveManager 设置
 	_ensure_save_dir()
 
+func set_save_root(path_root: String) -> void:
+	# e.g. "user://saves/slot_1/world/"
+	active_save_root = path_root
+	_ensure_save_dir()
+	print("InfiniteChunkManager: 存档路径已切换至 ", active_save_root)
+	
+	# 切换存档时清空缓存（注意：这应该在游戏重新开始时调用，而不是运行时热切换）
+	world_delta_data.clear()
+	loaded_chunks.clear()
+
+func save_all_deltas() -> void:
+	for coord in world_delta_data:
+		var chunk = world_delta_data[coord]
+		var path = _get_save_path(coord)
+		ResourceSaver.save(chunk, path)
+	print("InfiniteChunkManager: 所有区块修改已保存。")
+
 func _wipe_save_data_debug() -> void:
-	# 简单暴力的清理：重命名旧存档目录无效化
-	var user_dir = DirAccess.open("user://")
-	if user_dir:
-		if user_dir.dir_exists("saves/world_deltas"):
-			# 遍历删除文件
-			var dir = DirAccess.open(SAVE_DIR)
-			if dir:
-				dir.list_dir_begin()
-				var file_name = dir.get_next()
-				while file_name != "":
-					if not dir.current_is_dir():
-						dir.remove(file_name)
-					file_name = dir.get_next()
-				dir.list_dir_end()
-				print("InfiniteChunkManager: 已强制清理旧区块存档。")
+	# 简单暴力的清理
+	var dir = DirAccess.open(active_save_root)
+	if dir:
+		dir.list_dir_begin()
+		var file_name = dir.get_next()
+		while file_name != "":
+			if not dir.current_is_dir():
+				dir.remove(file_name)
+			file_name = dir.get_next()
+		dir.list_dir_end()
+		print("InfiniteChunkManager: 已强制清理旧区块存档。")
 
 func _ensure_save_dir() -> void:
-	if not DirAccess.dir_exists_absolute(SAVE_DIR):
-		DirAccess.make_dir_recursive_absolute(SAVE_DIR)
+	if not DirAccess.dir_exists_absolute(active_save_root):
+		DirAccess.make_dir_recursive_absolute(active_save_root)
 
 func _get_save_path(coord: Vector2i) -> String:
-	return SAVE_DIR + "chunk_%d_%d.tres" % [coord.x, coord.y]
+	return active_save_root + "chunk_%d_%d.tres" % [coord.x, coord.y]
 
 ## 获取世界坐标所属的区块坐标
 func get_chunk_coord(world_pos: Vector2) -> Vector2i:
@@ -260,7 +272,7 @@ const MY_CUSTOM_HOUSE_DESIGN = [
 	"        D.................D        ",
 	"        D.................D        ",
 	"        D...........CCC...D        ",
-	"        D...........CCC...D        ",
+	"        D.......M...CCC...D        ",
 	"        ###################        ",
 	"        ###################        "
 ]
@@ -277,6 +289,7 @@ func _generate_tile_house(chunk_data: Dictionary, base_pos: Vector2i, entities_o
 		"+": {"type": "tile", "layer": 0, "source": s_id, "atlas": generator.hard_rock_tile}, # 梁柱 (有碰撞)
 		"D": {"type": "special", "tag": "door", "bg": generator.dirt_tile},                  # 门及其背景
 		"C": {"type": "special", "tag": "chest", "bg": generator.dirt_tile},                 # 箱子及其背景
+		"M": {"type": "special", "tag": "merchant", "bg": generator.dirt_tile},              # 商人
 		" ": {"type": "air"}
 	}
 	
@@ -361,8 +374,22 @@ func _generate_tile_house(chunk_data: Dictionary, base_pos: Vector2i, entities_o
 						is_owner = true
 						entity_data = {
 							"scene_path": generator.chest_scene.resource_path,
-							"pos": Vector2(global_tile_x * TILE_SIZE, (global_tile_y + 1) * TILE_SIZE),
+							"pos": Vector2(global_tile_x * TILE_SIZE, global_tile_y * TILE_SIZE),
 							"data": {}
+						}
+					processed_positions[Vector2i(x_idx, row_idx)] = true
+				
+				elif item["tag"] == "merchant":
+					var owner_x = int(floor(float(global_tile_x) / 64.0))
+					var owner_y = int(floor(float(global_tile_y) / 64.0))
+					if owner_x == my_coord.x and owner_y == my_coord.y:
+						is_owner = true
+						# 尝试查找已配置的 merchant 场景或使用通用 NPC
+						var merch_scene = "res://scenes/npc/merchant.tscn"
+						entity_data = {
+							"scene_path": merch_scene,
+							"pos": Vector2(global_tile_x * TILE_SIZE + 8, (global_tile_y + 1) * TILE_SIZE - 2), # 稍微对齐到地面
+							"data": {"npc_name": "Merchant", "role": "Merchant"}
 						}
 					processed_positions[Vector2i(x_idx, row_idx)] = true
 
@@ -464,28 +491,30 @@ func _generate_tree_at(cells: Dictionary, local_pos: Vector2i, rng: RandomNumber
 	if not cells.has(tree_layer_idx): cells[tree_layer_idx] = {}
 	
 	var sid = generator.tree_source_id
-	var root_origin = generator.tree_root_origin
-	var trunk_atlas = generator.tree_trunk_tile
-	var canopy_origin = generator.tree_canopy_origin
 	
 	# 1. 树根 (3x1)
 	var root_y = local_pos.y - 1
+	var root_tiles = [generator.tree_root_left, generator.tree_root_mid, generator.tree_root_right]
 	for dx in range(-1, 2):
 		var p = Vector2i(local_pos.x + dx, root_y)
-		cells[tree_layer_idx][p] = {"source": sid, "atlas": root_origin + Vector2i(dx + 1, 0)}
+		cells[tree_layer_idx][p] = {"source": sid, "atlas": root_tiles[dx + 1]}
 			
 	# 2. 树干 (随机 3-5 节)
 	var trunk_h = rng.randi_range(3, 5)
+	# Explicitly check for wood tile at (1,2)
+	var trunk_atlas = generator.tree_trunk_tile
 	for i in range(1, trunk_h + 1):
 		var p = Vector2i(local_pos.x, root_y - i)
 		cells[tree_layer_idx][p] = {"source": sid, "atlas": trunk_atlas}
 			
 	# 3. 树冠 (3x3)
 	var canopy_center_y = root_y - trunk_h - 1
+	var canopy_tile = generator.tree_canopy_tile
 	for dx in range(-1, 2):
 		for dy in range(-1, 2):
 			var p = Vector2i(local_pos.x + dx, canopy_center_y + dy)
-			cells[tree_layer_idx][p] = {"source": sid, "atlas": canopy_origin + Vector2i(dx+1, dy+1)}
+			# Minimalist: Reuse single leaf tile for entire canopy
+			cells[tree_layer_idx][p] = {"source": sid, "atlas": canopy_tile}
 
 func _finalize_chunk_load(coord: Vector2i, cells: Dictionary, new_entities: Array = []) -> void:
 	if not _loading_queue.has(coord): return 

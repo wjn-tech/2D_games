@@ -9,6 +9,8 @@ class_name BaseNPC
 @export var attack_range: float = 50.0
 @export var wander_radius: float = 300.0 
 
+var stun_timer: float = 0.0
+
 # LimboAI components
 @onready var bt_player: BTPlayer = $BTPlayer
 @onready var hsm: LimboHSM = $LimboHSM
@@ -29,7 +31,10 @@ var inventory: Array = []
 const STEP_HEIGHT = 18.0 
 var wall_hit_cooldown: float = 0.0 
 
-@onready var animator: AnimatedSprite2D = find_child("AnimatedSprite2D")
+# @onready var animator: AnimatedSprite2D = find_child("AnimatedSprite2D")
+# Minimalist visual reference
+@onready var min_visual = $MinimalistEntity
+
 var speech_bubble: SpeechBubble
 var nameplate: Control
 var hp_bar: ProgressBar
@@ -40,7 +45,19 @@ func _ready() -> void:
 	
 	# 初始化导航代理
 	nav_agent.velocity_computed.connect(_on_velocity_computed)
-
+	
+	# --- Visual Style Injection ---
+	# Turn off traditional sprites and activate Minimalist Mode
+	# if animator:
+	# 	animator.visible = false
+	
+	# Try to find existing Sprite2D if AnimatedSprite2D missing
+	var spr = find_child("Sprite2D")
+	if spr: spr.visible = false
+		
+	# Instantiate MinimalistEntity
+	# Configured in scene now!
+	
 	var sm = get_node_or_null("/root/SettlementManager")
 	if sm:
 		sm.night_toggled.connect(_on_night_toggled)
@@ -48,20 +65,30 @@ func _ready() -> void:
 		if sm.is_night:
 			_on_night_toggled(true)
 
-	if custom_sprite_frames and animator:
-		animator.sprite_frames = custom_sprite_frames
-		# 确保播放默认动画
-		if animator.sprite_frames.has_animation("idle"):
-			animator.play("idle")
+	# if custom_sprite_frames and animator:
+	#	animator.sprite_frames = custom_sprite_frames
+	#	# 确保播放默认动画
+	#	if animator.sprite_frames.has_animation("idle"):
+	#		animator.play("idle")
 
 	if not npc_data:
 		npc_data = CharacterData.new()
+		
+	# --- Apply Minimalist Config ---
+	if min_visual and min_visual.has_method("setup_from_npc"):
+		# Use display_name (like "Slime") or alignment
+		var d_name = npc_data.display_name
+		if d_name == "": d_name = npc_data.npc_type # Fallback
+		min_visual.setup_from_npc(d_name, npc_data.alignment, ai_type)
 
-	# 处理敌对染色
-	if npc_data.alignment == "Hostile":
-		modulate = Color(1.0, 0.4, 0.4)
+	# 处理敌对染色 (Minimalist handles this inside setup_from_npc via color)
+	# if npc_data.alignment == "Hostile":
+	# 	modulate = Color(1.0, 0.4, 0.4)
 
 	add_to_group("npcs")
+	# 自动归类敌人
+	if npc_data and npc_data.alignment == "Hostile":
+		add_to_group("enemies")
 
 	# 实例化气泡对话框 (保留用于手动say，但移除自动闲聊)
 	var bubble_scene = load("res://scenes/ui/speech_bubble.tscn")
@@ -138,20 +165,32 @@ func _setup_nameplate() -> void:
 		type_str = npc_data.display_name
 	
 	name_label.text = "[ " + type_str + " ]"
+	
+	# 根据阵营设置名字颜色
+	if npc_data.alignment == "Hostile":
+		name_label.add_theme_color_override("font_color", Color(1.0, 0.2, 0.2)) # 红色
+	elif npc_data.alignment == "Friendly":
+		name_label.add_theme_color_override("font_color", Color(0.2, 0.6, 1.0)) # 蓝色
+		
 	container.add_child(name_label)
 
 	hp_bar = ProgressBar.new()
 	hp_bar.custom_minimum_size = Vector2(60, 6)
 	hp_bar.show_percentage = false
 	
-	# 设置样式 (红色血条)
+	# 设置背景样式
 	var style_bg = StyleBoxFlat.new()
 	style_bg.bg_color = Color(0.2, 0.2, 0.2, 0.6)
 	style_bg.set_corner_radius_all(2)
 	hp_bar.add_theme_stylebox_override("background", style_bg)
 	
+	# 设置填充颜色样式 (根据阵营)
 	var style_fg = StyleBoxFlat.new()
-	style_fg.bg_color = Color(0.8, 0.2, 0.2) # 红色
+	if npc_data.alignment == "Friendly":
+		style_fg.bg_color = Color(0.1, 0.6, 1.0) # 亮蓝色
+	else:
+		style_fg.bg_color = Color(1.0, 0.1, 0.1) # 亮红色 (Hostile 或其他)
+		
 	style_fg.set_corner_radius_all(2)
 	hp_bar.add_theme_stylebox_override("fill", style_fg)
 	
@@ -177,6 +216,7 @@ func sync_data_to_blackboard() -> void:
 		bb.set_var("attack_range", attack_range)
 		bb.set_var("home_pos", home_position)
 		bb.set_var("spawn_pos", spawn_position)
+		bb.set_var("ai_type", ai_type)
 	
 	var sm = get_node_or_null("/root/SettlementManager")
 	var is_night = sm.is_night if sm else false
@@ -184,6 +224,8 @@ func sync_data_to_blackboard() -> void:
 	bb.set_var("current_layer", get_meta("current_layer", 0))
 
 func _physics_process(delta: float) -> void:
+	# 0. 击退衰减处理 (Removed in favor of direct velocity manipulation)
+	
 	# 1. 重力处理 (仅限行走类 AI)
 	if ai_type != AIType.FLYER and ai_type != AIType.WORM:
 		if not is_on_floor():
@@ -194,6 +236,15 @@ func _physics_process(delta: float) -> void:
 
 	if wall_hit_cooldown > 0:
 		wall_hit_cooldown -= delta
+
+	if stun_timer > 0:
+		stun_timer -= delta
+		# Stunned: Just apply friction/gravity (handled above)
+		# Do NOT run AI movement logic below
+	else:
+		# AI only runs if not stunned
+		# 实际上 AI 决策现在完全交给 BTPlayer 和 LimboHSM
+		pass # Logic continues to move_and_slide
 
 	_handle_happiness_logic(delta)
 	
@@ -249,6 +300,10 @@ func shoot_at(target_pos: Vector2, projectile_scene: PackedScene) -> void:
 	get_parent().add_child(proj)
 	proj.global_position = global_position
 	
+	# Ensure enemy projectiles can hit the player and world
+	if proj is CharacterBody2D:
+		proj.collision_mask = LayerManager.LAYER_WORLD_0 | LayerManager.LAYER_PLAYER
+	
 	if proj.has_method("launch"):
 		proj.launch(global_position.direction_to(target_pos))
 
@@ -297,11 +352,24 @@ func _on_night_toggled(is_night: bool) -> void:
 		bt_player.blackboard.set_var("is_night", is_night)
 	# 具体的行为反应现在由行为树处理
 
-func take_damage(amount: float) -> void:
+func take_damage(amount: float, _type: String = "physical") -> void:
 	if npc_data:
+		var old_hp = npc_data.health
 		npc_data.health -= amount
-		print(name, " 受到伤害: ", amount, " 剩余生命: ", npc_data.health)
+		print(name, " takes damage: ", amount, " | HP: ", old_hp, " -> ", npc_data.health)
 		
+		# Visual feedback: Flash Red
+		if min_visual:
+			var tween = create_tween()
+			tween.tween_property(min_visual, "modulate", Color(5, 1, 1), 0.1) 
+			tween.tween_property(min_visual, "modulate", Color.WHITE, 0.1)
+		
+		# 彻底删除了卡肉逻辑 (HitStop)，确保子弹命中后不产生顿挫感
+
+		# Floating Damage Text
+		if UIManager:
+			UIManager.show_floating_text(str(int(amount)), global_position + Vector2(0, -20), Color.ORANGE_RED)
+
 		# 更新血条显示
 		_update_hp_bar()
 
@@ -323,7 +391,14 @@ func on_ally_attacked(attacker: Node2D) -> void:
 			bt_player.blackboard.set_var("target", attacker)
 		if hsm:
 			hsm.dispatch("enemy_detected")
-		say("住手！不许伤害我的同伴！")
+
+func apply_knockback(force: Vector2) -> void:
+	velocity += force
+	# Stun briefly to allow physics to happen without AI fighting back
+	stun_timer = 0.3 # Increased to match Slime logic
+	
+	# Cancel navigation if possible (Optional)
+	if nav_agent: nav_agent.target_position = global_position
 
 func _die() -> void:
 	print(name, " 已死亡")
@@ -399,8 +474,11 @@ func interact() -> void:
 	var player = get_tree().get_first_node_in_group("player")
 	if player:
 		var dir = (player.global_position - global_position).normalized()
-		if animator:
-			animator.flip_h = dir.x < 0
+		# if animator:
+		# 	animator.flip_h = dir.x < 0
+		if min_visual:
+			if dir.x < 0: min_visual.scale.x = -abs(min_visual.scale.x)
+			elif dir.x > 0: min_visual.scale.x = abs(min_visual.scale.x)
 
 	if bt_player and bt_player.blackboard:
 		bt_player.blackboard.set_var("is_interacting", true)
@@ -482,12 +560,16 @@ func get_inventory() -> Array:
 	return inventory
 
 func _update_animations() -> void:
-	if not animator: return
+	# if not animator: return
+	
+	if min_visual:
+		if velocity.x < 0: min_visual.scale.x = -abs(min_visual.scale.x)
+		elif velocity.x > 0: min_visual.scale.x = abs(min_visual.scale.x)
 
-	if velocity.length() > 0:
-		if animator.sprite_frames.has_animation("run"):
-			animator.play("run")
-		animator.flip_h = velocity.x < 0
-	else:
-		if animator.sprite_frames.has_animation("idle"):
-			animator.play("idle")
+	# if velocity.length() > 0:
+	# 	if animator.sprite_frames.has_animation("run"):
+	# 		animator.play("run")
+	# 	animator.flip_h = velocity.x < 0
+	# else:
+	# 	if animator.sprite_frames.has_animation("idle"):
+	# 		animator.play("idle")

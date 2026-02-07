@@ -14,6 +14,10 @@ var recipe_db: Dictionary = {}
 
 func _ready() -> void:
 	_load_databases()
+	
+	# 初始化玩家默认数据（如果需要）
+	if player_data.display_name == "":
+		player_data.display_name = "主角"
 
 func _load_databases() -> void:
 	# 加载物品数据库

@@ -1,6 +1,7 @@
 [gd_scene load_steps=62 format=3 uid="uid://dxfn1jff7u766"]
 
 [ext_resource type="Script" uid="uid://btn2kgc3li25u" path="res://src/systems/npc/base_npc.gd" id="1_331q1"]
+[ext_resource type="PackedScene" path="res://scenes/visuals/MinimalistEntity.tscn" id="2_visual"]
 [ext_resource type="Script" uid="uid://cufim4ppwao8c" path="res://src/systems/lineage/character_data.gd" id="2_dn7ju"]
 [ext_resource type="Texture2D" uid="uid://bhv1p3lh8rjwm" path="res://assets/character/00141-1268676146.png" id="3_tixnr"]
 [ext_resource type="Texture2D" uid="uid://dix3xuftm7rks" path="res://assets/character/idle/frame_000.png" id="4_pvmqr"]
@@ -300,10 +301,10 @@ animations = [{
 radius = 10.049875
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_xy7fa"]
-size = Vector2(23, 55.6875)
+size = Vector2(14, 14)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_eh8o8"]
-size = Vector2(57, 99)
+size = Vector2(24, 24)
 
 [sub_resource type="BlackboardPlan" id="BlackboardPlan_tixnr"]
 
@@ -313,18 +314,14 @@ script = ExtResource("1_331q1")
 npc_data = SubResource("Resource_3w6te")
 interaction_area = NodePath("InteractionArea")
 
-[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
-position = Vector2(-5, -43)
-scale = Vector2(0.11757811, 0.11422163)
-sprite_frames = SubResource("SpriteFrames_yti5f")
-animation = &"run"
+[node name="MinimalistEntity" parent="." instance=ExtResource("2_visual")]
+position = Vector2(0, -7)
+shape = 0
+color = Color(0.9, 0.9, 0.9, 1)
+size = Vector2(14, 14)
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
-position = Vector2(0, -65)
-shape = SubResource("CircleShape2D_uhwy5")
-
-[node name="CollisionShape2D2" type="CollisionShape2D" parent="."]
-position = Vector2(0.5, -26.84375)
+position = Vector2(0, -7)
 shape = SubResource("RectangleShape2D_xy7fa")
 
 [node name="InteractionArea" type="Area2D" parent="."]
@@ -332,7 +329,7 @@ collision_layer = 0
 collision_mask = 2
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="InteractionArea"]
-position = Vector2(0, -38)
+position = Vector2(0, -7)
 shape = SubResource("RectangleShape2D_eh8o8")
 
 [node name="NavigationAgent2D" type="NavigationAgent2D" parent="."]

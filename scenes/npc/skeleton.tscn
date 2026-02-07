@@ -17,7 +17,6 @@ health = 40.0
 npc_data = SubResource("Resource_skeleton")
 speed = 50.0
 ai_type = 0 # FIGHTER
-modulate = Color(0.6, 0.4, 0.7, 1)
 
 [node name="Idle" parent="LimboHSM" index="0"]
 state_behavior_tree = ExtResource("3_idle")

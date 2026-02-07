@@ -48,6 +48,48 @@ func _ready() -> void:
 	var debug_rect = find_child("ColorRect")
 	if debug_rect:
 		debug_rect.visible = false
+	
+	mouse_entered.connect(_on_mouse_entered)
+	mouse_exited.connect(_on_mouse_exited)
+
+func _on_mouse_entered() -> void:
+	if has_item():
+		# 向上寻找 InventoryUI 并通知显示名称
+		var inventory_ui = _find_parent_inventory_ui()
+		if inventory_ui:
+			var item_name = GameState.inventory.get_item_at(slot_index).display_name
+			inventory_ui.show_item_name(item_name)
+			
+		# 高亮效果
+		var style = get_theme_stylebox("panel")
+		if style is StyleBoxFlat:
+			style.border_color = Color(1.0, 1.0, 1.0, 1.0)
+			style.bg_color = Color(0.25, 0.25, 0.25, 0.9)
+
+func _on_mouse_exited() -> void:
+	# 向上寻找 InventoryUI 并通知隐藏名称
+	var inventory_ui = _find_parent_inventory_ui()
+	if inventory_ui:
+		inventory_ui.hide_item_name()
+		
+	# 恢复外观
+	var style = get_theme_stylebox("panel")
+	if style is StyleBoxFlat:
+		style.border_color = Color(0.5, 0.5, 0.5, 0.9)
+		style.bg_color = Color(0.15, 0.15, 0.15, 0.8)
+
+func _find_parent_inventory_ui() -> InventoryUI:
+	var p = get_parent()
+	while p:
+		if p is InventoryUI:
+			return p
+		p = p.get_parent()
+	return null
+
+func has_item() -> bool:
+	if slot_index < 0: return false
+	return GameState.inventory.get_item_at(slot_index) != null
+
 
 func setup(index: int, slot_data: Dictionary) -> void:
 	slot_index = index

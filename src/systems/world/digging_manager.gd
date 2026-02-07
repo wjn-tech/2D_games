@@ -77,7 +77,7 @@ func mine_tile_step(coords: Vector2i, delta: float, pickaxe_power: int) -> bool:
 	# 优先检查树木层
 	if tree_layer:
 		var tree_s_id = -1
-		if tree_layer.has_method("get_layers_count"):
+		if tree_layer is TileMap:
 			tree_s_id = tree_layer.get_cell_source_id(mining_layer, coords)
 		else:
 			tree_s_id = tree_layer.get_cell_source_id(coords)
@@ -86,7 +86,7 @@ func mine_tile_step(coords: Vector2i, delta: float, pickaxe_power: int) -> bool:
 			target_layer = tree_layer
 	
 	var s_id = -1
-	if target_layer.has_method("get_layers_count"):
+	if target_layer is TileMap:
 		s_id = target_layer.get_cell_source_id(mining_layer, coords)
 	else:
 		s_id = target_layer.get_cell_source_id(coords)
@@ -138,15 +138,19 @@ func reset_mining_progress(coords: Vector2i):
 func _get_global_layer_coords(local_coords: Vector2i, from_layer: Node) -> Vector2i:
 	# 将局部瓦片坐标映射回统一的 CrackingLayer 坐标系
 	var world_pos = from_layer.to_global(from_layer.map_to_local(local_coords))
-	return cracking_layer.to_local(world_pos) / 16 # 假设 16 像素瓦片
+	# 使用 floor 确保负数坐标也能正确回写瓦片索引，防止坐标偏移 1 格
+	var local_crack_pos = cracking_layer.to_local(world_pos)
+	return Vector2i((local_crack_pos / 16.0).floor())
 
 func _emit_dust_at(coords: Vector2i, target_layer: Node):
-	dust_particles.global_position = target_layer.to_global(target_layer.map_to_local(coords))
+	# 粒子发射器位置同步修正
+	var target_pos = target_layer.to_global(target_layer.map_to_local(coords))
+	dust_particles.global_position = target_pos
 	dust_particles.emitting = true
 	
 	# 根据材质动态调整粒子颜色
 	var s_id = -1
-	if target_layer.has_method("get_layers_count"):
+	if target_layer is TileMap:
 		s_id = target_layer.get_cell_source_id(mining_layer, coords)
 	else:
 		s_id = target_layer.get_cell_source_id(coords)
@@ -177,7 +181,7 @@ func _get_current_tile_map() -> Node:
 	return tile_map
 
 func _get_tile_data(current_tile_map: Node, coords: Vector2i) -> TileData:
-	if current_tile_map.has_method("get_layers_count"):
+	if current_tile_map is TileMap:
 		return current_tile_map.get_cell_tile_data(mining_layer, coords)
 	else:
 		return current_tile_map.get_cell_tile_data(coords)
@@ -193,7 +197,7 @@ func _get_custom_data(tile_data: TileData, current_tile_map: Node, coords: Vecto
 	var source_id = provided_source
 	
 	if current_tile_map:
-		if current_tile_map.has_method("get_layers_count"):
+		if current_tile_map is TileMap:
 			if atlas_coords == Vector2i(-1, -1):
 				atlas_coords = current_tile_map.get_cell_atlas_coords(mining_layer, coords)
 			if source_id == -2:
@@ -209,15 +213,12 @@ func _get_custom_data(tile_data: TileData, current_tile_map: Node, coords: Vecto
 	if key == "hardness":
 		if world_gen:
 			if source_id == world_gen.tree_source_id:
-				# 检查是否属于 1x3 树根区域
-				var r_origin = world_gen.tree_root_origin
-				if atlas_coords.y == r_origin.y and atlas_coords.x >= r_origin.x and atlas_coords.x < r_origin.x + 3:
+				# 检查是否属于树根
+				if atlas_coords in [world_gen.tree_root_left, world_gen.tree_root_mid, world_gen.tree_root_right]:
 					return 1.2
 				if atlas_coords == world_gen.tree_trunk_tile: return 1.0
-				# 检查是否属于 3x3 树冠区域
-				var c_origin = world_gen.tree_canopy_origin
-				if atlas_coords.x >= c_origin.x and atlas_coords.x < c_origin.x + 3 and \
-				   atlas_coords.y >= c_origin.y and atlas_coords.y < c_origin.y + 3:
+				# 检查是否属于树冠
+				if atlas_coords == world_gen.tree_canopy_tile:
 					return 0.3
 			
 			if source_id == world_gen.grass_dirt_source_id: return 0.6
@@ -238,6 +239,13 @@ func _get_custom_data(tile_data: TileData, current_tile_map: Node, coords: Vecto
 			
 			# 放置的木块
 			if source_id == world_gen.tile_source_id and atlas_coords == Vector2i(3, 4): return 1.0
+			
+			# --- 矿物硬度 ---
+			if atlas_coords == world_gen.iron_tile: return 2.0
+			if atlas_coords == world_gen.copper_tile: return 2.0
+			if atlas_coords == world_gen.magic_crystal_tile: return 3.0
+			if atlas_coords == world_gen.staff_core_tile: return 5.0
+			if atlas_coords == world_gen.magic_speed_stone_tile: return 5.0
 		
 		# 强制保底硬度匹配
 		if source_id == 3: return 0.6 # Grass
@@ -248,31 +256,104 @@ func _get_custom_data(tile_data: TileData, current_tile_map: Node, coords: Vecto
 	
 	if key == "drop_item":
 		if world_gen:
+			# 树木判断优先 (通过 source_id 和 atlas_coords 精确匹配)
 			if source_id == world_gen.tree_source_id:
-				return "res://data/items/wood.tres"
+				if atlas_coords in [world_gen.tree_root_left, world_gen.tree_root_mid, world_gen.tree_root_right, world_gen.tree_trunk_tile]:
+					return "res://data/items/wood.tres"
 				
-			if source_id == world_gen.grass_dirt_source_id: 
-				return "res://data/items/dirt.tres"
-			if source_id == world_gen.tile_source_id:
-				# 检查生态系统专属块掉落
-				for b_key in world_gen.biome_params:
-					var b_data = world_gen.biome_params[b_key]
-					if atlas_coords == b_data["sub_block"] or atlas_coords == b_data["surface_block"]:
-						return "res://data/items/dirt.tres"
-					if atlas_coords == b_data["stone_block"]:
-						return "res://data/items/stone.tres"
-						
-				if atlas_coords == world_gen.dirt_tile: return "res://data/items/dirt.tres"
-				if atlas_coords == world_gen.stone_tile: return "res://data/items/stone.tres"
-				if atlas_coords == world_gen.hard_rock_tile: return "res://data/items/stone.tres"
-				if atlas_coords == Vector2i(3, 4): return "res://data/items/wood.tres"
+			# 泥土与地表块
+			if atlas_coords == world_gen.dirt_tile: return "res://data/items/dirt.tres"
+			if atlas_coords == Vector2i(2, 1): return "res://data/items/dirt.tres" # Grass Tile
+			
+			# 生态专属掉落
+			# Snow (3,1)
+			if atlas_coords == Vector2i(3, 1): return "res://data/items/snow.tres"
+			# Sand (3,0)
+			if atlas_coords == Vector2i(3, 0): return "res://data/items/sand.tres"
+			# Ice (2,3)
+			if atlas_coords == Vector2i(2, 3): return "res://data/items/ice.tres"
+			# Mud (3,2)
+			if atlas_coords == Vector2i(3, 2): return "res://data/items/mud.tres"
+			# Hard Rock (1,3)
+			if atlas_coords == Vector2i(1, 3): return "res://data/items/hard_rock.tres"
+			# Water/Lava usually no drop or bucket
+			
+			# Stone Tile
+			if atlas_coords == world_gen.stone_tile: return "res://data/items/stone.tres"
+			
+			# 放置的人造物
+			if atlas_coords == Vector2i(3, 4): return "res://data/items/wood.tres"
+			if atlas_coords == Vector2i(0, 3): return "res://data/items/wood.tres" # Wooden Plank
+			
+			# --- 矿物掉落 ---
+			if atlas_coords == world_gen.iron_tile: return "res://data/items/minerals/iron_ore.tres"
+			if atlas_coords == world_gen.copper_tile: return "res://data/items/minerals/copper_ore.tres"
+			if atlas_coords == world_gen.magic_crystal_tile: return "res://data/items/minerals/magic_crystal.tres"
+			if atlas_coords == world_gen.staff_core_tile: return "res://data/items/minerals/staff_core.tres"
+			if atlas_coords == world_gen.magic_speed_stone_tile: return "res://data/items/minerals/magic_speed_stone.tres"
 		
-		# 强制保底匹配 (针对 TileSet 未能正确连接 WorldGenerator 的情况)
+		# 强制保底匹配
+		if source_id == 0:
+			if atlas_coords == Vector2i(0, 0): return "res://data/items/dirt.tres"
+			if atlas_coords == Vector2i(2, 1): return "res://data/items/dirt.tres"
+			if atlas_coords == Vector2i(2, 0): return "res://data/items/stone.tres"
+		
+		# Old Fallback
 		if source_id == 3: return "res://data/items/dirt.tres" # Grass Source
 		if source_id == 1 and atlas_coords == Vector2i(0, 0): return "res://data/items/dirt.tres" # Dirt Tile
 		if source_id == 1 and atlas_coords == Vector2i(1, 0): return "res://data/items/stone.tres" # Stone Tile
+
 		
 	return default_val
+
+## 获取瓦片的显示名称（用于 HUD）
+func get_tile_display_name(current_tile_map: Node, coords: Vector2i) -> String:
+	# 1. 尝试通过掉落物获取名称
+	var drop_path = _get_custom_data(null, current_tile_map, coords, "drop_item", "")
+	if drop_path != "":
+		var res = load(drop_path)
+		if res and res.get("display_name"):
+			return res.display_name
+			
+	# 2. 如果没有掉落物 (如基岩、背景墙)，尝试硬编码回退
+	var atlas_coords = Vector2i(-1, -1)
+	if current_tile_map is TileMap:
+		atlas_coords = current_tile_map.get_cell_atlas_coords(mining_layer, coords)
+	else:
+		atlas_coords = current_tile_map.get_cell_atlas_coords(coords)
+		
+	if atlas_coords == Vector2i(0, 0): return "泥土"
+	if atlas_coords == Vector2i(2, 0): return "石头"
+	if atlas_coords == Vector2i(2, 1): return "草方块"
+	if atlas_coords == Vector2i(0, 1): return "水"
+	if atlas_coords == Vector2i(1, 1): return "岩浆"
+	if atlas_coords == Vector2i(3, 1): return "雪"
+	if atlas_coords == Vector2i(2, 3): return "冰"
+	if atlas_coords == Vector2i(3, 0): return "沙子"
+	if atlas_coords == Vector2i(3, 2): return "泥巴"
+	if atlas_coords == Vector2i(1, 3): return "硬岩"
+	
+	if atlas_coords == Vector2i(0, 4): return "铁矿石"
+	if atlas_coords == Vector2i(1, 4): return "铜矿石"
+	if atlas_coords == Vector2i(2, 4): return "魔力水晶"
+	if atlas_coords == Vector2i(3, 4): return "法杖核心"
+	if atlas_coords == Vector2i(0, 5): return "魔法加速石"
+	
+	# 树木特殊处理
+	var world_gen = get_tree().get_first_node_in_group("world_generator")
+	if world_gen:
+		var s_id = -1
+		if current_tile_map is TileMap:
+			s_id = current_tile_map.get_cell_source_id(mining_layer, coords)
+		else:
+			s_id = current_tile_map.get_cell_source_id(coords)
+			
+		if s_id == world_gen.tree_source_id:
+			if atlas_coords == world_gen.tree_canopy_tile: return "树叶"
+			if atlas_coords in [world_gen.tree_root_left, world_gen.tree_root_mid, world_gen.tree_root_right, world_gen.tree_trunk_tile]:
+				return "原木"
+
+	return "未知方块"
 
 ## 尝试挖掘指定坐标的 Tile
 func try_mine_tile(coords: Vector2i, pickaxe_power: int) -> bool:
@@ -309,7 +390,7 @@ func _do_mine_at_layer(current_tile_map: Node, coords: Vector2i, pickaxe_power: 
 		cracking_layer.set_cell(map_pos, -1)
 		
 	# 兼容性处理：判断是 TileMap 还是 TileMapLayer
-	if current_tile_map.has_method("get_layers_count"):
+	if current_tile_map is TileMap:
 		source_id = current_tile_map.get_cell_source_id(mining_layer, coords)
 		if source_id != -1:
 			tile_data = current_tile_map.get_cell_tile_data(mining_layer, coords)
@@ -332,7 +413,7 @@ func _do_mine_at_layer(current_tile_map: Node, coords: Vector2i, pickaxe_power: 
 	# 记录再生信息
 	var atlas_coords = Vector2i(-1, -1)
 	var alt_tile = 0
-	if current_tile_map.has_method("get_layers_count"):
+	if current_tile_map is TileMap:
 		atlas_coords = current_tile_map.get_cell_atlas_coords(mining_layer, coords)
 		alt_tile = current_tile_map.get_cell_alternative_tile(mining_layer, coords)
 	else:
@@ -351,7 +432,7 @@ func _do_mine_at_layer(current_tile_map: Node, coords: Vector2i, pickaxe_power: 
 	var drop_path = _get_custom_data(tile_data, current_tile_map, coords, "drop_item", "", atlas_coords, source_id)
 	
 	# 移除 Tile
-	if current_tile_map.has_method("get_layers_count"):
+	if current_tile_map is TileMap:
 		current_tile_map.set_cell(mining_layer, coords, -1)
 	else:
 		current_tile_map.set_cell(coords, -1)
@@ -386,35 +467,19 @@ func _do_mine_at_layer(current_tile_map: Node, coords: Vector2i, pickaxe_power: 
 	# 特殊逻辑：如果是树根，自动砍倒整棵树
 	var world_gen = get_tree().get_first_node_in_group("world_generator")
 	if world_gen and source_id == world_gen.tree_source_id:
-		var r_origin = world_gen.tree_root_origin
-		# 检查是否属于 1x3 树根区域 (兼容大瓦片和独立瓦片)
+		# 检查是否属于树根区域
 		var is_root = false
 		var offset = 0
 		
-		if atlas_coords == r_origin:
-			# 大瓦片逻辑：通过向左探测找到起始位置 (水平 3x1)
+		if atlas_coords == world_gen.tree_root_left:
 			is_root = true
-			var start_pos = coords
-			while true:
-				var prev = start_pos - Vector2i(1, 0)
-				var s_id = -1
-				var a_coords = Vector2i(-1, -1)
-				if current_tile_map.has_method("get_layers_count"):
-					s_id = current_tile_map.get_cell_source_id(mining_layer, prev)
-					a_coords = current_tile_map.get_cell_atlas_coords(mining_layer, prev)
-				else:
-					s_id = current_tile_map.get_cell_source_id(prev)
-					a_coords = current_tile_map.get_cell_atlas_coords(prev)
-				
-				if s_id == source_id and a_coords == r_origin:
-					start_pos = prev
-				else:
-					break
-			offset = coords.x - start_pos.x
-		elif atlas_coords.y == r_origin.y and atlas_coords.x >= r_origin.x and atlas_coords.x < r_origin.x + 3:
-			# 独立瓦片逻辑 (水平)
+			offset = 0
+		elif atlas_coords == world_gen.tree_root_mid:
 			is_root = true
-			offset = atlas_coords.x - r_origin.x
+			offset = 1
+		elif atlas_coords == world_gen.tree_root_right:
+			is_root = true
+			offset = 2
 			
 		if is_root:
 			_fell_tree(coords, current_tile_map, world_gen, offset)
@@ -430,7 +495,7 @@ func _fell_tree(mined_coords: Vector2i, target_map: Node, world_gen: WorldGenera
 		var r_pos = root_start + Vector2i(dx, 0)
 		if r_pos == mined_coords: continue # 已经被 try_mine_tile 移除了
 		
-		if target_map.has_method("get_layers_count"):
+		if target_map is TileMap:
 			target_map.set_cell(mining_layer, r_pos, -1)
 		else:
 			target_map.set_cell(r_pos, -1)
@@ -443,7 +508,7 @@ func _fell_tree(mined_coords: Vector2i, target_map: Node, world_gen: WorldGenera
 	while true:
 		var atlas = Vector2i(-1, -1)
 		var s_id = -1
-		if target_map.has_method("get_layers_count"):
+		if target_map is TileMap:
 			atlas = target_map.get_cell_atlas_coords(mining_layer, current_pos)
 			s_id = target_map.get_cell_source_id(mining_layer, current_pos)
 		else:
@@ -451,11 +516,11 @@ func _fell_tree(mined_coords: Vector2i, target_map: Node, world_gen: WorldGenera
 			s_id = target_map.get_cell_source_id(current_pos)
 			
 		if s_id == world_gen.tree_source_id and atlas == world_gen.tree_trunk_tile:
-			trunk_count += 1
-			if target_map.has_method("get_layers_count"):
+			if target_map is TileMap:
 				target_map.set_cell(mining_layer, current_pos, -1)
 			else:
 				target_map.set_cell(current_pos, -1)
+			trunk_count += 1
 			current_pos += Vector2i(0, -1)
 		else:
 			break
@@ -467,7 +532,7 @@ func _fell_tree(mined_coords: Vector2i, target_map: Node, world_gen: WorldGenera
 			var c_pos = canopy_center + Vector2i(dx, dy)
 			var atlas = Vector2i(-1, -1)
 			var s_id = -1
-			if target_map.has_method("get_layers_count"):
+			if target_map is TileMap:
 				atlas = target_map.get_cell_atlas_coords(mining_layer, c_pos)
 				s_id = target_map.get_cell_source_id(mining_layer, c_pos)
 			else:
@@ -475,10 +540,8 @@ func _fell_tree(mined_coords: Vector2i, target_map: Node, world_gen: WorldGenera
 				s_id = target_map.get_cell_source_id(c_pos)
 				
 			if s_id == world_gen.tree_source_id:
-				var c_origin = world_gen.tree_canopy_origin
-				if atlas.x >= c_origin.x and atlas.x < c_origin.x + 3 and \
-				   atlas.y >= c_origin.y and atlas.y < c_origin.y + 3:
-					if target_map.has_method("get_layers_count"):
+				if atlas == world_gen.tree_canopy_tile:
+					if target_map is TileMap:
 						target_map.set_cell(mining_layer, c_pos, -1)
 					else:
 						target_map.set_cell(c_pos, -1)
@@ -571,7 +634,7 @@ func _handle_respawn(delta: float) -> void:
 		respawn_queue[coords]["time_left"] -= delta
 		if respawn_queue[coords]["time_left"] <= 0:
 			var data = respawn_queue[coords]
-			if tile_map.has_method("get_layers_count"):
+			if tile_map is TileMap:
 				tile_map.set_cell(mining_layer, coords, data["source_id"], data["atlas_coords"], data["alternative_tile"])
 			else:
 				tile_map.set_cell(coords, data["source_id"], data["atlas_coords"], data["alternative_tile"])

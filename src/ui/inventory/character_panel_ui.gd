@@ -32,10 +32,50 @@ func _on_player_data_refreshed() -> void:
 	_refresh_stats()
 	_refresh_header()
 
+const BackpackPanel = preload("res://src/systems/inventory/ui/backpack_panel.tscn")
+const HotbarPanel = preload("res://src/systems/inventory/ui/hotbar_panel.tscn")
+
 func _setup_ui() -> void:
 	# 确保面板美观
 	custom_minimum_size = Vector2(800, 500)
 	
+	# Setup Inventory Section (Hotbar + Backpack)
+	var placeholder = inv_container.get_node_or_null("BackpackPlaceholder")
+	if placeholder:
+		# Clear existing
+		for c in placeholder.get_children(): c.queue_free()
+		
+		# 使用 VBox 布局来垂直排列 快捷栏 和 背包
+		var layout = VBoxContainer.new()
+		layout.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		layout.add_theme_constant_override("separation", 20)
+		placeholder.add_child(layout)
+		
+		var player = get_tree().get_first_node_in_group("player")
+		if player and player.get("inventory"):
+			# 1. 显示快捷栏
+			if player.inventory.get("hotbar"):
+				var lbl = Label.new()
+				lbl.text = "快捷栏"
+				lbl.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+				layout.add_child(lbl)
+				
+				var hb = HotbarPanel.instantiate()
+				layout.add_child(hb)
+				hb.setup(player.inventory.hotbar)
+			
+			# 2. 显示背包
+			if player.inventory.get("backpack"):
+				var lbl = Label.new()
+				lbl.text = "背包"
+				lbl.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+				layout.add_child(lbl)
+				
+				var bp = BackpackPanel.instantiate()
+				layout.add_child(bp)
+				bp.size_flags_vertical = Control.SIZE_EXPAND_FILL
+				bp.setup(player.inventory.backpack)
+
 	# 绑定加号按钮
 	for stat in ["Strength", "Agility", "Intelligence", "Constitution"]:
 		var btn = stats_container.get_node(stat + "/AddButton")

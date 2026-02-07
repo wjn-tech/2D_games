@@ -33,13 +33,15 @@ func _update(delta: float) -> void:
 	# 1. 发现敌人判定 (如果是敌对单位找玩家，如果是友方找怪物)
 	var target = _scan_for_targets()
 	if target:
-		# 修改：同时在 HSM 的黑板和 BTPlayer 的黑板设置目标
-		blackboard.set_var("target", target)
-		if npc.bt_player and npc.bt_player.blackboard:
-			npc.bt_player.blackboard.set_var("target", target)
-		
-		dispatch("enemy_detected")
-		return
+		# 修改：如果 NPC 是被动型 (Passive)，则不进入战斗追逐状态，除非被攻击（目前暂不实现反击）
+		if npc.ai_type != BaseNPC.AIType.PASSIVE:
+			# 修改：同时在 HSM 的黑板和 BTPlayer 的黑板设置目标
+			blackboard.set_var("target", target)
+			if npc.bt_player and npc.bt_player.blackboard:
+				npc.bt_player.blackboard.set_var("target", target)
+			
+			dispatch("enemy_detected")
+			return
 
 	# 2. 如果有 BehaviorTree，交给 BT 处理
 	if npc.bt_player and npc.bt_player.behavior_tree:

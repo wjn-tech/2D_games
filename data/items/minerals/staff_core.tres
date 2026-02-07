@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="BaseItem" load_steps=3 format=3]
+
+[ext_resource type="Texture2D" uid="uid://c2q32bl7s3wnl" path="res://assets/minimalist_palette.png" id="2_tex"]
+[ext_resource type="Script" path="res://src/core/resources/base_item.gd" id="1_script"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_icon"]
+atlas = ExtResource("2_tex")
+region = Rect2(48, 64, 16, 16)
+
+[resource]
+script = ExtResource("1_script")
+id = "staff_core"
+display_name = "法杖核心"
+description = "极其纯净的能量球，比较稀有，用于制作法杖。"
+icon = SubResource("AtlasTexture_icon")
+stackable = true
+max_stack = 99
+value = 200
+item_type = "Material"
+ammo_type = ""

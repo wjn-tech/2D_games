@@ -3,8 +3,8 @@ extends Node
 ## NPCSpawner (Refactored)
 ## Advanced spawning system based on Biome, Depth, Time, and Wall Rules (Terraria-style).
 
-@export var spawn_radius_min: float = 600.0
-@export var spawn_radius_max: float = 1200.0
+@export var spawn_radius_min: float = 800.0
+@export var spawn_radius_max: float = 1600.0
 @export var max_mobs: int = 20
 @export var spawn_interval: float = 1.0
 @export var spawn_chance: float = 0.6 
@@ -12,6 +12,10 @@ extends Node
 var last_spawn_check_time: float = 0.0
 
 enum Zone { SURFACE, UNDERGROUND, CAVERN, SPACE }
+
+# 新增：生态统计与来源定义
+var population_map: Dictionary = {} 
+var area_capacity: int = 15 # 每个区域的最大承载力
 
 class SpawnRule:
 	var scene_path: String
@@ -21,13 +25,17 @@ class SpawnRule:
 	var time_constraints: Array
 	var requires_wall: bool = false 
 	var requires_no_wall: bool = false 
+	var origin_type: String = "natural"
+	var max_active_count: int = 5 # 默认每种怪物的最大共存数
 
-	func _init(path: String, w: int, _biomes: Array, _zones: Array, _times: Array):
+	func _init(path: String, w: int, _biomes: Array, _zones: Array, _times: Array, _origin: String = "natural", _max: int = 5):
 		scene_path = path
 		weight = w
 		biomes = _biomes
 		zones = _zones
 		time_constraints = _times
+		origin_type = _origin
+		max_active_count = _max
 
 var spawn_table: Array[SpawnRule] = []
 
@@ -36,30 +44,27 @@ func _ready() -> void:
 	_build_registry()
 
 func _build_registry() -> void:
-	# --- Slimes (Day/Night, Surface/Underground, Multiple Biomes) ---
-	# Slimes are basic mobs found in most places.
-	var slime = SpawnRule.new("res://scenes/npc/slime.tscn", 100, ["Forest", "Plains", "Desert", "Swamp", "Any"], [Zone.SURFACE, Zone.UNDERGROUND], ["Any"])
+	# --- 规则现在包含 max_count ---
+	# 史莱姆：种群较大
+	var slime = SpawnRule.new("res://scenes/npc/slime.tscn", 100, ["Forest", "Plains", "Desert", "Swamp", "Any"], [Zone.SURFACE, Zone.UNDERGROUND], ["Any"], "falling", 8)
 	slime.requires_no_wall = true 
 	spawn_table.append(slime)
 	
-	# --- Zombies (Night, Surface) ---
-	var zombie = SpawnRule.new("res://scenes/npc/zombie.tscn", 80, ["Any"], [Zone.SURFACE], ["Night"])
+	# 僵尸：种群适中
+	var zombie = SpawnRule.new("res://scenes/npc/zombie.tscn", 80, ["Any"], [Zone.SURFACE], ["Night"], "burrow", 5)
 	zombie.requires_no_wall = true 
 	spawn_table.append(zombie)
 	
-	# --- Skeletons (Underground/Cavern only) ---
-	# Strictly move skeletons to the underground. They ignore time of day in caves.
-	var skeleton = SpawnRule.new("res://scenes/npc/skeleton.tscn", 120, ["Any"], [Zone.UNDERGROUND, Zone.CAVERN], ["Any"])
+	var skeleton = SpawnRule.new("res://scenes/npc/skeleton.tscn", 120, ["Any"], [Zone.UNDERGROUND, Zone.CAVERN], ["Any"], "burrow", 6)
 	spawn_table.append(skeleton)
 	
-	# --- Antlions (Day, Surface, Desert Only) ---
-	# High weight in desert to ensure they show up.
-	var antlion = SpawnRule.new("res://scenes/npc/antlion.tscn", 150, ["Desert"], [Zone.SURFACE], ["Day"])
+	# 蚁狮：较少
+	var antlion = SpawnRule.new("res://scenes/npc/antlion.tscn", 150, ["Desert"], [Zone.SURFACE], ["Day"], "emerging", 3)
 	antlion.requires_no_wall = true
 	spawn_table.append(antlion)
 
-	# --- Demon Eyes (Night, Surface) ---
-	var eye = SpawnRule.new("res://scenes/npc/demon_eye.tscn", 70, ["Any"], [Zone.SURFACE], ["Night"])
+	# 恶魔之眼：空中单位较少
+	var eye = SpawnRule.new("res://scenes/npc/demon_eye.tscn", 70, ["Any"], [Zone.SURFACE], ["Night"], "natural", 3)
 	spawn_table.append(eye)
 
 func _process(delta: float) -> void:
@@ -67,42 +72,59 @@ func _process(delta: float) -> void:
 	if last_spawn_check_time >= spawn_interval:
 		last_spawn_check_time = 0
 		_try_spawn_cycle()
+		_process_despawn() # 新增：处理清理逻辑
+
+func _process_despawn() -> void:
+	var player = get_tree().get_first_node_in_group("player")
+	if not player: return
+	
+	var active_mobs = get_tree().get_nodes_in_group("hostile_npcs")
+	for mob in active_mobs:
+		if mob.global_position.distance_to(player.global_position) > 2500.0:
+			# 远离玩家过远（约 2-3 个屏幕外），清理
+			mob.queue_free()
+
+func _count_active_mobs(scene_path: String) -> int:
+	var count = 0
+	var active_mobs = get_tree().get_nodes_in_group("hostile_npcs")
+	for mob in active_mobs:
+		# 通过比较场景文件的路径来匹配种类
+		if mob.scene_file_path == scene_path:
+			count += 1
+	return count
 
 func _try_spawn_cycle() -> void:
+	# --- 种群密度控制 (Carrying Capacity) ---
 	var current_mobs = get_tree().get_nodes_in_group("hostile_npcs").size()
-	if current_mobs >= max_mobs:
-		# print("NPCSpawner: Max mobs reached.")
+	if current_mobs >= area_capacity:
 		return
 		
 	var player = get_tree().get_first_node_in_group("player")
 	if not player:
-		# print("NPCSpawner: No player found.")
 		return
 	
-	if randf() > spawn_chance:
-		# print("NPCSpawner: Spawn chance skip.")
+	# --- 生态节奏 (Ecological Pacing) ---
+	# 不再使用固定概率，而是模拟“种群恢复”式的刷新
+	if randf() > 0.4:
 		return
 
 	var spawn_pos = _get_random_spawn_pos(player.global_position)
 	if spawn_pos == Vector2.ZERO:
-		print("NPCSpawner: Failed to find valid floor position.")
 		return
 	
 	var context = _analyze_context(spawn_pos)
-	print("NPCSpawner: Context at ", spawn_pos, " -> ", context)
 	
 	var candidates: Array[SpawnRule] = []
 	var total_weight = 0
 	
 	for rule in spawn_table:
 		if _is_rule_valid(rule, context):
-			candidates.append(rule)
-			total_weight += rule.weight
-		# else:
-			# print("NPCSpawner: Rule rejected: ", rule.scene_path.get_file())
+			# 检查该种群是否已达上限
+			if _count_active_mobs(rule.scene_path) < rule.max_active_count:
+				candidates.append(rule)
+				total_weight += rule.weight
 			
 	if candidates.is_empty():
-		print("NPCSpawner: No matching rules for context.")
 		return
 	
 	var roll = randi() % total_weight
@@ -110,9 +132,31 @@ func _try_spawn_cycle() -> void:
 	for rule in candidates:
 		current_w += rule.weight
 		if roll < current_w:
-			print("NPCSpawner: Selected mob -> ", rule.scene_path)
-			_spawn_mob(rule.scene_path, spawn_pos)
+			_execute_plausible_spawn(rule, spawn_pos)
 			break
+
+## 新增：自然生成逻辑 (Plausible Origins)
+func _execute_plausible_spawn(rule: SpawnRule, pos: Vector2) -> void:
+	match rule.origin_type:
+		"burrow":
+			# 从地下钻出：在实体实际实例化之前模拟“地动”
+			# 未来可在这里实例化尘土粒子特效
+			print("EcologicalSpawn: [", rule.scene_path.get_file().get_basename(), "] 正在地下挖掘...")
+			await get_tree().create_timer(1.0).timeout
+			_spawn_mob(rule.scene_path, pos)
+			
+		"falling":
+			# 从高处跳下：用于史莱姆等，初始位置略高
+			var fall_pos = pos + Vector2(0, -60)
+			_spawn_mob(rule.scene_path, fall_pos)
+			
+		"emerging":
+			# 伪装显现：用于蚁狮
+			_spawn_mob(rule.scene_path, pos)
+			
+		_:
+			# 默认生成
+			_spawn_mob(rule.scene_path, pos)
 
 func _analyze_context(pos: Vector2) -> Dictionary:
 	var ctx = {}
@@ -200,8 +244,33 @@ func _get_random_spawn_pos(center: Vector2) -> Vector2:
 	
 	var result = space_state.intersect_ray(query)
 	if result:
-		return result.position - Vector2(0, 32)
+		var pos = result.position - Vector2(0, 32)
+		# 确保不在视口内
+		if _is_pos_on_screen(pos):
+			# 如果刚好在视口内，尝试推得更远一点
+			pos.x += 400 * dir
+		return pos
 	return Vector2.ZERO
+
+func _is_pos_on_screen(pos: Vector2) -> bool:
+	var viewport = get_viewport()
+	if not viewport: return false
+	
+	var camera = viewport.get_camera_2d()
+	if not camera: 
+		# 没相机时回退到简单的可见矩形（通常不对，但作为兜底）
+		return viewport.get_visible_rect().has_point(pos)
+		
+	# 获取相机当前看到的全局矩形
+	var screen_center = camera.get_screen_center_position()
+	var screen_size = viewport.get_visible_rect().size / camera.zoom
+	var view_rect = Rect2(screen_center - screen_size / 2.0, screen_size)
+	
+	# 增加更大的一点边距 (Buffer)，防止怪物边缘在屏幕边缘闪现
+	var buffer = 250.0
+	var buffered_rect = view_rect.grow(buffer)
+	
+	return buffered_rect.has_point(pos)
 
 func _spawn_mob(path: String, pos: Vector2) -> void:
 	if not FileAccess.file_exists(path):

@@ -93,59 +93,114 @@ var town_npc_pool = [
 	}
 ]
 
+# 迁徙系统变量
+var migration_queue: Array = []
 var _arrival_check_timer: float = 0.0
 
 func _process(delta: float) -> void:
 	_arrival_check_timer += delta
-	if _arrival_check_timer >= 60.0: # 每一分钟检查一次新 NPC 入住
+	if _arrival_check_timer >= 30.0: # 每 30 秒进行一次迁徙检查
 		_arrival_check_timer = 0
-		_check_town_npc_arrival()
+		_process_migration_logic()
 
-func _check_town_npc_arrival() -> void:
-	# 检查是否有空房间
-	var free_houses = _get_available_houses()
-	if free_houses.is_empty(): return
+## 新增：自然迁徙逻辑 (Migration System)
+func _process_migration_logic() -> void:
+	# 1. 评估当前城镇的吸引力 (Housing Suitability)
+	var available_houses = _get_available_suitable_houses()
+	if available_houses.is_empty(): return
 	
-	for entry in town_npc_pool:
-		if not entry.recruited and entry.condition.call():
-			_spawn_town_npc(entry, free_houses.pop_back())
-
-func _get_available_houses() -> Array:
-	var available = []
-	for node in buildings.keys():
-		var res = buildings[node]
-		if res.population_bonus > 0: # 是住所
-			var occupied = false
-			for home in npc_homes.values():
-				if home == node:
-					occupied = true
-					break
-			if not occupied:
-				available.append(node)
-	return available
-
-func _spawn_town_npc(entry: Dictionary, house_node: Node2D) -> void:
-	if not FileAccess.file_exists(entry.scene): return
-	
-	var scene = load(entry.scene)
-	var npc = scene.instantiate()
-	
-	# 设置住所
-	npc.global_position = house_node.global_position
-	var entities = get_tree().current_scene.getChild("Entities")
-	if entities: entities.add_child(npc)
-	else: get_tree().current_scene.add_child(npc)
-	
-	if npc is BaseNPC:
-		npc.npc_data.display_name = entry.name
-		npc.npc_data.npc_type = "Town"
-		npc.update_home_position(house_node.global_position)
-		recruited_npcs.append(npc.npc_data)
-		npc_homes[entry.name] = house_node
-		entry.recruited = true
+	# 2. 检查潜在 NPC 模板
+	for npc_template in town_npc_pool:
+		if npc_template["recruited"]: continue
 		
-		if UIManager:
-			UIManager.show_floating_text(entry.name + " 已入住！", npc.global_position, Color.GOLD)
+		# 检查硬性条件
+		if npc_template["condition"].call():
+			# NPC 不会瞬间出现，而是先加入“听闻-迁徙”队列
+			if not migration_queue.has(npc_template["name"]):
+				print("SettlementManager: [", npc_template["name"], "] 听闻了你的城镇，正在路上...")
+				migration_queue.append(npc_template["name"])
+				
+				# 延迟执行真实生成，模拟 NPC “走”到城镇的过程
+				_schedule_npc_arrival(npc_template, available_houses[0])
+
+func _get_available_suitable_houses() -> Array:
+	var list = []
+	for b_node in buildings:
+		var res = buildings[b_node]
+		# 只有 House 类型的建筑且未被占用才可入住
+		if res.building_name == "住宅" or res.building_name == "House":
+			var is_occupied = false
+			for home in npc_homes.values():
+				if home == b_node:
+					is_occupied = true
+					break
+			if not is_occupied:
+				list.append(b_node)
+	return list
+
+func _schedule_npc_arrival(template: Dictionary, target_house: Node2D) -> void:
+	# 模拟几天后的迁入 (这里用 15 秒演示)
+	await get_tree().create_timer(15.0).timeout
+	
+	# 双重检查：如果期间已被招募，则取消
+	if template["recruited"]: return
+	
+	# 寻找城镇入口 (寻找合法的地面生成点)
+	var dir = 1 if randf() > 0.5 else -1
+	var spawn_x = get_settlement_center().x + (1600 * dir)
+	var spawn_pos = _find_valid_ground_pos(spawn_x, get_settlement_center().y)
+	
+	# 确保不在屏幕上，防止“凭空出现”的突兀感
+	var try_count = 0
+	while _is_pos_on_screen(spawn_pos) and try_count < 8:
+		spawn_x += 600 * dir
+		spawn_pos = _find_valid_ground_pos(spawn_x, get_settlement_center().y)
+		try_count += 1
+	
+	var scene = load(template["scene"])
+	if scene:
+		var npc = scene.instantiate()
+		npc.global_position = spawn_pos
+		
+		# 加入场景
+		get_tree().current_scene.add_child(npc)
+		template["recruited"] = true
+		migration_queue.erase(template["name"])
+		
+		# 分配住所
+		if npc.has_method("sync_data_to_blackboard"):
+			npc_homes[template["name"]] = target_house
+			print("SettlementManager: [", template["name"], "] 已抵达！入住: ", target_house.name)
+			
+			# 设置 AI 状态
+			if npc.bt_player and npc.bt_player.blackboard:
+				npc.bt_player.blackboard.set_var("home_pos", target_house.global_position)
+				# 可以在这里触发一个 "MoveToHome" 行为
+				
+func _find_valid_ground_pos(target_x: float, search_start_y: float) -> Vector2:
+	# 垂直射线寻找地面
+	var space_state = get_tree().root.get_world_2d().direct_space_state
+	# 从高空向下扫描
+	var query = PhysicsRayQueryParameters2D.create(Vector2(target_x, search_start_y - 500), Vector2(target_x, search_start_y + 500))
+	query.collision_mask = LayerManager.LAYER_WORLD_0 # World Layer
+	
+	var result = space_state.intersect_ray(query)
+	if result:
+		return result.position - Vector2(0, 32) # 地面之上
+	
+	# 如果找不到，返回一个相对安全的备份位置
+	return Vector2(target_x, search_start_y)
+
+func _is_pos_on_screen(pos: Vector2) -> bool:
+	var viewport = get_viewport()
+	if not viewport: return false
+	var camera = viewport.get_camera_2d()
+	if not camera: return false
+	
+	var screen_center = camera.get_screen_center_position()
+	var screen_size = viewport.get_visible_rect().size / camera.zoom
+	var view_rect = Rect2(screen_center - screen_size / 2.0, screen_size)
+	return view_rect.grow(250.0).has_point(pos)
 
 func _recalculate_stats() -> void:
 	stats.population_max = 5 # 重置为基础值

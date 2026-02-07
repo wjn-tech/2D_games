@@ -5,32 +5,45 @@ extends Node
 
 signal lifespan_depleted(character_data: CharacterData)
 
-# 游戏内一天的秒数（默认 60 秒一天）
-@export var seconds_per_day: float = 60.0 
-# 每年多少天（默认 30 天一年）
+# 游戏内一天的秒数
+# 根据需求：一昼夜 (24h) = 10分钟 (600s)
+@export var seconds_per_day: float = 600.0 
+# 每年多少天 (应与 Chronometer.DAYS_PER_YEAR 一致)
 @export var days_per_year: int = 30
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	# 也可以连接 Chronometer 信号来保持绝对同步
+	if Chronometer:
+		Chronometer.day_passed.connect(_on_calendar_day_passed)
 
 func _process(delta: float) -> void:
 	if not GameState.player_data: return
+	if Chronometer and Chronometer.is_paused: return
 	
-	# 自然衰老：每秒流逝的时间转换为年
-	# 1秒 = 1/seconds_per_day 天 = 1/(seconds_per_day * days_per_year) 年
+	# 这里依然保留 _process 以支持平滑增长和可能的加速消耗逻辑
+	# 1秒经过的人生比例 = (1/seconds_per_day) 天 = 1/(seconds_per_day * days_per_year) 年
 	var years_passed = delta / (seconds_per_day * days_per_year)
+	
+	# 注意：如果 Chronometer 有 time_scale，这里也应该乘上
+	if Chronometer:
+		years_passed *= Chronometer.time_scale
+		
 	consume_lifespan(GameState.player_data, years_passed)
 	
-	# 子嗣成长逻辑
+	# 子嗣成长逻辑 (假设 10 分钟成年，即 1 个游戏日)
 	for child in GameState.player_data.children:
 		if not child.is_adult:
-			# 子嗣成长速度可以比寿命流逝快，这里假设 10 分钟成年
 			child.growth_progress += delta / 600.0 
 			if child.growth_progress >= 1.0:
 				child.growth_progress = 1.0
 				child.is_adult = true
-				child.current_age = 18.0 # 成年后设定为 18 岁
+				child.current_age = 18.0 
 				print("LifespanManager: 子嗣已成年: ", child.display_name)
+
+func _on_calendar_day_passed(day: int, year: int) -> void:
+	# 仅用于日志或触发每日结算
+	print("LifespanManager: 历法更新, 第 %d 天, 当前玩家年龄: %.2f" % [day, GameState.player_data.current_age])
 
 ## 消耗寿命
 func consume_lifespan(data: CharacterData, amount_years: float) -> void:
@@ -44,9 +57,8 @@ func consume_lifespan(data: CharacterData, amount_years: float) -> void:
 		lifespan_depleted.emit(data)
 		# 触发全局死亡事件
 		if data == GameState.player_data:
-			# 发出全局死亡警报信号 (EventBus)
-			if EventBus:
-				EventBus.emit_signal("player_health_changed", 0, data.max_health)
+			if EventBus and EventBus.has_signal("player_health_changed"):
+				EventBus.player_health_changed.emit(0, data.max_health)
 			GameManager.change_state(GameManager.State.REINCARNATING)
 
 ## 环境触发的意外死亡（如掉落虚空、极寒天气）

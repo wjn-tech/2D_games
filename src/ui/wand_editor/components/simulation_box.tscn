@@ -1,0 +1,58 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/ui/wand_editor/components/simulation_box.gd" id="1_script"]
+
+[node name="SimulationBox" type="PanelContainer"]
+custom_minimum_size = Vector2(300, 300)
+script = ExtResource("1_script")
+
+[node name="VBox" type="VBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Header" type="HBoxContainer" parent="VBox"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBox/Header"]
+layout_mode = 2
+text = "Simulation Preview"
+
+[node name="Spacer" type="Control" parent="VBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="BtnClose" type="Button" parent="VBox/Header"]
+layout_mode = 2
+text = "X"
+
+[node name="ViewportContainer" type="SubViewportContainer" parent="VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+stretch = true
+
+[node name="SubViewport" type="SubViewport" parent="VBox/ViewportContainer"]
+handle_input_locally = false
+size = Vector2(2, 2)
+render_target_update_mode = 4
+
+[node name="Arena" type="Node2D" parent="VBox/ViewportContainer/SubViewport"]
+
+[node name="BG" type="ColorRect" parent="VBox/ViewportContainer/SubViewport/Arena"]
+custom_minimum_size = Vector2(1000, 1000)
+offset_left = -500.0
+offset_top = -500.0
+offset_right = 500.0
+offset_bottom = 500.0
+color = Color(0.1, 0.1, 0.1, 1)
+
+[node name="SpawnPoint" type="Marker2D" parent="VBox/ViewportContainer/SubViewport/Arena"]
+
+[node name="Camera2D" type="Camera2D" parent="VBox/ViewportContainer/SubViewport/Arena"]
+zoom = Vector2(0.8, 0.8)
+
+[node name="Controls" type="HBoxContainer" parent="VBox"]
+layout_mode = 2
+
+[node name="BtnRun" type="Button" parent="VBox/Controls"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Review / Cast"

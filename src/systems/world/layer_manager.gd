@@ -82,7 +82,7 @@ func _update_entity_collision(entity: Node2D, layer_index: int) -> void:
 	# 设置实体的图层（它是被撞体，例如 NPC 被玩家撞）
 	if entity.is_in_group("player"):
 		entity.collision_layer = LAYER_PLAYER
-	elif entity.is_in_group("npc"):
+	elif entity.is_in_group("npcs"):
 		entity.collision_layer = LAYER_NPC
 	
 	# 设置实体的遮罩（它是主动撞击体，例如 撞地表）
@@ -90,7 +90,7 @@ func _update_entity_collision(entity: Node2D, layer_index: int) -> void:
 	var mask = world_bit | LAYER_INTERACTION
 	if entity.is_in_group("player"):
 		mask |= LAYER_NPC # 玩家能撞 NPC
-	else:
+	elif entity.is_in_group("npcs"):
 		mask |= LAYER_PLAYER # NPC 能撞玩家
 		
 	entity.collision_mask = mask

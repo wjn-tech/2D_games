@@ -1,0 +1,25 @@
+# Tasks: Implement Wand Decoration
+
+-   [x] **Core**: Implement `WandTextureGenerator` utility. <!-- id: 1 -->
+    -   Create `src/systems/magic/wand_texture_generator.gd`.
+    -   Implement `generate(wand_data) -> ImageTexture`.
+-   [x] **Editor**: Update `WandVisualGrid` for 16x16 Pixel Art. <!-- id: 2 -->
+    -   Change default resolution to 16.
+    -   Update `VisualGrid` to use `wand_visual_color` from dragged items instead of just showing icons.
+    -   Add "Eraser" tool or Right-Click to clear pixel.
+-   [x] **Editor**: Add Preview & Save. <!-- id: 3 -->
+    -   Add a preview box in `WandEditor` showing the `1x` scale and `4x` scale result of `WandTextureGenerator`.
+    -   Ensure `WandData` saves the grid correctly.
+-   [x] **Player**: Implement new Holding Mechanic. <!-- id: 4 -->
+    -   Add `WeaponPivot` (Marker2D) to Player scene at `(0,0)` (or user defined center).
+    -   Add `WandSprite` (Sprite2D) as child. Set `offset` to `(8, 0)` (assuming 16px wide, half-width offset?)
+        -   *Correction*: User said "Tail Center" is at Player Center. Tail is `x=0`. Center is `y=8`.
+        -   If Texture is 16x16. `offset` should be `(8, 0)` if origin is center, but we want origin at Tail `(0, 8)`.
+        -   So Texture Origin (0,0) is Top-Left. Tail Center is (0, 8).
+        -   We want (0, 8) to be at Player Position.
+        -   So Sprite `offset` should be `(8, 0)` relative to its own center? No.
+        -   Godot `Sprite2D.centered = true` means (8,8) is at node position.
+        -   We want (0,8) at node position. So `offset = Vector2(8, 0)` (shifts texture right by 8).
+    -   Update `player.gd` to rotate `WeaponPivot`.
+-   [x] **Logic**: Update Projectile Spawn Point. <!-- id: 5 -->
+    -   Calculate global spawn point based on `PlayerPos + Vector(16, 0).rotated(angle)`.

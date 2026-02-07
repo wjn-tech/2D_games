@@ -9,11 +9,17 @@ const MINUTES_PER_HOUR = 60
 const HOURS_PER_DAY = 24
 const DAYS_PER_YEAR = 30 # 每个季度/年设为 30 天，简化模拟
 
+# 时间比例设置
+# 要求：一昼夜 (24h) = 10分钟 (600s)
+# 1440 游戏分钟 / 600 真实秒 = 2.4 游戏分钟/秒
+const GAME_MINUTES_PER_REAL_SECOND = 2.4
+
 # 状态变量
 @export var is_paused: bool = false
 @export var time_scale: float = 1.0 # 时间加速倍率
 
 var total_seconds: float = 0.0
+var fractional_minutes: float = 0.0
 var current_minute: int = 0
 var current_hour: int = 8 # 默认早上 8 点开始
 var current_day: int = 1
@@ -42,20 +48,22 @@ func _process(delta: float) -> void:
 	_update_calendar(frame_seconds)
 
 func _update_calendar(delta: float) -> void:
-	# 这里假设 1 真实秒 = 1 游戏分钟，加速测试
-	# 如果要更写实，可以调整这个比例
-	var minutes_to_add = delta 
+	# 计算本帧增加的游戏分钟
+	var minutes_to_add = delta * GAME_MINUTES_PER_REAL_SECOND
+	fractional_minutes += minutes_to_add
 	
-	var old_minute = current_minute
-	current_minute += int(minutes_to_add)
-	
-	if current_minute >= MINUTES_PER_HOUR:
-		var extra_hours = floori(current_minute / float(MINUTES_PER_HOUR))
-		current_minute %= MINUTES_PER_HOUR
-		_on_hour_passed(extra_hours)
-	
-	if int(old_minute) != current_minute:
-		minute_passed.emit(current_minute, current_hour)
+	# 提取整数分钟
+	var passed_minutes = floori(fractional_minutes)
+	if passed_minutes > 0:
+		fractional_minutes -= passed_minutes
+		
+		for i in range(passed_minutes):
+			current_minute += 1
+			if current_minute >= MINUTES_PER_HOUR:
+				current_minute = 0
+				_on_hour_passed(1)
+			
+			minute_passed.emit(current_minute, current_hour)
 
 func _on_hour_passed(hours: int) -> void:
 	current_hour += hours

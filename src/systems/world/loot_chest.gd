@@ -20,8 +20,10 @@ func load_custom_data(data: Dictionary) -> void:
 	if data.has("size"):
 		var size = data["size"] # Vector2i(match_w, match_h)
 		# 如果是由蓝图生成的装饰性宝箱，隐藏原始精灵图
-		if has_node("Sprite2D"):
-			$Sprite2D.visible = false
+		var v = get_node_or_null("MinimalistEntity")
+		if not v: v = get_node_or_null("Sprite2D") # Fallback
+		if v: v.visible = false
+		
 		# 调整碰撞区域以覆盖对应的瓦片区域 (宽度 match_w * 16, 高度 match_h * 16)
 		if has_node("CollisionShape2D"):
 			var shape = $CollisionShape2D.shape
@@ -37,8 +39,15 @@ func interact() -> void:
 	if is_opened: return
 	
 	is_opened = true
-	if has_node("Sprite2D"):
+	
+	var visual = get_node_or_null("MinimalistEntity")
+	if visual:
+		# Open visual state (e.g. darker or alpha change)
+		if "color" in visual: visual.color = visual.color.darkened(0.5)
+		if visual.has_method("queue_redraw"): visual.queue_redraw()
+	elif has_node("Sprite2D"):
 		$Sprite2D.modulate = Color(0.5, 0.5, 0.5) 
+		
 	_spawn_loot()
 	print("Chest: 宝箱已打开！")
 

@@ -1,7 +1,7 @@
 [gd_resource type="BehaviorTree" load_steps=8 format=3 uid="uid://e78it36wq7bq"]
 
-[ext_resource type="Script" path="res://src/systems/npc/ai/tasks/bt_chase_target.gd" id="1_vul3n"]
-[ext_resource type="Script" path="res://src/systems/npc/ai/tasks/bt_perform_attack.gd" id="2_7pcbk"]
+[ext_resource type="Script" uid="uid://bi8ylm1qinv5f" path="res://src/systems/npc/ai/tasks/bt_chase_target.gd" id="1_vul3n"]
+[ext_resource type="Script" uid="uid://dnasviabum2r5" path="res://src/systems/npc/ai/tasks/bt_perform_attack.gd" id="2_7pcbk"]
 
 [sub_resource type="BlackboardPlan" id="BlackboardPlan_tlumu"]
 

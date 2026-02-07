@@ -1,0 +1,37 @@
+[gd_scene load_steps=3 format=3 uid="uid://logicslot"]
+
+[ext_resource type="Script" path="res://src/ui/wand_editor/components/logic_slot.gd" id="1_script"]
+[ext_resource type="Texture2D" uid="uid://iconplaceholder" path="res://icon.svg" id="2_icon"]
+
+[node name="LogicSlot" type="PanelContainer"]
+offset_right = 200.0
+offset_bottom = 60.0
+script = ExtResource("1_script")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_right = 10
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+alignment = 0
+
+[node name="Icon" type="TextureRect" parent="MarginContainer/HBoxContainer"]
+custom_minimum_size = Vector2(32, 32)
+layout_mode = 2
+texture = ExtResource("2_icon")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Label" type="Label" parent="MarginContainer/HBoxContainer"]
+layout_mode = 2
+text = "Empty Slot"
+
+[node name="ConnectionLine" type="ColorRect" parent="."]
+visible = false
+custom_minimum_size = Vector2(4, 20)
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 8
+color = Color(0, 1, 0, 1)

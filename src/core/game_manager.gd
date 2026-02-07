@@ -63,22 +63,47 @@ func change_state(new_state: State) -> void:
 					elif world_gen.has_method("generate_world"):
 						world_gen.generate_world()
 					
-					# 设置玩家初始位置
+					# 设置玩家初始位置 (优先读取存档位置)
 					var player = get_tree().current_scene.find_child("Player", true, false)
 					if player:
 						var spawn_pos = Vector2.ZERO
-						if world_gen.has_method("get_spawn_position"):
+						if GameState.has_meta("load_spawn_pos"):
+							spawn_pos = GameState.get_meta("load_spawn_pos")
+							GameState.remove_meta("load_spawn_pos")
+							print("GameManager: 从存档恢复玩家位置: ", spawn_pos)
+						elif world_gen.has_method("get_spawn_position"):
 							spawn_pos = world_gen.get_spawn_position()
 						else:
-							# 针对无限地图的起始坐标 (Fallback)
 							spawn_pos = Vector2(0, 300 * 16) 
 						
-						# 预加载玩家所在位置的区块，防止开局掉落
+						# 预加载玩家所在位置
 						if InfiniteChunkManager:
 							InfiniteChunkManager.update_player_vicinity(spawn_pos)
 							
 						player.global_position = spawn_pos
-						print("GameManager: 玩家已生成在: ", player.global_position)
+					
+					# 恢复已保存的建筑
+					if GameState.has_meta("load_buildings"):
+						var buildings_data = GameState.get_meta("load_buildings")
+						GameState.remove_meta("load_buildings")
+						print("GameManager: 恢复 %d 个建筑..." % buildings_data.size())
+						
+						var b_container = get_tree().get_first_node_in_group("buildings_container")
+						# 清空可能由生成器产生的预置建筑（如果有）
+						if b_container:
+							for child in b_container.get_children():
+								child.queue_free()
+								
+							for b_info in buildings_data:
+								if not FileAccess.file_exists(b_info.scene_path): continue
+								
+								var scene = load(b_info.scene_path)
+								if scene:
+									var instance = scene.instantiate()
+									b_container.add_child(instance)
+									instance.global_position = b_info.position
+									instance.rotation = b_info.rotation
+									# 可以在此恢复自定义数据
 		State.PAUSED:
 			get_tree().paused = true
 			UIManager.open_window("PauseMenu", "res://scenes/ui/PauseMenu.tscn")
@@ -93,6 +118,14 @@ func start_new_game() -> void:
 	# 初始化游戏数据
 	GameState.player_data = CharacterData.new()
 	GameState.player_data.display_name = "新冒险者"
+	
+	# 发出信号通知所有引用玩家数据的组件更新 (例如 HUD 和 Player 节点)
+	if EventBus:
+		EventBus.player_data_refreshed.emit()
+	
+	var player = get_tree().get_first_node_in_group("player")
+	if player and player.has_method("refresh_data"):
+		player.refresh_data()
 	
 	# 重置天气与光照，防止残留黑色滤镜
 	if WeatherManager:

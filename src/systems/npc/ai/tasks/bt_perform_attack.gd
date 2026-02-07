@@ -22,8 +22,17 @@ func _tick(delta: float) -> Status:
 		return FAILURE
 	
 	# 执行攻击逻辑
-	if npc.animator and npc.animator.sprite_frames.has_animation(animation_name):
-		npc.animator.play(animation_name)
+	# Minimalist Visual (Bump)
+	var min_vis = npc.get_node_or_null("MinimalistEntity")
+	if min_vis:
+		var dir = (target.global_position - npc.global_position).normalized()
+		var tw = npc.create_tween()
+		var start_pos = min_vis.position
+		tw.tween_property(min_vis, "position", start_pos + dir * 8.0, 0.1)
+		tw.tween_property(min_vis, "position", start_pos, 0.1)
+
+	# if npc.animator and npc.animator.sprite_frames.has_animation(animation_name):
+	# 	npc.animator.play(animation_name)
 	
 	if target.has_method("take_damage"):
 		target.take_damage(damage)

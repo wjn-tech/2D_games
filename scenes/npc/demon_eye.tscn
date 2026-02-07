@@ -16,7 +16,6 @@ health = 60.0
 npc_data = SubResource("Resource_eye")
 speed = 150.0
 ai_type = 1 # FLYER
-modulate = Color(1.0, 0.3, 0.3, 1)
 
 [node name="Combat" parent="LimboHSM" index="1"]
 state_behavior_tree = ExtResource("3_combat")

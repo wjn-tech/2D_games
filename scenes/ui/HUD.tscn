@@ -27,28 +27,34 @@ theme_override_constants/margin_top = 20
 theme_override_constants/margin_right = 20
 theme_override_constants/margin_bottom = 20
 
-[node name="TopLeft" type="VBoxContainer" parent="MarginContainer"]
-layout_mode = 2
-size_flags_horizontal = 0
-size_flags_vertical = 0
-theme_override_constants/separation = 12
-
-[node name="WorldInfoUI" parent="MarginContainer/TopLeft" instance=ExtResource("3_world")]
-layout_mode = 2
-
-[node name="AttributeDisplay" parent="MarginContainer/TopLeft" instance=ExtResource("2_atyv1")]
-layout_mode = 2
-
 [node name="TopRight" type="VBoxContainer" parent="MarginContainer"]
 layout_mode = 2
 size_flags_horizontal = 8
 size_flags_vertical = 0
+theme_override_constants/separation = 12
+
+[node name="WorldInfoUI" parent="MarginContainer/TopRight" instance=ExtResource("3_world")]
+layout_mode = 2
+
+[node name="AttributeDisplay" parent="MarginContainer/TopRight" instance=ExtResource("2_atyv1")]
+layout_mode = 2
 
 [node name="TimeLabel" type="Label" parent="MarginContainer/TopRight"]
 layout_mode = 2
-text = "时间: 00:00"
+text = "00:00"
 horizontal_alignment = 2
 
 [node name="QuestList" type="VBoxContainer" parent="MarginContainer/TopRight"]
 layout_mode = 2
 theme_override_constants/separation = 5
+
+[node name="DamageOverlay" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(1, 0, 0, 0.431373)
+

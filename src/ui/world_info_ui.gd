@@ -69,22 +69,28 @@ func _update_tile_info() -> void:
 	var tile_data = active_layer.get_cell_tile_data(map_pos)
 	
 	if tile_data:
-		# 获取元数据或根据坐标判断名称
-		var atlas_coords = active_layer.get_cell_atlas_coords(map_pos)
-		var source_id = active_layer.get_cell_source_id(map_pos)
+		# 优先使用 DiggingManager 的逻辑
 		var tile_name = "Unknown Tile"
+		var digging_mgr = get_tree().get_first_node_in_group("digging_manager")
 		
-		# 基于坐标的简单名称判断 (对应 WorldGenerator 中的定义)
-		if source_id == 3: # grass_dirt_source_id
-			tile_name = "Grass"
-		elif source_id == 1:
-			if atlas_coords == Vector2i(36, 35): tile_name = "Dirt"
-			elif atlas_coords == Vector2i(52, 52): tile_name = "Stone"
-			elif atlas_coords == Vector2i(53, 21): tile_name = "Hard Rock"
-			elif atlas_coords == Vector2i(38, 35): tile_name = "Sand"
-			elif atlas_coords == Vector2i(38, 36): tile_name = "Desert Dirt"
-			elif atlas_coords == Vector2i(49, 36): tile_name = "Snowy Grass"
-			elif atlas_coords == Vector2i(50, 36): tile_name = "Tundra Dirt"
+		# 尝试从 DiggingManager 实例或全局名称查找
+		if not digging_mgr and has_node("/root/DiggingManager"):
+			digging_mgr = get_node("/root/DiggingManager")
+		elif not digging_mgr:
+			# 尝试在场景中查找
+			digging_mgr = get_tree().root.find_child("DiggingManager", true, false)
+			
+		if digging_mgr and digging_mgr.has_method("get_tile_display_name"):
+			tile_name = digging_mgr.get_tile_display_name(active_layer, map_pos)
+		else:
+			# 回退逻辑 (如果找不到 DiggingManager)
+			var atlas_coords = active_layer.get_cell_atlas_coords(map_pos)
+			var source_id = active_layer.get_cell_source_id(map_pos)
+			
+			if source_id == 3: tile_name = "Grass"
+			elif source_id == 1:
+				if atlas_coords == Vector2i(36, 35): tile_name = "Dirt"
+				elif atlas_coords == Vector2i(52, 52): tile_name = "Stone"
 		
 		tile_label.text = "Tile: " + tile_name
 		tile_label.visible = true

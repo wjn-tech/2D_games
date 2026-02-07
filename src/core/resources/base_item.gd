@@ -15,3 +15,10 @@ class_name BaseItem
 @export var damage_modifier: float = 0.0
 @export var element_type: String = "None" # Fire, Ice, Lightning
 @export var durability: float = 100.0
+
+# 魔杖合成属性
+@export_group("Wand Crafting")
+@export var is_wand_material: bool = false
+@export var wand_visual_color: Color = Color.WHITE
+@export var wand_logic_type: String = "" # "trigger", "modifier_damage", "splitter", "action_projectile"
+@export var wand_logic_value: Dictionary = {} # { "amount": 10 }

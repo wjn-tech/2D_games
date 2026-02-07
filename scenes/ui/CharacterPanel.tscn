@@ -20,17 +20,13 @@ content_margin_right = 15.0
 content_margin_bottom = 15.0
 
 [node name="CharacterPanel" type="PanelContainer"]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -400.0
-offset_top = -250.0
-offset_right = 400.0
-offset_bottom = 250.0
-grow_horizontal = 2
-grow_vertical = 2
+anchors_preset = 0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = 820.0
+offset_bottom = 520.0
+grow_horizontal = 1
+grow_vertical = 1
 theme_override_styles/panel = SubResource("StyleBoxFlat_bg")
 script = ExtResource("1_script")
 
@@ -161,6 +157,7 @@ theme_override_font_sizes/font_size = 18
 text = "物品栏"
 horizontal_alignment = 1
 
-[node name="InventoryWindow" parent="HBoxContainer/InventorySection" instance=ExtResource("2_inv")]
+[node name="BackpackPlaceholder" type="Control" parent="HBoxContainer/InventorySection"]
 layout_mode = 2
 size_flags_vertical = 3
+mouse_filter = 1

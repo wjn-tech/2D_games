@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3 uid="uid://backpackpanel001"]
+
+[ext_resource type="Script" path="res://src/systems/inventory/ui/inventory_container.gd" id="1_script"]
+
+[node name="BackpackGrid" type="GridContainer"]
+columns = 5
+script = ExtResource("1_script")

@@ -8,6 +8,7 @@ class_name BTRandomWander
 @export var radius: float = 300.0
 @export var min_wait_time: float = 2.0
 @export var max_wait_time: float = 5.0
+@export var stay_near_home: bool = false # 如果为真，则在 spawn_pos 附近徘徊而不是当前位置
 
 var _target_pos: Vector2
 var _timer: float = 0.0
@@ -29,15 +30,32 @@ func _tick(delta: float) -> Status:
 			
 		return RUNNING
 	
-	# 如果正在等待
+	# 计时器
 	if _timer > 0:
 		_timer -= delta
-		if _timer <= 0:
-			# 等待结束，寻找新目标
-			return SUCCESS #本次漫游周期完成
 		return RUNNING
 		
-	return SUCCESS
+	# 自动根据 ai_type 判断是否留在原地附近
+	var stay_near = stay_near_home
+	if blackboard.has_var("ai_type"):
+		var type = blackboard.get_var("ai_type")
+		if type == 3: # PASSIVE (Merchant)
+			stay_near = true
+
+	# 选择新目标
+	var center = npc.global_position
+	if stay_near:
+		center = npc.spawn_position
+		
+	var angle = randf() * TAU
+	var dist = randf() * radius
+	var offset = Vector2(cos(angle), sin(angle)) * dist
+	
+	# 对于 2D 平台游戏，主要在水平方向游荡
+	offset.y *= 0.2
+	
+	_target_pos = center + offset
+	return RUNNING
 
 func _enter() -> void:
 	print("[BTRandomWander] Task Entered.")

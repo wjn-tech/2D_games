@@ -1,6 +1,6 @@
-[gd_resource type="BehaviorTree" load_steps=3 format=3]
+[gd_resource type="BehaviorTree" load_steps=3 format=3 uid="uid://by0e1t6nfd8h5"]
 
-[ext_resource type="Script" path="res://src/systems/npc/ai/tasks/bt_slime_jump.gd" id="1_tasks"]
+[ext_resource type="Script" uid="uid://crml0nbjd7gcn" path="res://src/systems/npc/ai/tasks/bt_slime_jump.gd" id="1_tasks"]
 
 [sub_resource type="BTAction" id="BTAction_slime"]
 script = ExtResource("1_tasks")

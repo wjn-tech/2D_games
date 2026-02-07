@@ -2,22 +2,23 @@
 
 [ext_resource type="PackedScene" uid="uid://dxfn1jff7u766" path="res://NPC.tscn" id="1_base"]
 [ext_resource type="Script" uid="uid://cufim4ppwao8c" path="res://src/systems/lineage/character_data.gd" id="2_data"]
+[ext_resource type="Script" path="res://src/systems/npc/slime_npc.gd" id="2_script"]
 [ext_resource type="BehaviorTree" uid="uid://crrtomg4dk120" path="res://src/systems/npc/ai/bt/idle_wander.tres" id="3_idle"]
 [ext_resource type="BehaviorTree" path="res://src/systems/npc/ai/bt/slime_chase.tres" id="4_combat"]
 
 [sub_resource type="Resource" id="Resource_slime"]
 script = ExtResource("2_data")
-display_name = "ʷ��ķ"
+display_name = "史莱姆"
 alignment = "Hostile"
 npc_type = "Hostile"
 max_health = 20.0
 health = 20.0
 
 [node name="Slime" instance=ExtResource("1_base")]
+script = ExtResource("2_script")
 npc_data = SubResource("Resource_slime")
 speed = 100.0
 ai_type = 0
-modulate = Color(0.2, 0.8, 0.4, 1)
 
 [node name="Idle" parent="LimboHSM" index="0"]
 state_behavior_tree = ExtResource("3_idle")

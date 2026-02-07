@@ -62,6 +62,11 @@ func remove_item(item_id: String, amount: int) -> bool:
 	inventory_changed.emit()
 	return true
 
+func get_item_at(index: int) -> BaseItem:
+	if index >= 0 and index < slots.size():
+		return slots[index].item_data
+	return null
+
 func get_item_count(item_id: String) -> int:
 	var count = 0
 	for slot in slots:

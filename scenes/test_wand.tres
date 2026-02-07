@@ -1,0 +1,66 @@
+[gd_resource type="Resource" script_class="WandData" load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://src/systems/magic/wand_embryo.gd" id="1_1jdx5"]
+[ext_resource type="Script" path="res://src/systems/magic/wand_data.gd" id="2_7ep3c"]
+[ext_resource type="Script" path="res://src/core/resources/base_item.gd" id="3_lyvff"]
+
+[sub_resource type="Resource" id="Resource_ybxla"]
+script = ExtResource("1_1jdx5")
+
+[sub_resource type="Resource" id="Resource_2loie"]
+script = ExtResource("3_lyvff")
+id = "test_block"
+wand_visual_color = Color(0, 1, 1, 1)
+
+[resource]
+script = ExtResource("2_7ep3c")
+embryo = SubResource("Resource_ybxla")
+visual_grid = {
+Vector2i(1, 1): SubResource("Resource_2loie"),
+Vector2i(2, 2): SubResource("Resource_2loie")
+}
+logic_nodes = [{
+"display_name": "Fire Core",
+"id": &"49873_165",
+"position": Vector2(1472, 512),
+"type": "modifier_element",
+"value": {
+"element": "fire"
+}
+}, {
+"display_name": "Blaster",
+"id": &"31404_425",
+"position": Vector2(1664, 512),
+"type": "action_projectile",
+"value": {}
+}, {
+"display_name": "Source",
+"id": &"13909_651",
+"position": Vector2(960, 512),
+"type": "generator",
+"value": {}
+}, {
+"display_name": "Trigger (Impact)",
+"id": &"25961_407",
+"position": Vector2(1280, 512),
+"type": "trigger",
+"value": {
+"trigger_type": "collision"
+}
+}]
+logic_connections = [{
+"from_id": &"49873_165",
+"from_port": 0,
+"to_id": &"31404_425",
+"to_port": 0
+}, {
+"from_id": &"13909_651",
+"from_port": 0,
+"to_id": &"25961_407",
+"to_port": 0
+}, {
+"from_id": &"25961_407",
+"from_port": 0,
+"to_id": &"49873_165",
+"to_port": 0
+}]

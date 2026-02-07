@@ -3,6 +3,7 @@
 [ext_resource type="Script" uid="uid://bmew4014es7ah" path="res://scenes/ui/main_menu.gd" id="1_script"]
 [ext_resource type="Theme" uid="uid://c0ufmijcuxrpe" path="res://assets/ui/main_theme.tres" id="2_iwbf0"]
 [ext_resource type="Texture2D" uid="uid://ddm0of6usu8oy" path="res://icon.svg" id="3_2ysvc"]
+[ext_resource type="PackedScene" path="res://scenes/ui/menu/components/DynamicBackground.tscn" id="4_bg"]
 
 [node name="MainMenu" type="Control"]
 layout_mode = 3
@@ -55,18 +56,17 @@ layout_mode = 2
 theme = ExtResource("2_iwbf0")
 text = "加载存档"
 
+[node name="SettingsButton" type="Button" parent="CenterContainer/VBoxContainer"]
+custom_minimum_size = Vector2(200, 50)
+layout_mode = 2
+theme = ExtResource("2_iwbf0")
+text = "设置选项"
+
 [node name="ExitButton" type="Button" parent="CenterContainer/VBoxContainer"]
 custom_minimum_size = Vector2(200, 50)
 layout_mode = 2
 theme = ExtResource("2_iwbf0")
 text = "退出游戏"
 
-[node name="Background" type="TextureRect" parent="."]
+[node name="DynamicBackground" parent="." instance=ExtResource("4_bg")]
 z_index = -10
-layout_mode = 1
-anchors_preset = -1
-anchor_right = 1.0
-anchor_bottom = 1.0
-mouse_filter = 2
-texture = ExtResource("3_2ysvc")
-expand_mode = 2

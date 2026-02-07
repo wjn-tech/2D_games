@@ -16,28 +16,45 @@ class_name WorldGenerator
 @export var chest_scene: PackedScene = preload("res://scenes/world/chest.tscn")
 
 @export_group("Tile Settings")
-## 瓦片源 ID (通常为 0 或 1)
-@export var tile_source_id: int = 1
-## 泥土草方块源 ID (使用带有有效碰撞的 Source 3)
-@export var grass_dirt_source_id: int = 3
-## 泥土草方块瓦片的 Atlas 坐标 (经确认为 Source 3 中的 2,0)
-@export var grass_tile: Vector2i = Vector2i(2, 0)
-## 泥土瓦片的 Atlas 坐标
-@export var dirt_tile: Vector2i = Vector2i(36, 35)
-## 岩石瓦片的 Atlas 坐标
-@export var stone_tile: Vector2i = Vector2i(52, 52)
-## 深层硬岩的 Atlas 坐标
-@export var hard_rock_tile: Vector2i = Vector2i(53, 21)
+## 瓦片源 ID (Minimalist Palette uses ID 0)
+@export var tile_source_id: int = 0
+## 泥土草方块源 ID (Minimalist Palette uses ID 0)
+@export var grass_dirt_source_id: int = 0
+## 泥土草方块瓦片的 Atlas 坐标 (Grass 1,0)
+@export var grass_tile: Vector2i = Vector2i(1, 0)
+## 泥土瓦片的 Atlas 坐标 (Dirt 0,0)
+@export var dirt_tile: Vector2i = Vector2i(0, 0)
+## 岩石瓦片的 Atlas 坐标 (Stone 2,0)
+@export var stone_tile: Vector2i = Vector2i(2, 0)
+## 深层硬岩的 Atlas 坐标 (HardRock 1,3)
+@export var hard_rock_tile: Vector2i = Vector2i(1, 3)
+
+@export_group("Mineral Settings")
+## 铁矿石 Atlas 坐标 (0, 4)
+@export var iron_tile: Vector2i = Vector2i(0, 4)
+## 铜矿石 Atlas 坐标 (1, 4)
+@export var copper_tile: Vector2i = Vector2i(1, 4)
+## 魔力水晶 Atlas 坐标 (2, 4)
+@export var magic_crystal_tile: Vector2i = Vector2i(2, 4)
+## 法杖核心 Atlas 坐标 (3, 4)
+@export var staff_core_tile: Vector2i = Vector2i(3, 4)
+## 魔法加速石 Atlas 坐标 (0, 5)
+@export var magic_speed_stone_tile: Vector2i = Vector2i(0, 5)
+
+## 基础矿物噪声频率
+@export var mineral_noise_freq: float = 0.08
 
 @export_group("Tree Settings")
 ## 树木瓦片源 ID
-@export var tree_source_id: int = 2
-## 树根起始瓦片 (1x3 区域的左侧)
-@export var tree_root_origin: Vector2i = Vector2i(0, 4)
-## 树干瓦片
-@export var tree_trunk_tile: Vector2i = Vector2i(1, 4)
-## 树冠起始瓦片 (3x3 区域的左上角)
-@export var tree_canopy_origin: Vector2i = Vector2i(2, 4)
+@export var tree_source_id: int = 0
+## 树根瓦片
+@export var tree_root_left: Vector2i = Vector2i(0, 2)
+@export var tree_root_mid: Vector2i = Vector2i(1, 2)
+@export var tree_root_right: Vector2i = Vector2i(2, 2)
+## 树干瓦片 (Fixed position (1,2) for wood)
+@export var tree_trunk_tile: Vector2i = Vector2i(1, 2)
+## 树冠瓦片
+@export var tree_canopy_tile: Vector2i = Vector2i(1, 0)
 ## 树木生成概率
 @export var tree_chance: float = 0.05
 ## 树木最小间距
@@ -69,6 +86,11 @@ var noise_tunnel: FastNoiseLite = FastNoiseLite.new()
 var noise_tree_cluster: FastNoiseLite = FastNoiseLite.new() # 树木聚簇噪声
 var noise_tree_density: FastNoiseLite = FastNoiseLite.new() # 树木密度噪声
 
+# --- 矿物噪声 ---
+var noise_mineral_common: FastNoiseLite = FastNoiseLite.new()
+var noise_mineral_rare: FastNoiseLite = FastNoiseLite.new()
+var noise_mineral_legendary: FastNoiseLite = FastNoiseLite.new()
+
 # --- 生态系统 (Biomes) ---
 enum BiomeType { 
 	FOREST,     # 森林
@@ -89,61 +111,61 @@ enum BiomeType {
 
 var biome_params = {
 	BiomeType.FOREST: {
-		"color": Color(0.2, 0.5, 0.2), "amp": 60,
-		"surface_block": Vector2i(2, 0),    # 草方块
-		"sub_block": Vector2i(36, 35),      # 泥土
-		"stone_block": Vector2i(52, 52),    # 普通石头
+		"color": Color(0.2, 0.6, 0.3), "amp": 60,
+		"surface_block": Vector2i(2, 1),    # Grass
+		"sub_block": Vector2i(0, 0),      # Dirt
+		"stone_block": Vector2i(2, 0),    # Stone
 		"underground_biome": BiomeType.The_UNDERGROUND,
-		"source_id": 1
+		"source_id": 0
 	},
 	BiomeType.PLAINS: {
 		"color": Color(0.4, 0.6, 0.2), "amp": 40,
-		"surface_block": Vector2i(2, 0),    # 草方块
-		"sub_block": Vector2i(36, 35),      # 泥土
-		"stone_block": Vector2i(52, 52),    # 普通石头
+		"surface_block": Vector2i(2, 1),    # Grass
+		"sub_block": Vector2i(0, 0),      # Dirt
+		"stone_block": Vector2i(2, 0),    # Stone
 		"underground_biome": BiomeType.The_UNDERGROUND,
-		"source_id": 1
+		"source_id": 0
 	},
 	BiomeType.DESERT: {
 		"color": Color(0.8, 0.7, 0.3), "amp": 20,
-		"surface_block": Vector2i(38, 35),  # 沙子
-		"sub_block": Vector2i(38, 35),      # 沙子
-		"stone_block": Vector2i(38, 36),    # 沙岩
+		"surface_block": Vector2i(3, 0),  # Sand
+		"sub_block": Vector2i(3, 0),      # Sand
+		"stone_block": Vector2i(3, 0),    # Sandstone
 		"underground_biome": BiomeType.UNDERGROUND_DESERT,
-		"source_id": 1
+		"source_id": 0
 	},
 	BiomeType.TUNDRA: {
 		"color": Color(0.7, 0.8, 0.9), "amp": 80,
-		"surface_block": Vector2i(49, 36),  # 雪块
-		"sub_block": Vector2i(36, 35),      # 冻土
-		"stone_block": Vector2i(50, 36),    # 冰块
+		"surface_block": Vector2i(3, 1),  # Snow
+		"sub_block": Vector2i(0, 0),      # Dirt
+		"stone_block": Vector2i(2, 3),    # Ice
 		"underground_biome": BiomeType.UNDERGROUND_TUNDRA,
-		"source_id": 1
+		"source_id": 0
 	},
 	BiomeType.SWAMP: {
 		"color": Color(0.3, 0.4, 0.25), "amp": 10,
-		"surface_block": Vector2i(24, 35),  # 淤泥
-		"sub_block": Vector2i(24, 35),      # 淤泥
-		"stone_block": Vector2i(36, 35),    # 泥质岩
+		"surface_block": Vector2i(3, 2),  # Mud
+		"sub_block": Vector2i(3, 2),      # Mud
+		"stone_block": Vector2i(3, 2),    # MudStone
 		"underground_biome": BiomeType.UNDERGROUND_SWAMP,
-		"source_id": 1
+		"source_id": 0
 	},
 	# --- 地下变体定义 ---
 	BiomeType.The_UNDERGROUND: {
-		"amp": 0, "sub_block": Vector2i(36, 35), "stone_block": Vector2i(52, 52),
-		"surface_block": Vector2i(36, 35), "source_id": 1
+		"amp": 0, "sub_block": Vector2i(0, 0), "stone_block": Vector2i(2, 0),
+		"surface_block": Vector2i(0, 0), "source_id": 0
 	},
 	BiomeType.UNDERGROUND_DESERT: {
-		"amp": 0, "sub_block": Vector2i(38, 36), "stone_block": Vector2i(38, 36),
-		"surface_block": Vector2i(38, 36), "source_id": 1
+		"amp": 0, "sub_block": Vector2i(3, 0), "stone_block": Vector2i(3, 0),
+		"surface_block": Vector2i(3, 0), "source_id": 0
 	},
 	BiomeType.UNDERGROUND_TUNDRA: {
-		"amp": 0, "sub_block": Vector2i(50, 36), "stone_block": Vector2i(50, 36),
-		"surface_block": Vector2i(50, 36), "source_id": 1
+		"amp": 0, "sub_block": Vector2i(3, 1), "stone_block": Vector2i(2, 3),
+		"surface_block": Vector2i(3, 1), "source_id": 0
 	},
 	BiomeType.UNDERGROUND_SWAMP: {
-		"amp": 0, "sub_block": Vector2i(24, 35), "stone_block": Vector2i(36, 35),
-		"surface_block": Vector2i(24, 35), "source_id": 1
+		"amp": 0, "sub_block": Vector2i(3, 2), "stone_block": Vector2i(3, 2),
+		"surface_block": Vector2i(3, 2), "source_id": 0
 	}
 }
 
@@ -214,6 +236,68 @@ func _setup_noises() -> void:
 	noise_tunnel.noise_type = FastNoiseLite.TYPE_PERLIN
 	noise_tunnel.fractal_type = FastNoiseLite.FRACTAL_RIDGED 
 	noise_tunnel.fractal_octaves = 2
+
+	# 5. 矿物生成噪声
+	noise_mineral_common.seed = seed_value + 3001
+	noise_mineral_common.frequency = mineral_noise_freq
+	noise_mineral_common.noise_type = FastNoiseLite.TYPE_SIMPLEX # Simplex 更适合有机形状
+	
+	noise_mineral_rare.seed = seed_value + 3002
+	noise_mineral_rare.frequency = mineral_noise_freq * 1.5 # 稀有矿物分布更散
+	noise_mineral_rare.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	
+	noise_mineral_legendary.seed = seed_value + 3003
+	noise_mineral_legendary.frequency = mineral_noise_freq * 2.0
+	noise_mineral_legendary.noise_type = FastNoiseLite.TYPE_CELLULAR # 晶体/核心使用 Cellular 更有几何感
+	noise_mineral_legendary.cellular_jitter = 1.0
+
+func _get_mineral_at(gx: int, gy: int, depth: float) -> Vector2i:
+	# 负一表示无矿物
+	var no_mineral = Vector2i(-1, -1)
+	
+	# 阈值定义 (噪声值通常在 -1 到 1 之间)
+	# 值越高越稀有
+	
+	# Layer 0 (Shallow): Y < 100 relative to surface
+	# Layer 1 (Underground): 100 < Y < 300
+	# Layer 2 (Deep): Y > 300
+	
+	# 使用 3D 噪声采样 (Y轴缩放以产生扁平矿脉) 或 2D 采样
+	# 这里使用 2D 采样 (gx, gy)
+	
+	var n_common = noise_mineral_common.get_noise_2d(gx, gy * 1.2)
+	var n_rare = noise_mineral_rare.get_noise_2d(gx, gy * 1.5)
+	var n_legend = noise_mineral_legendary.get_noise_2d(gx, gy * 2.0)
+	
+	# --- Deep Layer (Y > 300) ---
+	if depth > 300:
+		# 魔法加速石 (Very Rare)
+		if n_legend > 0.85: return magic_speed_stone_tile
+		# 法杖核心 (Rare)
+		if n_rare > 0.75: return staff_core_tile
+		# 丰富的矿脉
+		if n_common > 0.4: return iron_tile
+		if n_common < -0.4: return magic_crystal_tile
+
+	# --- Underground Layer (100 < Y < 300) ---
+	elif depth > 100:
+		# 法杖核心 (Very Rare here)
+		if n_rare > 0.85: return staff_core_tile
+		# 魔力水晶 (Uncommon)
+		if n_rare > 0.6: return magic_crystal_tile
+		# 铁矿
+		if n_common > 0.5: return iron_tile
+		# 铜矿
+		if n_common < -0.5: return copper_tile
+
+	# --- Surface/Shallow Layer (10 < Y < 100) ---
+	elif depth > 10:
+		# 铜矿 (Common)
+		if n_common > 0.6: return copper_tile
+		# 铁矿 (Sparse)
+		if n_common < -0.7: return iron_tile
+		
+	return no_mineral
 
 ## 核心树木分布逻辑：结合噪声与生物群系
 func should_spawn_tree_at(gx: int, gy: int) -> bool:
@@ -423,8 +507,15 @@ func generate_chunk_cells(coord: Vector2i) -> Dictionary:
 					if current_b_data["surface_block"] == Vector2i(2, 0):
 						tile_data["source"] = grass_dirt_source_id
 				elif depth > 10.0:
-					# 石头
+					# 石头 (基础)
 					tile_data["atlas"] = current_b_data["stone_block"]
+					
+					# 尝试生成矿物 (仅在基础层为石头时)
+					# 注意：我们允许在沙石(Sandstone)或冰(Ice)中生成矿物，但通常矿物嵌在石头里
+					# 为了通用性，只要是"地下深处"的默认方块，都尝试替换为矿物
+					var mineral_tile = _get_mineral_at(global_x, global_y, depth)
+					if mineral_tile != Vector2i(-1, -1):
+						tile_data["atlas"] = mineral_tile
 				
 				# 强制将所有实心方块放在 Layer 0，确保玩家始终有物理碰撞
 				result[0][local_pos] = tile_data
@@ -856,11 +947,10 @@ func _spawn_tree(layer_id: int, pos: Vector2i) -> void:
 	# 1. 放置树根 (3 宽，手动放置 3 个瓦片以防 TileSet 未配置为大瓦片)
 	# pos 是草方块位置。树根在草方块上方一格 (y-1)，且水平居中
 	var root_y = pos.y - 1
+	var root_tiles = [tree_root_left, tree_root_mid, tree_root_right]
 	for dx in range(-1, 2):
 		var root_pos = Vector2i(pos.x + dx, root_y)
-		# dx+1 使得 atlas_offset x 为 0, 1, 2
-		var atlas_offset = Vector2i(dx + 1, 0) 
-		tree_layer.set_cell(root_pos, tree_source_id, tree_root_origin + atlas_offset)
+		tree_layer.set_cell(root_pos, tree_source_id, root_tiles[dx + 1])
 	
 	# 2. 放置随机长度的树干 (2-4 节)
 	# 树干从树根中心上方开始向上生长
@@ -872,12 +962,8 @@ func _spawn_tree(layer_id: int, pos: Vector2i) -> void:
 	var canopy_center = pos + Vector2i(0, -(trunk_height + 2))
 	for dx in range(-1, 2):
 		for dy in range(-1, 2):
-			# 计算在 TileSet 中的对应瓦片坐标 (映射 3x3 区域)
-			var atlas_offset = Vector2i(dx + 1, dy + 1) # 将 (-1, -1) 映射到 (0, 0)
-			var target_atlas = tree_canopy_origin + atlas_offset
-			
-			# 放置瓦片
-			tree_layer.set_cell(canopy_center + Vector2i(dx, dy), tree_source_id, target_atlas)
+			# 放置瓦片 (统一使用 tree_canopy_tile)
+			tree_layer.set_cell(canopy_center + Vector2i(dx, dy), tree_source_id, tree_canopy_tile)
 
 func _spawn_door(layer_id: int, pos: Vector2i) -> void:
 	var door = layer_door_scene.instantiate()

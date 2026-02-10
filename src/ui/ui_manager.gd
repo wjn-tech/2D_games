@@ -90,6 +90,7 @@ func open_window(window_name: String, scene_path: String, blocks_input: bool = t
 	if window:
 		window.visible = true
 		window.process_mode = Node.PROCESS_MODE_ALWAYS
+		window.set_meta("ui_target_state", "open")
 		
 		if blocks_input:
 			if not window_name in blocking_windows:
@@ -149,6 +150,9 @@ func close_window(window_name: String) -> void:
 	if active_windows.has(window_name):
 		var window = active_windows[window_name]
 		
+		# 设置目标状态为关闭
+		window.set_meta("ui_target_state", "closed")
+		
 		if window_name in blocking_windows:
 			blocking_windows.erase(window_name)
 		
@@ -158,6 +162,11 @@ func close_window(window_name: String) -> void:
 			await tween.finished
 			
 		if is_instance_valid(window):
+			# 检查在等待期间是否被重新打开了
+			if window.has_meta("ui_target_state") and window.get_meta("ui_target_state") == "open":
+				print("UIManager: 窗口 %s 在关闭动画期间被重新打开，取消隐藏动作。" % window_name)
+				return
+				
 			# 只有 MainMenu 和 HUD 是真正持久的预置节点，其他的动态窗口即使在场景中找到也应该销毁
 			var is_persistent = window_name == "MainMenu" or window_name == "HUD"
 			
@@ -192,9 +201,11 @@ func _play_close_animation(window: Node) -> Tween:
 	return tween
 
 ## 关闭所有窗口
-func close_all_windows(only_blocking: bool = true) -> void:
+func close_all_windows(only_blocking: bool = true, exclude: Array = []) -> void:
 	var names = active_windows.keys()
 	for window_name in names:
+		if window_name in exclude:
+			continue
 		if only_blocking and not window_name in blocking_windows:
 			continue
 		close_window(window_name)

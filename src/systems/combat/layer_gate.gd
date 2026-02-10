@@ -9,7 +9,7 @@ func _ready() -> void:
 	collision_layer = 8
 	collision_mask = 0
 
-func interact() -> void:
+func interact(_interactor: Node = null) -> void:
 	if get_node_or_null("/root/LayerManager"):
 		get_node("/root/LayerManager").switch_to_layer(target_layer)
 		print("玩家切换到图层: ", target_layer)

@@ -14,7 +14,7 @@ func _ready() -> void:
 	add_to_group("crafting_stations")
 
 ## 被玩家交互时调用
-func interact() -> void:
+func interact(_interactor: Node = null) -> void:
 	# 打开制造界面
 	var window = UIManager.open_window("Crafting", "res://scenes/ui/CraftingWindow.tscn")
 	if window and window.has_method("setup"):

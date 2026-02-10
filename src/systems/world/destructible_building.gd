@@ -48,7 +48,7 @@ func _auto_create_collision() -> void:
 			poly.scale = child.scale
 			add_child(poly)
 
-func interact() -> void:
+func interact(_interactor: Node = null) -> void:
 	print("Building: 这是一个 ", building_name, "。你可以通过挖掘来拆除它。")
 
 func hit(damage: float, _hit_pos: Vector2 = Vector2.ZERO) -> void:

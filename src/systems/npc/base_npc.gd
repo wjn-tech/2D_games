@@ -541,7 +541,7 @@ func _handle_neutral_interaction() -> void:
 	# 允许子类覆盖的默认行为
 	pass
 
-func interact() -> void:
+func interact(_interactor: Node = null) -> void:
 	# 停止移动并面向玩家
 	var player = get_tree().get_first_node_in_group("player")
 	if player:

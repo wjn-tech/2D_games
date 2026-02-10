@@ -13,7 +13,7 @@ func _ready() -> void:
 	add_to_group("interactable")
 
 ## 被玩家交互时调用
-func interact() -> void:
+func interact(_interactor: Node = null) -> void:
 	if LayerManager:
 		var current = LayerManager.active_layer
 		if current == target_layer:

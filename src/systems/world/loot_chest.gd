@@ -35,7 +35,7 @@ func load_custom_data(data: Dictionary) -> void:
 				# X: 宽度的一半, Y: 高度的一半（负值向上）
 				$CollisionShape2D.position = Vector2(px_w / 2.0, -px_h / 2.0)
 
-func interact() -> void:
+func interact(_interactor: Node = null) -> void:
 	if is_opened: return
 	
 	is_opened = true

@@ -28,7 +28,7 @@ func _respawn() -> void:
 	set_deferred("monitorable", true)
 	print("资源点已再生: ", item_data.display_name if item_data else "未知物品")
 
-func interact() -> void:
+func interact(_interactor: Node = null) -> void:
 	if is_gathered:
 		return
 		

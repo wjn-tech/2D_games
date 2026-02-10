@@ -41,7 +41,8 @@ func change_state(new_state: State) -> void:
 	match current_state:
 		State.START_MENU:
 			get_tree().paused = true
-			UIManager.close_all_windows(false) # 关闭所有，包括 HUD
+			# 关闭除了主菜单以外的所有窗口
+			UIManager.close_all_windows(false, ["MainMenu"]) 
 			UIManager.open_window("MainMenu", "res://scenes/ui/MainMenu.tscn")
 		State.PLAYING:
 			get_tree().paused = false

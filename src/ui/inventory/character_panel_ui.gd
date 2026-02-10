@@ -64,17 +64,33 @@ func _setup_ui() -> void:
 				layout.add_child(hb)
 				hb.setup(player.inventory.hotbar)
 			
-			# 2. 显示背包
+			# 2. 显示背包与合成
 			if player.inventory.get("backpack"):
-				var lbl = Label.new()
-				lbl.text = "背包"
-				lbl.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-				layout.add_child(lbl)
+				var hsplit = HSplitContainer.new()
+				hsplit.size_flags_vertical = Control.SIZE_EXPAND_FILL
+				layout.add_child(hsplit)
+				
+				# 左侧：背包面板
+				var bp_vbox = VBoxContainer.new()
+				bp_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				hsplit.add_child(bp_vbox)
+				
+				var bp_lbl = Label.new()
+				bp_lbl.text = "背包"
+				bp_lbl.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+				bp_vbox.add_child(bp_lbl)
 				
 				var bp = BackpackPanel.instantiate()
-				layout.add_child(bp)
+				bp_vbox.add_child(bp)
 				bp.size_flags_vertical = Control.SIZE_EXPAND_FILL
 				bp.setup(player.inventory.backpack)
+				
+				# 右侧：合成面板
+				var cp = CraftingPanel.new()
+				cp.custom_minimum_size = Vector2(250, 0)
+				cp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				hsplit.add_child(cp)
+				hsplit.split_offset = 50 # 稍微偏移一下平衡空间
 
 	# 绑定加号按钮
 	for stat in ["Strength", "Agility", "Intelligence", "Constitution"]:

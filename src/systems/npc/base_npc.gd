@@ -35,6 +35,10 @@ var wall_hit_cooldown: float = 0.0
 # Minimalist visual reference
 @onready var min_visual = $MinimalistEntity
 
+var visual_cue_comp: VisualCueComponent
+var relationship: float = 50.0 # 0-100 relationship level
+var occupation: String = "" # Merchant, Guard, etc.
+
 var speech_bubble: SpeechBubble
 var nameplate: Control
 var hp_bar: ProgressBar
@@ -79,7 +83,7 @@ func _ready() -> void:
 		# Use display_name (like "Slime") or alignment
 		var d_name = npc_data.display_name
 		if d_name == "": d_name = npc_data.npc_type # Fallback
-		min_visual.setup_from_npc(d_name, npc_data.alignment, ai_type)
+		min_visual.setup_from_npc(d_name, npc_data.alignment, ai_type, npc_data.npc_type)
 
 	# 处理敌对染色 (Minimalist handles this inside setup_from_npc via color)
 	# if npc_data.alignment == "Hostile":
@@ -99,6 +103,10 @@ func _ready() -> void:
 
 	# 初始化头顶信息 (种族与血量)
 	_setup_nameplate()
+	_setup_visual_cue_component()
+	
+	# 更新初始成长视觉
+	update_growth_visual()
 
 	# 确保碰撞层正确
 	collision_layer = LayerManager.LAYER_NPC
@@ -147,32 +155,45 @@ func _ready() -> void:
 func _setup_nameplate() -> void:
 	nameplate = Control.new()
 	nameplate.name = "Nameplate"
+	nameplate.set_script(load("res://src/ui/context_prompt.gd")) # Attach ContextPrompt script
 	add_child(nameplate)
-	nameplate.position = Vector2(0, -60) # 位于 NPC 头顶上方
+	nameplate.position = Vector2(0, -60) 
 
-	var container = VBoxContainer.new()
-	container.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	container.size = Vector2(100, 40)
-	container.position = Vector2(-50, -20)
-	nameplate.add_child(container)
+	# Mimic the structure expected by ContextPrompt.gd
+	# $VBoxContainer/Label 
+	# $VBoxContainer/ActionContainer
+	
+	var vbox = VBoxContainer.new()
+	vbox.name = "VBoxContainer"
+	vbox.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	vbox.size = Vector2(100, 40)
+	vbox.position = Vector2(-50, -20)
+	nameplate.add_child(vbox)
 
 	name_label = Label.new()
+	name_label.name = "Label"
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_label.add_theme_font_size_override("font_size", 12)
-	# 显示 种族 (Name/Alignment/Role)
+	vbox.add_child(name_label)
+	
+	var action_box = VBoxContainer.new()
+	action_box.name = "ActionContainer"
+	action_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_child(action_box)
+
+	# Initial Setup
 	var type_str = name
 	if npc_data and npc_data.display_name != "":
 		type_str = npc_data.display_name
 	
-	name_label.text = "[ " + type_str + " ]"
+	if nameplate.has_method("setup"):
+		nameplate.setup(type_str, npc_data.alignment)
+
+	# Removed Manual Label Color/Text setting here as it is handled by setup(), 
+	# but we need to ensure the container variable is updated for the progress bar below
+	var container = vbox 
 	
-	# 根据阵营设置名字颜色
-	if npc_data.alignment == "Hostile":
-		name_label.add_theme_color_override("font_color", Color(1.0, 0.2, 0.2)) # 红色
-	elif npc_data.alignment == "Friendly":
-		name_label.add_theme_color_override("font_color", Color(0.2, 0.6, 1.0)) # 蓝色
-		
-	container.add_child(name_label)
+	# Continue with HP Bar (attached to vbox)
 
 	hp_bar = ProgressBar.new()
 	hp_bar.custom_minimum_size = Vector2(60, 6)
@@ -197,6 +218,27 @@ func _setup_nameplate() -> void:
 	hp_bar.max_value = npc_data.max_health
 	hp_bar.value = npc_data.health
 	container.add_child(hp_bar)
+
+func _setup_visual_cue_component() -> void:
+	visual_cue_comp = VisualCueComponent.new()
+	visual_cue_comp.name = "VisualCueComponent"
+	visual_cue_comp.visual_entity = min_visual
+	visual_cue_comp.prompt_control = nameplate
+	add_child(visual_cue_comp)
+	
+	# Initialize Occupation/Relationship based on NPC Type
+	if npc_data.npc_type == "Merchant" or name.contains("Merchant"):
+		occupation = "Merchant"
+	elif npc_data.npc_type == "Guard":
+		occupation = "Guard"
+	elif npc_data.npc_type == "Blacksmith":
+		occupation = "Blacksmith"
+	
+	# Default Relationship based on Alignment
+	if npc_data.alignment == "Friendly":
+		relationship = 80.0
+	elif npc_data.alignment == "Hostile":
+		relationship = 0.0
 
 func _update_hp_bar() -> void:
 	if hp_bar and npc_data:
@@ -373,16 +415,65 @@ func take_damage(amount: float, _type: String = "physical") -> void:
 		# 更新血条显示
 		_update_hp_bar()
 
-		# 触发群体仇恨
-		var player = get_tree().get_first_node_in_group("player")
-		if player and get_node_or_null("/root/FactionManager"):
-			get_node("/root/FactionManager").notify_attack(player, self)
-
 		if npc_data.health <= 0:
 			_die()
 
+func update_growth_visual() -> void:
+	if not npc_data: return
+	
+	# 设置缩放比例
+	var target_scale = 1.0
+	
+	# 只有名字里包含 "Child" 的子嗣才应用婴儿期缩放逻辑
+	# 其他所有 NPC（公主、商人、敌人等）默认全部 1.0，对标玩家
+	if npc_data.display_name.contains("Child"):
+		match npc_data.growth_stage:
+			0: target_scale = 0.5
+			1: target_scale = 0.75
+			2: target_scale = 1.0
+	else:
+		# 非子嗣 NPC 强制 1.0
+		target_scale = 1.0
+	
+	# 同步根节点缩放
+	self.scale = Vector2(target_scale, target_scale)
+	
+	# 同步子节点位置，确保脚底对齐玩家 (标准偏移 -7)
+	if min_visual:
+		min_visual.scale = Vector2.ONE
+		min_visual.position = Vector2(0, -7)
+	
+	print(name, " [", npc_data.display_name, "] 尺寸对齐完成: Scale ", target_scale)
+
+func _die() -> void:
+	print(name, " died.")
+	
+	# 触发群体仇恨
+	var player = get_tree().get_first_node_in_group("player")
+	if player and get_node_or_null("/root/FactionManager"):
+		get_node("/root/FactionManager").notify_attack(player, self)
+		
+	# 给予经验奖励
+	if GameState.player_data:
+		var xp_gain = 25 # 基础经验
+		if npc_data:
+			xp_gain += npc_data.level * 10
+		GameState.player_data.add_experience(xp_gain)
+		if UIManager:
+			UIManager.show_floating_text("+%d XP" % xp_gain, global_position, Color.SKY_BLUE)
+	
+	if EventBus:
+		EventBus.enemy_killed.emit(npc_data.display_name, npc_data.alignment)
+		
+	queue_free()
+
 func get_faction() -> String:
 	return npc_data.alignment # 暂时用 alignment 代替具体阵营名
+
+func get_uuid() -> int:
+	if npc_data:
+		return npc_data.uuid
+	return -1
 
 func on_ally_attacked(attacker: Node2D) -> void:
 	if npc_data.alignment != "Hostile":
@@ -399,25 +490,6 @@ func apply_knockback(force: Vector2) -> void:
 	
 	# Cancel navigation if possible (Optional)
 	if nav_agent: nav_agent.target_position = global_position
-
-func _die() -> void:
-	print(name, " 已死亡")
-	
-	# 给予玩家经验
-	if GameState.player_data:
-		var xp_gain = 25 # 基础经验
-		# 如果 NPC 有等级，可以按等级加成
-		if npc_data:
-			xp_gain += npc_data.level * 10
-		
-		GameState.player_data.add_experience(xp_gain)
-		
-		if UIManager:
-			UIManager.show_floating_text("+%d XP" % xp_gain, global_position, Color.SKY_BLUE)
-	
-	if EventBus:
-		EventBus.enemy_killed.emit(npc_data.display_name, npc_data.alignment)
-	queue_free()
 
 func _handle_happiness_logic(delta: float) -> void:
 	if not npc_data or npc_data.npc_type != "Town": return
@@ -488,9 +560,38 @@ func interact() -> void:
 				bt_player.blackboard.set_var("is_interacting", false)
 		)
 
-	# 弹出交互选项
-	say("有什么我可以帮你的吗？")
+	# --- Contextual Interaction ---
+	var actions = get_contextual_actions()
+	if actions.size() > 0:
+		var primary = actions[0]
+		# Execute primary action
+		call(primary.method)
+	else:
+		_start_default_dialogue()
 
+func get_contextual_actions() -> Array:
+	var actions = []
+	if npc_data.alignment == "Hostile":
+		return [] 
+
+	# 1. Occupation Actions
+	match occupation:
+		"Merchant":
+			actions.append({"label": "Trade", "key": "E", "method": "_open_trade"})
+		"Healer":
+			actions.append({"label": "Heal", "key": "E", "method": "_perform_heal"})
+	
+	# 2. General Dialogue (Always registered as Secondary if not Primary)
+	var talk_key = "F" if actions.size() > 0 else "E"
+	actions.append({"label": "Talk", "key": talk_key, "method": "_start_default_dialogue"})
+	
+	return actions
+
+func _perform_heal() -> void:
+	# TODO: Heal logic implementation
+	pass
+
+func _start_default_dialogue() -> void:
 	# 触发对话系统
 	if get_node_or_null("/root/DialogueManager"):
 		var dm = get_node("/root/DialogueManager")
@@ -518,19 +619,21 @@ func _offer_quest() -> void:
 	var accept_action = func():
 		var qm = get_node("/root/QuestManager")
 		qm.accept_quest(quest_template)
-		say("太好了，祝你好运！")
+		# Removed overhead bubbles
 	
 	dm.start_dialogue(npc_data.display_name, [quest_template.description], [
 		{"text": "接受", "action": accept_action},
-		{"text": "拒绝", "action": func(): say("好吧，如果你改变主意再来找我。")}
+		{"text": "拒绝", "action": func(): pass}
 	])
 
 func _check_quest_completion() -> void:
 	var qm = get_node("/root/QuestManager")
 	if qm.complete_quest(quest_template.quest_id):
-		say("太感谢你了！这是你的奖励。")
+		# Removed overhead bubbles
+		pass
 	else:
-		say("你还没完成任务呢，再加把劲！")
+		# Removed overhead bubbles
+		pass
 
 func _open_trade() -> void:
 	if UIManager:
@@ -540,11 +643,10 @@ func _open_trade() -> void:
 
 func _try_recruit() -> void:
 	if npc_data.npc_type == "Town":
-		say("我已经住在这里了！")
 		return
 		
 	if npc_data.loyalty >= 50:
-		say("没问题，我愿意加入你的城邦！")
+		# Success message moved to dialogue manager or omitted
 		npc_data.npc_type = "Town"
 		npc_data.alignment = "Friendly"
 		var sm = get_node_or_null("/root/SettlementManager")
@@ -552,7 +654,7 @@ func _try_recruit() -> void:
 			sm.recruited_npcs.append(npc_data)
 			sm._recalculate_stats()
 	else:
-		say("我还不怎么信任你...")
+		# Failure feedback
 		npc_data.loyalty += 5
 
 func get_inventory() -> Array:

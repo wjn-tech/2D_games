@@ -3,6 +3,8 @@ class_name BaseItem
 
 @export var id: String = ""
 @export var display_name: String = ""
+var building_name: String: get = _get_building_name
+func _get_building_name(): return display_name
 @export_multiline var description: String = ""
 @export var icon: Texture2D
 @export var stackable: bool = true
@@ -22,3 +24,10 @@ class_name BaseItem
 @export var wand_visual_color: Color = Color.WHITE
 @export var wand_logic_type: String = "" # "trigger", "modifier_damage", "splitter", "action_projectile"
 @export var wand_logic_value: Dictionary = {} # { "amount": 10 }
+
+# Crafting & Quality
+@export_group("Quality")
+@export var quality_grade: String = "Common" # Common, Rare, Epic, Legendary, Masterwork
+@export var quality_score: float = 0.0 # 0.0 - 100.0
+@export var crafted_by: String = ""
+@export var crafted_properties: Dictionary = {} # Dynamic stats added during crafting

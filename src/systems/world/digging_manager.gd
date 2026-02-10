@@ -243,6 +243,8 @@ func _get_custom_data(tile_data: TileData, current_tile_map: Node, coords: Vecto
 			# --- 矿物硬度 ---
 			if atlas_coords == world_gen.iron_tile: return 2.0
 			if atlas_coords == world_gen.copper_tile: return 2.0
+			if atlas_coords == world_gen.gold_tile: return 3.5
+			if atlas_coords == world_gen.diamond_tile: return 5.0
 			if atlas_coords == world_gen.magic_crystal_tile: return 3.0
 			if atlas_coords == world_gen.staff_core_tile: return 5.0
 			if atlas_coords == world_gen.magic_speed_stone_tile: return 5.0
@@ -288,6 +290,8 @@ func _get_custom_data(tile_data: TileData, current_tile_map: Node, coords: Vecto
 			# --- 矿物掉落 ---
 			if atlas_coords == world_gen.iron_tile: return "res://data/items/minerals/iron_ore.tres"
 			if atlas_coords == world_gen.copper_tile: return "res://data/items/minerals/copper_ore.tres"
+			if atlas_coords == world_gen.gold_tile: return "res://data/items/minerals/gold_ore.tres"
+			if atlas_coords == world_gen.diamond_tile: return "res://data/items/minerals/diamond.tres"
 			if atlas_coords == world_gen.magic_crystal_tile: return "res://data/items/minerals/magic_crystal.tres"
 			if atlas_coords == world_gen.staff_core_tile: return "res://data/items/minerals/staff_core.tres"
 			if atlas_coords == world_gen.magic_speed_stone_tile: return "res://data/items/minerals/magic_speed_stone.tres"
@@ -335,6 +339,8 @@ func get_tile_display_name(current_tile_map: Node, coords: Vector2i) -> String:
 	
 	if atlas_coords == Vector2i(0, 4): return "铁矿石"
 	if atlas_coords == Vector2i(1, 4): return "铜矿石"
+	if atlas_coords == Vector2i(4, 4): return "金矿石"
+	if atlas_coords == Vector2i(5, 4): return "钻石"
 	if atlas_coords == Vector2i(2, 4): return "魔力水晶"
 	if atlas_coords == Vector2i(3, 4): return "法杖核心"
 	if atlas_coords == Vector2i(0, 5): return "魔法加速石"

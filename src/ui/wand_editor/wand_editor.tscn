@@ -35,10 +35,9 @@ theme_override_constants/separation = 20
 
 [node name="WandNameLabel" type="Label" parent="VBoxContainer/Header"]
 layout_mode = 2
-size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 20
 theme_override_colors/font_color = Color(1, 0.8, 0.4, 1)
-text = "Editing: Unknown Wand"
+text = "正在编辑: 未知法杖"
 horizontal_alignment = 1
 vertical_alignment = 1
 
@@ -47,7 +46,7 @@ layout_mode = 2
 
 [node name="SaveButton" type="Button" parent="VBoxContainer/HBoxControls"]
 layout_mode = 2
-text = "Save & Close"
+text = "保存并关闭"
 
 [node name="TabContainer" type="TabContainer" parent="VBoxContainer"]
 layout_mode = 2
@@ -55,6 +54,8 @@ size_flags_vertical = 3
 
 [node name="Visual" type="Control" parent="VBoxContainer/TabContainer"]
 layout_mode = 2
+metadata/_tab_index = 0
+name = "外观设计"
 
 [node name="MainLayout" type="HSplitContainer" parent="VBoxContainer/TabContainer/Visual"]
 layout_mode = 1
@@ -70,7 +71,7 @@ layout_mode = 2
 
 [node name="Title" type="Label" parent="VBoxContainer/TabContainer/Visual/MainLayout/LibraryPanel"]
 layout_mode = 2
-text = "Modules"
+text = "外观模块库"
 horizontal_alignment = 1
 
 [node name="ModuleScroll" type="ScrollContainer" parent="VBoxContainer/TabContainer/Visual/MainLayout/LibraryPanel"]
@@ -102,26 +103,20 @@ layout_mode = 2
 
 [node name="StatsTitle" type="Label" parent="VBoxContainer/TabContainer/Visual/MainLayout/WorkspaceSplit/StatsPanel"]
 layout_mode = 2
-text = "Construct Info"
+text = "构造详情"
 horizontal_alignment = 1
 
 [node name="StatsDisplay" type="RichTextLabel" parent="VBoxContainer/TabContainer/Visual/MainLayout/WorkspaceSplit/StatsPanel"]
 layout_mode = 2
 size_flags_vertical = 3
-text = "
-Structure Integrity: 100%
-Energy Capacity: 500
-Recharge Rate: 12.5/s
-
-> Installed Modules:
- - Core
- - Amplifier
- - Heatsink
-"
+bbcode_enabled = true
+text = "正在读取法杖数据..."
 
 [node name="Logic" type="Control" parent="VBoxContainer/TabContainer"]
 visible = false
 layout_mode = 2
+metadata/_tab_index = 1
+name = "逻辑编程"
 
 [node name="HSplitContainer" type="HSplitContainer" parent="VBoxContainer/TabContainer/Logic"]
 layout_mode = 1
@@ -137,7 +132,7 @@ layout_mode = 2
 
 [node name="Label" type="Label" parent="VBoxContainer/TabContainer/Logic/HSplitContainer/LibraryContainer"]
 layout_mode = 2
-text = "Nodes Library"
+text = "逻辑节点库"
 horizontal_alignment = 1
 
 [node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer/TabContainer/Logic/HSplitContainer/LibraryContainer"]

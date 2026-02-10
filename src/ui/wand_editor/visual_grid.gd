@@ -24,7 +24,7 @@ var grid_start_pos = Vector2.ZERO
 
 func _ready():
 	# Setup Blueprint Background
-	background_rect.color = Color(0.05, 0.05, 0.1) # Dark space blue
+	background_rect.color = Color(0.05, 0.07, 0.1, 0.95) # Dark space blue
 	background_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(background_rect)
 	
@@ -205,9 +205,13 @@ func _update_cell_style(coords: Vector2i, style: StyleBoxFlat, item = null):
 		style.corner_radius_bottom_left = 0
 		style.corner_radius_bottom_right = 0
 	else:
-		# "Empty Grid" Look
-		style.bg_color = Color(0.1, 0.12, 0.15, 0.8)
-		style.border_color = Color(0.3, 0.4, 0.5, 0.1)
+		# "Empty Grid" Look - Sci-Fi
+		style.bg_color = Color(0.05, 0.07, 0.1, 0.4) 
+		style.border_color = Color(0.2, 0.8, 1.0, 0.15)
+		style.border_width_top = 1
+		style.border_width_bottom = 1
+		style.border_width_left = 1
+		style.border_width_right = 1
 		style.border_width_bottom = 1
 		style.border_width_top = 1
 		style.border_width_left = 1

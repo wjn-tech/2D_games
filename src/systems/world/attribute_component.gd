@@ -36,8 +36,8 @@ func _ready() -> void:
 	update_modifiers()
 
 func update_modifiers_from_signal(_name: String, _val: float) -> void:
-	# Ignore health changes to prevent recursive scaling loops
-	if _name == "health":
+	# Ignore health/max_health changes to prevent recursive loops
+	if _name == "health" or _name == "max_health":
 		attribute_changed.emit(_name, _val)
 		return
 		
@@ -50,21 +50,22 @@ func update_modifiers() -> void:
 	
 	var str_diff = data.strength - BASE_STAT_THRESHOLD
 	var agi_diff = data.agility - BASE_STAT_THRESHOLD
-	var con_diff = data.constitution - BASE_STAT_THRESHOLD
+	# var con_diff = data.constitution - BASE_STAT_THRESHOLD
 	
 	# 计算乘数
 	damage_mult = 1.0 + (str_diff * STR_DAMAGE_STEP)
 	jump_force_mult = 1.0 + (str_diff * STR_JUMP_STEP)
 	move_speed_mult = 1.0 + (agi_diff * AGI_SPEED_STEP)
 	
-	# 体质 (Constitution) 影响最大血量上限
-	var new_max_hp = 100.0 + (con_diff * CON_HEALTH_STEP)
-	if not is_equal_approx(data.max_health, new_max_hp):
-		var health_ratio = data.health / data.max_health if data.max_health > 0 else 1.0
-		data.max_health = new_max_hp
-		# 仅在非初始化状态下按比例缩放健康值，防止每次属性微调都重置血量
-		data.health = new_max_hp * health_ratio 
-		attribute_changed.emit("max_health", new_max_hp)
+	# 从 AttributeComponent 移除对 max_health 的强制覆写
+	# CharacterData 内部已有基于野性等级(stat_levels)的 max_health 计算逻辑 (Ark风格)
+	# 这里只负责根据当前 max_health 调整 health 比例 (如果需要)
+	# 但由于 CharacterData 自身处理属性变更，这里不再干预 max_health
+	
+	# 旧逻辑 (造成递归且覆盖了等级系统的效果):
+	# var new_max_hp = 100.0 + (con_diff * CON_HEALTH_STEP)
+	# ...
+
 
 ## 获取当前移动速度
 func get_move_speed(base_speed: float) -> float:

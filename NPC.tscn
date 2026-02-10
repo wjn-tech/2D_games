@@ -301,10 +301,10 @@ animations = [{
 radius = 10.049875
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_xy7fa"]
-size = Vector2(14, 14)
+size = Vector2(17, 28)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_eh8o8"]
-size = Vector2(24, 24)
+size = Vector2(28, 40)
 
 [sub_resource type="BlackboardPlan" id="BlackboardPlan_tixnr"]
 
@@ -318,7 +318,8 @@ interaction_area = NodePath("InteractionArea")
 position = Vector2(0, -7)
 shape = 0
 color = Color(0.9, 0.9, 0.9, 1)
-size = Vector2(14, 14)
+size = Vector2(14, 26)
+outline_width = 2.0
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 position = Vector2(0, -7)

@@ -54,36 +54,59 @@ func change_state(new_state: State) -> void:
 			if entities:
 				entities.visible = true
 			
-			# 只有从菜单进入或重新开始时才生成世界，暂停恢复时不重新生成
-			if old_state == State.START_MENU or old_state == State.GAME_OVER:
-				var world_gen = get_tree().current_scene.find_child("WorldGenerator", true, false)
-				if world_gen:
-					if world_gen.has_method("start_generation"):
-						world_gen.start_generation()
-					elif world_gen.has_method("generate_world"):
-						world_gen.generate_world()
+			# 只有从菜单进入、从死亡状态恢复或转生成功时才生成/重置玩家位置
+			if old_state == State.START_MENU or old_state == State.GAME_OVER or old_state == State.REINCARNATING:
+				# 1. 尝试处理世界生成 (主要针对新游戏和死亡重开)
+				if old_state == State.START_MENU or old_state == State.GAME_OVER:
+					var world_gen = get_tree().current_scene.find_child("WorldGenerator", true, false)
+					if world_gen:
+						if world_gen.has_method("start_generation"):
+							world_gen.start_generation()
+						elif world_gen.has_method("generate_world"):
+							world_gen.generate_world()
+				
+				# 2. 核心位置同步逻辑：必须在所有状态下都尝试执行，确保转生不掉落
+				var player = get_tree().get_first_node_in_group("player")
+				if player:
+					var spawn_pos = Vector2.ZERO
+					var pos_restored = false
 					
-					# 设置玩家初始位置 (优先读取存档位置)
-					var player = get_tree().current_scene.find_child("Player", true, false)
-					if player:
-						var spawn_pos = Vector2.ZERO
-						if GameState.has_meta("load_spawn_pos"):
-							spawn_pos = GameState.get_meta("load_spawn_pos")
-							GameState.remove_meta("load_spawn_pos")
-							print("GameManager: 从存档恢复玩家位置: ", spawn_pos)
-						elif world_gen.has_method("get_spawn_position"):
+					if GameState.has_meta("load_spawn_pos"):
+						spawn_pos = GameState.get_meta("load_spawn_pos")
+						GameState.remove_meta("load_spawn_pos")
+						pos_restored = true
+						print("GameManager: 成功应用转生/存档位置: ", spawn_pos)
+					# 补充：处理新游戏或无存档坐标时的默认生成逻辑
+					elif old_state == State.START_MENU or old_state == State.GAME_OVER:
+						var world_gen = get_tree().current_scene.find_child("WorldGenerator", true, false)
+						if world_gen and world_gen.has_method("get_spawn_position"):
 							spawn_pos = world_gen.get_spawn_position()
+							pos_restored = true
+							print("GameManager: 此时无存档坐标，使用世界生成器建议坐标: ", spawn_pos)
 						else:
+							# 终极兜底坐标：地表约在 y=300 块处，即 300*16 = 4800
 							spawn_pos = Vector2(0, 300 * 16) 
+							pos_restored = true 
+					
+					if pos_restored:
+						# 立即同步位置，并在下一帧再次强制同步以防物理引擎干扰
+						player.global_position = spawn_pos
+						if player is CharacterBody2D:
+							player.velocity = Vector2.ZERO
 						
-						# 预加载玩家所在位置
+						# 预加载块
 						if InfiniteChunkManager:
 							InfiniteChunkManager.update_player_vicinity(spawn_pos)
 							
-						player.global_position = spawn_pos
+						# 延迟一帧微调，防止物理穿插或引擎归位
+						(func(): if is_instance_valid(player): player.global_position = spawn_pos).call_deferred()
 					
-					# 恢复已保存的建筑
-					if GameState.has_meta("load_buildings"):
+					# 如果是转生，触发玩家节点刷新数据
+					if old_state == State.REINCARNATING and player.has_method("refresh_data"):
+						player.refresh_data()
+				
+				# 3. 恢复建筑 (仅在非转生状态)
+				if old_state != State.REINCARNATING and GameState.has_meta("load_buildings"):
 						var buildings_data = GameState.get_meta("load_buildings")
 						GameState.remove_meta("load_buildings")
 						print("GameManager: 恢复 %d 个建筑..." % buildings_data.size())

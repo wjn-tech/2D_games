@@ -11,7 +11,7 @@ layout_mode = 2
 
 [node name="Label" type="Label" parent="VBoxContainer"]
 layout_mode = 2
-text = "Select Wand"
+text = "选择法杖"
 horizontal_alignment = 1
 
 [node name="ItemList" type="ItemList" parent="VBoxContainer"]

@@ -12,6 +12,7 @@ const TILE_SIZE = 16
 var current_resource: BuildingResource
 var preview_instance: Node2D
 var is_tile_mode: bool = false
+var _started_this_frame: bool = false
 
 func _ready() -> void:
 	add_to_group("building_manager")
@@ -70,9 +71,11 @@ func _process(_delta: float) -> void:
 			# 标记本帧已处理建造，防止挖掘逻辑触发
 			get_viewport().set_input_as_handled()
 			place_building()
-		elif Input.is_action_just_pressed("mouse_right"):
+		elif Input.is_action_just_pressed("mouse_right") and not _started_this_frame:
 			get_viewport().set_input_as_handled()
 			cancel_building()
+		
+		_started_this_frame = false
 
 func is_building() -> bool:
 	return preview_instance != null and is_instance_valid(preview_instance)
@@ -80,11 +83,13 @@ func is_building() -> bool:
 func start_building(resource: BuildingResource) -> void:
 	cancel_building()
 	current_resource = resource
+	_started_this_frame = true
 	
 	if resource.scene:
 		is_tile_mode = false
 		preview_instance = resource.scene.instantiate()
 		preview_instance.modulate = Color(1, 1, 1, 0.5) # 半透明预览
+		preview_instance.z_index = 100 # 确保在最上层
 		# 禁用预览实例的脚本处理，防止其产生副作用
 		preview_instance.process_mode = Node.PROCESS_MODE_DISABLED
 		add_child(preview_instance)
@@ -92,6 +97,7 @@ func start_building(resource: BuildingResource) -> void:
 		is_tile_mode = true
 		# 创建一个简单的预览节点
 		preview_instance = Sprite2D.new()
+		preview_instance.z_index = 100 # 确保在最上层
 		
 		# 尝试从 TileSet 获取贴图
 		if tile_map and tile_map.tile_set:
@@ -234,14 +240,14 @@ func place_building() -> void:
 				
 				# 扣除资源
 				for item_id in current_resource.cost:
-					GameState.inventory.remove_item(item_id, current_resource.cost[item_id])
+					GameState.inventory.remove_item_by_id(item_id, current_resource.cost[item_id])
 				print("方块已放置于 ", map_pos, ": ", current_resource.display_name)
 			else:
 				print("该位置已有方块: ", map_pos)
 	else:
 		# 扣除资源
 		for item_id in current_resource.cost:
-			GameState.inventory.remove_item(item_id, current_resource.cost[item_id])
+			GameState.inventory.remove_item_by_id(item_id, current_resource.cost[item_id])
 			
 		var new_building = current_resource.scene.instantiate()
 		if building_parent:

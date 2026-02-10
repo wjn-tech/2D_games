@@ -13,7 +13,8 @@ var _defaults = {
 		"language": "zh",
 		"show_damage_numbers": true,
 		"screenshake_intensity": 1.0,
-		"pause_on_lost_focus": true
+		"pause_on_lost_focus": true,
+		"reduced_motion": false # New A11y setting
 	},
 	"Graphics": {
 		"window_mode": DisplayServer.WINDOW_MODE_WINDOWED, # 0=Windowed, 3=Fullscreen
@@ -55,7 +56,7 @@ func load_settings() -> void:
 		_current_settings = _defaults.duplicate(true)
 		for section in _defaults.keys():
 			for key in _defaults[section].keys():
-				var saved_val = _config.get_value(section, key)
+				var saved_val = _config.get_value(section, key, _defaults[section][key])
 				if saved_val != null:
 					_current_settings[section][key] = saved_val
 		

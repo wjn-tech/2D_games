@@ -96,14 +96,23 @@ func setup(index: int, slot_data: Dictionary) -> void:
 	
 	if not icon_rect: return
 	
-	if slot_data.is_empty() or not slot_data.has("item_data"):
+	# Fix: Use "item" key instead of "item_data" to match Inventory resource
+	if slot_data.is_empty() or not slot_data.has("item") or slot_data["item"] == null:
 		icon_rect.texture = null
-		if count_label: count_label.text = ""
-	else:
-		var item: BaseItem = slot_data["item_data"]
-		icon_rect.texture = item.icon
 		if count_label:
-			count_label.text = str(slot_data["amount"]) if slot_data["amount"] > 1 else ""
+			count_label.text = ""
+		return
+	
+	var item = slot_data["item"]
+	var count = slot_data.get("count", 0)
+	
+	# 设置图标
+	if item.get("icon"):
+		icon_rect.texture = item.icon
+	
+	# 设置数量
+	if count_label:
+		count_label.text = str(count) if count > 1 else ""
 
 ## 鼠标点击处理（示例：右键使用）
 func _gui_input(event: InputEvent) -> void:
@@ -111,10 +120,54 @@ func _gui_input(event: InputEvent) -> void:
 		if event.button_index == MOUSE_BUTTON_RIGHT:
 			# 调用 InventoryManager 使用物品
 			if GameState.inventory.has_method("use_item"):
-				GameState.inventory.use_item(slot_index)
+				GameState.inventory.use_item(slot_index) # Be careful with index if use_item distinguishes hotbar/backpack
+				
 		elif event.button_index == MOUSE_BUTTON_LEFT:
-			# 这里可以扩展拖拽逻辑
+			# Tap to click/select?
 			pass
+
+## Drag & Drop Implementation
+func _get_drag_data(_at_position: Vector2):
+	if slot_index < 0: return null
+	
+	# Determine which inventory we represent.
+	# InventoryUI is specifically Backpack.
+	var my_inv = GameState.inventory.backpack
+	var slot = my_inv.get_slot(slot_index)
+	var item = slot.get("item")
+	
+	if not item: return null
+	
+	# Create Preview
+	var preview_Icon = TextureRect.new()
+	preview_Icon.texture = item.icon
+	preview_Icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	preview_Icon.custom_minimum_size = Vector2(40, 40)
+	preview_Icon.size = Vector2(40, 40)
+	
+	var preview = Control.new()
+	preview.add_child(preview_Icon)
+	preview_Icon.position = -0.5 * preview_Icon.size # Center it
+	set_drag_preview(preview)
+	
+	return { 
+		"inventory": my_inv, 
+		"index": slot_index, 
+		"item": item 
+	}
+
+func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
+	return data is Dictionary and data.has("inventory") and data.has("index")
+
+func _drop_data(_at_position: Vector2, data: Variant) -> void:
+	print("ItemSlotUI: Drop received from ", data.get("index"), " to ", slot_index)
+	var from_inv = data.inventory
+	var from_idx = data.index
+	var my_inv = GameState.inventory.backpack
+	
+	# Call Manager to Swap
+	GameState.inventory.swap_items(from_inv, from_idx, my_inv, slot_index)
+	# UI refresh should be triggered by InventoryManager signals
 
 ## 鼠标悬停显示 Tooltip
 func _get_tooltip(_at_position: Vector2) -> String:

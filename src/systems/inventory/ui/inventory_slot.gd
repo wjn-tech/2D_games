@@ -77,13 +77,12 @@ func _drop_data(at_position, data):
 	var from_inv = data.inventory
 	var from_idx = data.index
 	
-	# Request swap via Manager (we assume a global or we traverse up to find it)
-	# For now, let's signal up or call a static helper.
-	# Or, since we have references to Inventory resources, we could do it directly,
-	# but we want to stick to the Manager logic if possible.
-	
-	# Finding the manager is tricky without a global ref.
-	# Let's assume the InventoryUI parent has a reference to Manager.
-	var manager = get_tree().get_first_node_in_group("inventory_manager")
+	# Prefer Global Singleton
+	var manager = GameState.inventory
 	if manager:
 		manager.swap_items(from_inv, from_idx, inventory, slot_index)
+	else:
+		# Fallback
+		manager = get_tree().get_first_node_in_group("inventory_manager")
+		if manager:
+			manager.swap_items(from_inv, from_idx, inventory, slot_index)

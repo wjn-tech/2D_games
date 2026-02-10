@@ -34,6 +34,10 @@ class_name WorldGenerator
 @export var iron_tile: Vector2i = Vector2i(0, 4)
 ## 铜矿石 Atlas 坐标 (1, 4)
 @export var copper_tile: Vector2i = Vector2i(1, 4)
+## 金矿石 Atlas 坐标 (4, 4)
+@export var gold_tile: Vector2i = Vector2i(4, 4)
+## 钻石矿石 Atlas 坐标 (5, 4)
+@export var diamond_tile: Vector2i = Vector2i(5, 4)
 ## 魔力水晶 Atlas 坐标 (2, 4)
 @export var magic_crystal_tile: Vector2i = Vector2i(2, 4)
 ## 法杖核心 Atlas 坐标 (3, 4)
@@ -271,20 +275,35 @@ func _get_mineral_at(gx: int, gy: int, depth: float) -> Vector2i:
 	
 	# --- Deep Layer (Y > 300) ---
 	if depth > 300:
+		# 钻石 (Legendary) - 最深层特有
+		if n_legend > 0.88: return diamond_tile
 		# 魔法加速石 (Very Rare)
-		if n_legend > 0.85: return magic_speed_stone_tile
+		if n_legend > 0.82: return magic_speed_stone_tile
+		# 金矿 (Rare)
+		if n_rare > 0.6: return gold_tile
 		# 法杖核心 (Rare)
-		if n_rare > 0.75: return staff_core_tile
+		if n_rare > 0.75: return staff_core_tile # Note: logic overlap, order matters. rare > 0.75 is subset of > 0.6? No, wait. 0.75 is scarcer. 
+		# If I put > 0.6 first, > 0.75 will never hit if I return immediately.
+		# So put rarer things first.
+		
+		# Re-ordering for rarity:
+		if n_rare > 0.8: return staff_core_tile
+		if n_rare > 0.6: return gold_tile # Gold is more common than Staff Core in deep
+		
 		# 丰富的矿脉
 		if n_common > 0.4: return iron_tile
 		if n_common < -0.4: return magic_crystal_tile
 
 	# --- Underground Layer (100 < Y < 300) ---
 	elif depth > 100:
+		# 钻石 (Extremely Rare here)
+		if n_legend > 0.95: return diamond_tile
 		# 法杖核心 (Very Rare here)
 		if n_rare > 0.85: return staff_core_tile
+		# 金矿 (Rare)
+		if n_rare > 0.7: return gold_tile
 		# 魔力水晶 (Uncommon)
-		if n_rare > 0.6: return magic_crystal_tile
+		if n_rare > 0.5: return magic_crystal_tile
 		# 铁矿
 		if n_common > 0.5: return iron_tile
 		# 铜矿
@@ -292,6 +311,8 @@ func _get_mineral_at(gx: int, gy: int, depth: float) -> Vector2i:
 
 	# --- Surface/Shallow Layer (10 < Y < 100) ---
 	elif depth > 10:
+		# 金矿 (Very Rare near surface)
+		if n_rare > 0.85: return gold_tile
 		# 铜矿 (Common)
 		if n_common > 0.6: return copper_tile
 		# 铁矿 (Sparse)

@@ -41,7 +41,7 @@ func _update_tile_info() -> void:
 	for result in results:
 		var target = result.collider
 		if target.has_method("get") and target.get("building_name"):
-			tile_label.text = "Object: " + target.building_name
+			tile_label.text = "物体: " + target.building_name
 			tile_label.visible = true
 			return
 		elif target.is_in_group("interactable"):

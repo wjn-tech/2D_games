@@ -40,6 +40,10 @@ EconomyManager="*res://src/core/economy_manager.gd"
 InfiniteChunkManager="*res://src/systems/world/infinite_chunk_manager.gd"
 SocialManager="*res://src/systems/npc/social_manager.gd"
 SignalManager="*res://src/systems/industrial/signal_manager.gd"
+LineageManager="*res://src/systems/lineage/lineage_manager.gd"
+DebugTools="*res://src/systems/debug/debug_tools.gd"
+TradeManager="*res://src/systems/trading/trade_manager.gd"
+FeedbackManager="*res://src/ui/feedback_manager.gd"
 
 [input]
 

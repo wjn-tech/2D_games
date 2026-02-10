@@ -43,13 +43,25 @@ func _show_options() -> void:
 		child.queue_free()
 		
 	for opt in _options:
+		# Check condition (Relationship gating etc.)
+		if opt.has("condition") and not opt.condition.call():
+			continue # precise filtering
+			
 		var btn = Button.new()
 		btn.text = opt.text
 		btn.pressed.connect(func(): 
-			opt.action.call()
-			DialogueManager.end_dialogue()
+			if opt.has("action"): opt.action.call()
+			
+			# Check if we should close (Standard behavior: yes, unless specified otherwise)
+			var should_close = opt.get("close_after", true)
+			if should_close:
+				DialogueManager.end_dialogue()
 		)
 		options_container.add_child(btn)
+		
+	# Focus first option
+	if options_container.get_child_count() > 0:
+		options_container.get_child(0).grab_focus()
 	
 	# 自动聚焦第一个选项，方便键盘操作
 	if options_container.get_child_count() > 0:

@@ -3,6 +3,8 @@ class_name BuildingResource
 
 @export var id: String = ""
 @export var display_name: String = ""
+var building_name: String: get = _get_building_name
+func _get_building_name(): return display_name
 @export_multiline var description: String = ""
 @export var icon: Texture2D
 @export var scene: PackedScene # 建筑场景（用于整体建筑）

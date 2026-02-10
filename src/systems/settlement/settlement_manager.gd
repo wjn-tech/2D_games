@@ -128,7 +128,7 @@ func _get_available_suitable_houses() -> Array:
 	for b_node in buildings:
 		var res = buildings[b_node]
 		# 只有 House 类型的建筑且未被占用才可入住
-		if res.building_name == "住宅" or res.building_name == "House":
+		if res.display_name == "住宅" or res.display_name == "House" or res.category == "Housing":
 			var is_occupied = false
 			for home in npc_homes.values():
 				if home == b_node:

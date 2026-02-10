@@ -47,7 +47,7 @@ func _load_databases() -> void:
 	print("GameState: 已加载 ", item_db.size(), " 个物品和 ", recipe_db.size(), " 个配方")
 
 func _create_inventory_manager() -> Node:
-	var mgr = load("res://src/systems/crafting/inventory_manager.gd").new()
+	var mgr = load("res://src/systems/inventory/inventory_manager.gd").new()
 	mgr.name = "InventoryManager"
 	add_child(mgr)
 	return mgr

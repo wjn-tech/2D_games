@@ -3,6 +3,7 @@ class_name InventoryManager
 
 signal equipped_item_changed(item: Resource)
 signal item_visual_updated(item: Resource) # New signal for texture updates
+signal inventory_changed # Added for UI sync
 signal inventory_created # Emitted when inventories are initialized
 
 @export var backpack_capacity: int = 20
@@ -14,6 +15,11 @@ var active_hotbar_index: int = 0
 
 func _ready():
 	_init_inventories()
+	
+	# Ensure this manager is in the group for lookups
+	if not is_in_group("inventory_manager"):
+		add_to_group("inventory_manager")
+		
 	# Listen for global collection events
 	if EventBus:
 		EventBus.item_collected.connect(add_item)
@@ -24,11 +30,23 @@ func _init_inventories():
 	
 	# Connect signals if needed, or UI listens to resources directly
 	hotbar.content_changed.connect(_on_hotbar_changed)
+	
+	backpack.content_changed.connect(func(_idx): inventory_changed.emit())
+	hotbar.content_changed.connect(func(_idx): inventory_changed.emit())
+	
 	inventory_created.emit()
 
 func _on_hotbar_changed(slot_index: int):
 	if slot_index == active_hotbar_index:
 		emit_signal("equipped_item_changed", get_equipped_item())
+
+func clear_all():
+	if backpack:
+		for i in range(backpack.slots.size()):
+			backpack.slots[i] = { "item": null, "count": 0 }
+	if hotbar:
+		for i in range(hotbar.slots.size()):
+			hotbar.slots[i] = { "item": null, "count": 0 }
 
 # Core Operations
 func add_item(item: Resource, count: int = 1) -> bool:
@@ -81,6 +99,48 @@ func select_hotbar_slot(index: int):
 func get_equipped_item() -> Resource:
 	var slot = hotbar.get_slot(active_hotbar_index)
 	return slot.get("item")
+
+# Helper for Crafting
+func get_item_count(item_id: String) -> int:
+	var total = 0
+	# Check both inventories
+	for inv in [backpack, hotbar]:
+		if not inv: continue
+		for i in range(inv.slots.size()):
+			var slot = inv.get_slot(i)
+			var item = slot.get("item")
+			# Check item.id if item is BaseItem/Resource with id property
+			if item and "id" in item and item.id == item_id:
+				total += slot.get("count", 0)
+	return total
+
+func remove_item_by_id(item_id: String, count: int) -> bool:
+	if get_item_count(item_id) < count: return false
+	
+	var remaining = count
+	for inv in [backpack, hotbar]:
+		if not inv: continue
+		# Reverse iteration avoids index issues if we were removing items from list, but slots are fixed size array usually
+		for i in range(inv.slots.size()):
+			var slot = inv.get_slot(i)
+			var item = slot.get("item")
+			if item and "id" in item and item.id == item_id:
+				var current = slot.get("count", 0)
+				var to_take = min(remaining, current)
+				
+				remove_item(inv, i, to_take)
+				
+				remaining -= to_take
+				if remaining == 0: 
+					inventory_changed.emit() # Signal final update
+					return true
+	return remaining == 0
+
+func get_item_at(index: int) -> Resource:
+	if backpack:
+		var slot = backpack.get_slot(index)
+		return slot.get("item")
+	return null
 
 # Internal Helper
 func _try_add_to_inventory(inv: Inventory, item: Resource, count: int) -> int:

@@ -60,11 +60,9 @@ func _ready() -> void:
 	add_to_group("player")
 	add_to_group("damageable") # Tag as damageable
 	
-	# Setup Inventory
-	inventory = InventoryManager.new()
-	inventory.name = "InventoryManager"
-	inventory.add_to_group("inventory_manager")
-	add_child(inventory)
+	# Setup Inventory - USE GLOBAL SINGLETON
+	inventory = GameState.inventory
+	
 	inventory.equipped_item_changed.connect(_on_equipped_item_changed)
 	
 	# setup inventory ui
@@ -191,8 +189,8 @@ func take_damage(amount: float, _type: String = "physical") -> void:
 		print("Player takes damage: ", amount, " | New HP: ", attributes.data.health)
 		# Basic death check
 		if attributes.data.health <= 0:
-			# Die logic (TODO)
-			pass
+			print("Player Health depleted! Triggering Reincarnation...")
+			LifespanManager.trigger_instant_death(attributes.data, "战斗死亡")
 			
 	_trigger_damage_vignette()
 	
@@ -374,6 +372,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			camera.zoom = (camera.zoom - Vector2(0.1, 0.1)).clamp(Vector2(0.5, 0.5), Vector2(4.0, 4.0))
 			get_viewport().set_input_as_handled()
+	
+	# 右键放置特殊物品 (如工作台)
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
+		print("Player: Right click detected - attempting placement")
+		_try_place_held_item()
 
 func _physics_process(delta: float) -> void:
 	# --- 无限地图更新 ---
@@ -645,6 +648,35 @@ func _handle_mouse_action() -> bool:
 	
 	return false
 
+func _try_place_held_item() -> void:
+	if not inventory: return
+	
+	var item = inventory.get_equipped_item() 
+	if not item: return
+	
+	# 检查是否是可放置物品
+	# 1. 工作台
+	if item.id == "workbench" or item.id == "workbench_item":
+		print("Player: Holding workbench, starting building mode")
+		var bm = get_tree().get_first_node_in_group("building_manager")
+		if not bm: return
+		
+		# 如果已经在建造中，则忽略，防止冲突
+		if bm.has_method("is_building") and bm.is_building():
+			return
+			
+		var res = BuildingResource.new()
+		# 动态加载场景
+		res.scene = load("res://scenes/world/workbench.tscn")
+		# 设置消耗为物品本身
+		res.cost = { "workbench": 1 }
+		res.id = "workbench_placement"
+		res.display_name = "Workbench"
+		res.requires_flat_ground = true
+		
+		# 启动建造模式
+		bm.start_building(res)
+
 func _interact() -> void:
 	if not interaction_area:
 		return
@@ -653,20 +685,20 @@ func _interact() -> void:
 	var areas = interaction_area.get_overlapping_areas()
 	for area in areas:
 		if area.has_method("interact"):
-			area.interact()
+			area.interact(self)
 			return
 		elif area.get_parent() and area.get_parent().has_method("interact"):
-			area.get_parent().interact()
+			area.get_parent().interact(self)
 			return
 
 	# 检查 Body 检测到的可交互对象 (例如静态物块、宝箱)
 	var bodies = interaction_area.get_overlapping_bodies()
 	for body in bodies:
 		if body.has_method("interact"):
-			body.interact()
+			body.interact(self)
 			return
 		elif body.get_parent() and body.get_parent().has_method("interact"):
-			body.get_parent().interact()
+			body.get_parent().interact(self)
 			return
 
 func _perform_combat_action() -> void:

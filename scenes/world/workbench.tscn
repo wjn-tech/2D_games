@@ -1,0 +1,36 @@
+[gd_scene load_steps=6 format=3 uid="uid://workbench_scene_001"]
+
+[ext_resource type="Script" path="res://scenes/world/workbench.gd" id="1_wb"]
+
+[sub_resource type="Gradient" id="Gradient_brown"]
+offsets = PackedFloat32Array(0)
+colors = PackedColorArray(0.55, 0.27, 0.07, 1)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_brown"]
+gradient = SubResource("Gradient_brown")
+width = 32
+height = 16
+
+[sub_resource type="RectangleShape2D" id="rect_shape"]
+size = Vector2(32, 16)
+
+[sub_resource type="RectangleShape2D" id="area_shape"]
+size = Vector2(48, 48)
+
+[node name="Workbench" type="StaticBody2D"]
+collision_layer = 1
+collision_mask = 2
+script = ExtResource("1_wb")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = SubResource("GradientTexture2D_brown")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("rect_shape")
+
+[node name="InteractionArea" type="Area2D" parent="."]
+collision_layer = 8
+collision_mask = 2
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="InteractionArea"]
+shape = SubResource("area_shape")

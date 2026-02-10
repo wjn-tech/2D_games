@@ -96,7 +96,15 @@ func _pack_player_data() -> Dictionary:
 			"strength": p_data.strength,
 			"agility": p_data.agility,
 			"intelligence": p_data.intelligence,
-			"constitution": p_data.constitution
+			"constitution": p_data.constitution,
+			# Lineage System Data
+			"stat_levels": p_data.stat_levels,
+			"mutations": p_data.mutations,
+			"spouse_id": p_data.spouse_id,
+			"generation": p_data.generation,
+			"age": p_data.age,
+			"growth_stage": p_data.growth_stage,
+			"imprint_quality": p_data.imprint_quality
 		}
 	}
 
@@ -157,12 +165,25 @@ func load_game(slot_id: int) -> bool:
 		var saved_stats = p_info.data
 		
 		p_data.display_name = saved_stats.get("display_name", "Player")
-		p_data.max_health = saved_stats.get("max_health", 100)
+
+		# 3.1 Lineage System Data Restoration
+		if saved_stats.has("stat_levels"):
+			p_data.stat_levels = saved_stats.stat_levels
+			p_data.mutations = saved_stats.get("mutations", {"patrilineal":0, "matrilineal":0})
+			p_data.spouse_id = saved_stats.get("spouse_id", -1)
+			p_data.generation = saved_stats.get("generation", 1)
+			p_data.age = saved_stats.get("age", 0.0)
+			p_data.growth_stage = saved_stats.get("growth_stage", 0)
+			p_data.imprint_quality = saved_stats.get("imprint_quality", 0.0)
+		else:
+			# Legacy Save Fallback
+			p_data.max_health = saved_stats.get("max_health", 100)
+			p_data.strength = saved_stats.get("strength", 10)
+			p_data.agility = saved_stats.get("agility", 10)
+			p_data.intelligence = saved_stats.get("intelligence", 10)
+			p_data.constitution = saved_stats.get("constitution", 10)
+
 		p_data.health = saved_stats.get("health", 100)
-		p_data.strength = saved_stats.get("strength", 10)
-		p_data.agility = saved_stats.get("agility", 10)
-		p_data.intelligence = saved_stats.get("intelligence", 10)
-		p_data.constitution = saved_stats.get("constitution", 10)
 		
 		# 将位置存储在 Meta 中，供 GameManager 生成玩家时读取
 		GameState.set_meta("load_spawn_pos", p_info.position)

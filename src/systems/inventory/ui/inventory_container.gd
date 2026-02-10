@@ -9,13 +9,25 @@ signal item_clicked(index: int)
 var inventory: Inventory
 
 func setup(inv: Inventory):
+	if inventory and inventory.content_changed.is_connected(_on_content_changed):
+		inventory.content_changed.disconnect(_on_content_changed)
+		
 	inventory = inv
+	if inventory:
+		inventory.content_changed.connect(_on_content_changed)
 	_rebuild_slots()
+
+func _on_content_changed(_slot_index: int):
+	# Simple MVP: full rebuild or just refresh
+	# Rebuilding slots might be heavy if done every frame, but fine for discrete changes
+	# Or we can just call refresh() if slots exist
+	refresh()
 	
 func refresh():
 	# Force update of all slots without rebuilding
 	for child in get_children():
-		if child is InventorySlotUI:
+		# Using duck-typing or checking if it has a method is safer if InventorySlotUI is not global
+		if child.has_method("_update_visual"):
 			child._update_visual()
 
 func _rebuild_slots():

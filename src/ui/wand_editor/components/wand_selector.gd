@@ -16,9 +16,9 @@ func refresh(inventory_manager: InventoryManager):
 	if not inventory_manager: return
 	
 	# Scan Hotbar
-	_scan_inventory(inventory_manager.hotbar, "Hotbar")
+	_scan_inventory(inventory_manager.hotbar, "快捷栏")
 	# Scan Backpack
-	_scan_inventory(inventory_manager.backpack, "Backpack")
+	_scan_inventory(inventory_manager.backpack, "背包")
 
 func _scan_inventory(inv: Inventory, prefix: String):
 	for i in range(inv.capacity):

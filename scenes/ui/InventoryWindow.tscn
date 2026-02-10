@@ -1,7 +1,16 @@
-[gd_scene load_steps=3 format=3 uid="uid://cubw1pdtpah52"]
+[gd_scene load_steps=5 format=3 uid="uid://cubw1pdtpah52"]
 
 [ext_resource type="Script" uid="uid://bl38qdyey1t8k" path="res://src/ui/inventory/inventory_ui.gd" id="1_3k82d"]
 [ext_resource type="PackedScene" uid="uid://dcoaig4fe2rea" path="res://scenes/ItemSlot.tscn" id="2_hkkof"]
+[ext_resource type="Script" path="res://src/ui/inventory/crafting_panel.gd" id="3_craft"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_inv"]
+bg_color = Color(0.1, 0.1, 0.1, 0.85)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.3, 0.3, 0.3, 1)
 
 [node name="InventoryWindow" type="Control"]
 layout_mode = 3
@@ -13,10 +22,27 @@ grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("1_3k82d")
 slot_scene = ExtResource("2_hkkof")
-grid_container_path = NodePath("GridContainer")
+grid_container_path = NodePath("MainSplit/InventoryPanel/GridContainer")
 
-[node name="GridContainer" type="GridContainer" parent="."]
-layout_mode = 0
-offset_right = 40.0
-offset_bottom = 40.0
+[node name="MainSplit" type="HSplitContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+split_offset = 100
+
+[node name="InventoryPanel" type="PanelContainer" parent="MainSplit"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_inv")
+
+[node name="GridContainer" type="GridContainer" parent="MainSplit/InventoryPanel"]
+layout_mode = 2
 columns = 5
+
+[node name="CraftingPanel" type="PanelContainer" parent="MainSplit"]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+script = ExtResource("3_craft")

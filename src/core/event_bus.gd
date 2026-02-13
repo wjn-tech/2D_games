@@ -16,6 +16,8 @@ signal interaction_finished(target: Node)
 
 # 物品与库存
 signal item_collected(item_data: Resource, amount: int)
+signal item_hovered(item_name: String, quality_grade: String)
+signal item_unhovered
 signal inventory_updated
 signal experience_gained(amount: float) # 新增：获得经验
 signal level_up(new_level: int) # 新增：等级提升

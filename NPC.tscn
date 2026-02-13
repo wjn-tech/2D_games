@@ -36,6 +36,8 @@
 [ext_resource type="Texture2D" uid="uid://duj8qg0xycgbo" path="res://assets/character/frame_009.png" id="33_54avh"]
 [ext_resource type="Script" uid="uid://bdelmx34jj27j" path="res://src/systems/npc/ai/states/IdleState.gd" id="34_idle"]
 [ext_resource type="Script" uid="uid://cqel4jgcg5nwx" path="res://src/systems/npc/ai/states/CombatState.gd" id="35_combat"]
+[ext_resource type="Script" path="res://src/systems/npc/ai/states/HomeState.gd" id="36_home"]
+[ext_resource type="Script" path="res://src/systems/npc/components/environmental_sensor.gd" id="37_env"]
 
 [sub_resource type="Resource" id="Resource_3w6te"]
 script = ExtResource("2_dn7ju")
@@ -348,3 +350,9 @@ script = ExtResource("34_idle")
 
 [node name="Combat" type="LimboState" parent="LimboHSM"]
 script = ExtResource("35_combat")
+
+[node name="Home" type="LimboState" parent="LimboHSM"]
+script = ExtResource("36_home")
+
+[node name="EnvironmentalSensor" type="Node" parent="."]
+script = ExtResource("37_env")

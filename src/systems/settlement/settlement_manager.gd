@@ -19,23 +19,27 @@ var buildings: Dictionary = {}
 # 城邦统计数据
 var stats = {
 	"population_current": 0,
-	"population_max": 5, # 基础人口上限
+	"population_max": 5, 
 	"food_production": 0.0,
 	"defense": 0,
 	"level": 1,
 	"prosperity": 0,
-	"territory_radius": 300.0 # 基础领土半径
+	"territory_radius": 300.0 
 }
 
-signal stats_changed(new_stats: Dictionary)
-signal night_toggled(is_night: bool)
+# 缓存的房屋检测结果: { anchor_map_pos: HousingData }
+var housing_cache: Dictionary = {}
 
-var is_night: bool = false:
-	set(value):
-		is_night = value
-		night_toggled.emit(is_night)
+# 晶塔相关
+var active_pylons: Dictionary = {} # { biome_name: global_pos }
+
+var is_night: bool = false
+signal night_toggled(is_night: bool)
+signal stats_changed(new_stats: Dictionary)
+# ... 其他信号
 
 func _ready() -> void:
+# ... Existing _ready ...
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	# 初始计算
 	_recalculate_stats()
@@ -43,6 +47,7 @@ func _ready() -> void:
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and event.keycode == KEY_N:
 		is_night = !is_night
+		night_toggled.emit(is_night)
 		print("SettlementManager: 切换昼夜 (快捷键 N): ", "夜晚" if is_night else "白天")
 
 func get_settlement_center() -> Vector2:
@@ -63,6 +68,190 @@ func register_building(node: Node2D, resource: BuildingResource) -> void:
 	
 	# 如果建筑被销毁，自动移除
 	node.tree_exited.connect(func(): unregister_building(node))
+
+## 标记房屋需要重新检测
+func mark_housing_dirty(global_pos: Vector2):
+	# 简单做法：清空该位置附近的缓存或全量标记
+	# 临时：全量清空 (后续优化)
+	housing_cache.clear()
+	print("SettlementManager: 建筑变动，房屋缓存已清空")
+
+## 自动结算：寻找无家可归的 NPC 并分配房屋
+func _process_settlement_tick():
+	# 遍历所有城镇 NPC
+	var npcs = get_tree().get_nodes_in_group("town_npcs")
+	for npc in npcs:
+		if not npc.get("npc_data"): continue
+		var data = npc.npc_data
+		if not data.is_settled:
+			_try_assign_home(npc)
+
+func _try_assign_home(npc: Node):
+	# 扫描附近已建成的、为空的有效房屋
+	for room_id in housing_cache.keys():
+		var info = housing_cache[room_id]
+		if info.get("occupied_by") == "":
+			info["occupied_by"] = npc.name
+			npc.npc_data.is_settled = true
+			npc.npc_data.home_pos = info.interior[0] # 取填充点作为家
+			print("SettlementManager: NPC ", npc.name, " 入住房屋 ", room_id)
+			return
+
+## 房屋检测核心逻辑 (基于单个区块 64x64)
+func check_house(global_pos: Vector2) -> Dictionary:
+	var lm = get_node_or_null("/root/LayerManager")
+	if not lm: return {"is_valid": false, "error": "System Error"}
+	
+	var l0 = lm.layer_nodes.get(0)
+	var l2 = lm.layer_nodes.get(2)
+	if not l0 or not l2: return {"is_valid": false, "error": "Layer Error"}
+	
+	var start_map_pos = l0.local_to_map(l0.to_local(global_pos))
+	
+	# 1. 泛洪填充 (Flood Fill)
+	var stack = [start_map_pos]
+	var interior = {}
+	var max_tiles = 750
+	
+	# 区块边界判定
+	var icm = get_node_or_null("/root/InfiniteChunkManager")
+	var chunk_coord = icm.get_chunk_coord(global_pos) if icm else Vector2i.ZERO
+	var chunk_origin = chunk_coord * 64
+	
+	while stack.size() > 0:
+		var p = stack.pop_back()
+		if interior.has(p): continue
+		
+		# 是否超出单个区块边界
+		if p.x < chunk_origin.x or p.x >= chunk_origin.x + 64 or \
+		   p.y < chunk_origin.y or p.y >= chunk_origin.y + 64:
+			return {"is_valid": false, "error": "超出区块边界 (Max 64x64)"}
+		
+		# 是否遇到 Layer 0 实心块
+		if l0.get_cell_source_id(p) != -1: continue
+		
+		interior[p] = true
+		if interior.size() > max_tiles:
+			return {"is_valid": false, "error": "房屋太大 (Max 749)"}
+		
+		for off in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
+			stack.push_back(p + off)
+	
+	if interior.size() < 60:
+		return {"is_valid": false, "error": "房太小 (Min 60)"}
+	
+	# 2. 检查背景墙 (Layer 2) 覆盖度与空洞
+	var wall_count = 0
+	for p in interior:
+		if l2.get_cell_source_id(p) != -1:
+			wall_count += 1
+	
+	if float(wall_count) / interior.size() < 0.9:
+		return {"is_valid": false, "error": "背景墙不完整"}
+	
+	# 3. 检查必备家具 (基于群组)
+	var found_light = false
+	var found_comfort = false
+	var found_table = false
+	var found_door = false
+	
+	var space = l0.get_world_2d().direct_space_state
+	for p in interior:
+		var query = PhysicsPointQueryParameters2D.new()
+		query.position = l0.to_global(l0.map_to_local(p))
+		# 寻找物体
+		var results = space.intersect_point(query)
+		for res in results:
+			var obj = res.collider
+			if obj.is_in_group("housing_light"): found_light = true
+			if obj.is_in_group("housing_comfort"): found_comfort = true
+			if obj.is_in_group("housing_table"): found_table = true
+			if obj.is_in_group("housing_door") or obj.is_in_group("interactive_door"): found_door = true
+	
+	if not found_light: return {"is_valid": false, "error": "缺少光源"}
+	if not found_table: return {"is_valid": false, "error": "缺少桌/台"}
+	if not found_comfort: return {"is_valid": false, "error": "缺少舒适家具(椅/凳)"}
+	if not found_door: return {"is_valid": false, "error": "缺少入口(门/平台)"}
+
+	return {"is_valid": true, "interior": interior.keys(), "error": "该房屋已符合入住条件！"}
+
+## 房屋检查指令 (由 UI 调用)
+func inspect_housing(global_pos: Vector2) -> String:
+	var result = check_house(global_pos)
+	if result.is_valid:
+		return result.error
+	else:
+		return "此房屋无效：" + result.error
+
+## 全量扫描附近的房屋 (用于 UI 显示)
+func scan_all_housing() -> Dictionary:
+	var player = get_tree().get_first_node_in_group("player")
+	if not player: return {}
+	
+	housing_cache.clear()
+	
+	# 扫描玩家周围 200x200 瓦片的范围
+	var center_p = player.global_position
+	var range_px = 800
+	
+	# 为了性能，我们在这个范围内每隔 32 像素尝试进行一次 Flood Fill
+	# 找到一个空气格就开始填充
+	var lm = get_node_or_null("/root/LayerManager")
+	var l0 = lm.layer_nodes.get(0) if lm else null
+	if not l0: return {}
+	
+	var seen_tiles = {}
+	
+	for x in range(center_p.x - range_px, center_p.x + range_px, 32):
+		for y in range(center_p.y - range_px, center_p.y + range_px, 32):
+			var pos = Vector2(x, y)
+			var map_p = l0.local_to_map(l0.to_local(pos))
+			
+			if seen_tiles.has(map_p): continue
+			if l0.get_cell_source_id(map_p) == -1: # 空气
+				var result = check_house(pos)
+				if result.has("interior"):
+					for p in result.interior:
+						seen_tiles[p] = true
+					
+					var rid = "house_%d_%d" % [map_p.x, map_p.y]
+					housing_cache[rid] = result
+					
+					# 寻找当前居住者
+					housing_cache[rid]["occupied_by"] = ""
+					for nname in npc_homes.keys():
+						if npc_homes[nname] == rid:
+							housing_cache[rid]["occupied_by"] = nname
+	
+	return housing_cache
+
+func assign_npc_to_house(npc_name: String, house_id: String) -> void:
+	# 先解除该 NPC 之前的绑定
+	for rid in housing_cache.keys():
+		if housing_cache[rid].get("occupied_by") == npc_name:
+			housing_cache[rid]["occupied_by"] = ""
+	
+	# 解除该房屋之前的绑定
+	if npc_homes.values().has(house_id):
+		for nname in npc_homes.keys():
+			if npc_homes[nname] == house_id:
+				npc_homes.erase(nname)
+				_notify_npc_lost_home(nname)
+	
+	# 新绑定
+	npc_homes[npc_name] = house_id
+	if housing_cache.has(house_id):
+		housing_cache[house_id]["occupied_by"] = npc_name
+		
+	print("SettlementManager: 手动分配 ", npc_name, " 到房间 ", house_id)
+	
+	# 更新 NPC 行为
+	var npcs = get_tree().get_nodes_in_group("town_npcs")
+	for npc in npcs:
+		if npc.name == npc_name:
+			var bb = npc.get_node("BTPlayer").blackboard if npc.get_node_or_null("BTPlayer") else null
+			if bb and housing_cache.has(house_id):
+				bb.set_var("home_pos", housing_cache[house_id].interior[0] * 16.0)
 
 ## 移除建筑
 func unregister_building(node: Node2D) -> void:
@@ -125,29 +314,18 @@ func _process_migration_logic() -> void:
 
 func _get_available_suitable_houses() -> Array:
 	var list = []
-	for b_node in buildings:
-		var res = buildings[b_node]
-		# 只有 House 类型的建筑且未被占用才可入住
-		if res.display_name == "住宅" or res.display_name == "House" or res.category == "Housing":
-			var is_occupied = false
-			for home in npc_homes.values():
-				if home == b_node:
-					is_occupied = true
-					break
-			if not is_occupied:
-				list.append(b_node)
+	# 使用新的房屋缓存系统
+	for room_id in housing_cache.keys():
+		var info = housing_cache[room_id]
+		if info.get("is_valid", false) and info.get("occupied_by", "") == "":
+			list.append(room_id)
 	return list
 
-func _schedule_npc_arrival(template: Dictionary, target_house: Node2D) -> void:
-	# 模拟几天后的迁入 (这里用 15 秒演示)
-	await get_tree().create_timer(15.0).timeout
-	
-	# 双重检查：如果期间已被招募，则取消
-	if template["recruited"]: return
-	
-	# 寻找城镇入口 (寻找合法的地面生成点)
+func _schedule_npc_arrival(template: Dictionary, target_room_id: String) -> void:
+	# 模拟 NPC 从城镇边缘走过来
+	var player = get_tree().get_first_node_in_group("player")
 	var dir = 1 if randf() > 0.5 else -1
-	var spawn_x = get_settlement_center().x + (1600 * dir)
+	var spawn_x = player.global_position.x + 1200 * dir if player else 1200 * dir
 	var spawn_pos = _find_valid_ground_pos(spawn_x, get_settlement_center().y)
 	
 	# 确保不在屏幕上，防止“凭空出现”的突兀感
@@ -168,15 +346,74 @@ func _schedule_npc_arrival(template: Dictionary, target_house: Node2D) -> void:
 		migration_queue.erase(template["name"])
 		
 		# 分配住所
-		if npc.has_method("sync_data_to_blackboard"):
-			npc_homes[template["name"]] = target_house
-			print("SettlementManager: [", template["name"], "] 已抵达！入住: ", target_house.name)
-			
-			# 设置 AI 状态
-			if npc.bt_player and npc.bt_player.blackboard:
-				npc.bt_player.blackboard.set_var("home_pos", target_house.global_position)
-				# 可以在这里触发一个 "MoveToHome" 行为
+		npc_homes[template["name"]] = target_room_id # 这里暂存 ID
+		print("SettlementManager: [", template["name"], "] 已抵达！入住: ", target_room_id)
+		
+		# 设置 AI 状态
+		if npc.has_method("sync_data_to_blackboard") or npc.get("bt_player"):
+			var bb = npc.get_node("BTPlayer").blackboard if npc.get_node_or_null("BTPlayer") else null
+			if bb:
+				# 获取房屋位置
+				var room_info = housing_cache.get(target_room_id)
+				if room_info:
+					bb.set_var("home_pos", room_info.interior[0] * 16.0) # 假设 16 像素/格
+
+## --- Phase 5: 快乐度与社交系统 ---
+
+## 计算 NPC 当前的快乐度 (0.0 - 2.0, 1.0 为基准)
+func get_npc_happiness(npc_name: String) -> float:
+	var happiness = 1.0
+	
+	# 1. 寻找该 NPC 的住所
+	var home_info = null
+	for rid in housing_cache.keys():
+		if housing_cache[rid].get("occupied_by") == npc_name:
+			home_info = housing_cache[rid]
+			break
+	
+	if not home_info: return 0.5 # 无家可归者不快乐
+	
+	# 2. 邻近度检查 (拥挤度)
+	var neighbor_count = 0
+	var home_pos = home_info.interior[0]
+	for rid in housing_cache.keys():
+		var other = housing_cache[rid]
+		if other.get("occupied_by") != "" and other.get("occupied_by") != npc_name:
+			var dist = Vector2(home_pos).distance_to(Vector2(other.interior[0]))
+			if dist < 50: # 非常近的邻居
+				neighbor_count += 1
+	
+	if neighbor_count > 2:
+		happiness -= 0.1 * (neighbor_count - 2) # 拥挤减成
+	elif neighbor_count == 0:
+		happiness += 0.05 # 独居小加成
+		
+	return clamp(happiness, 0.0, 2.0)
+
+## 注册晶塔 (只有当区域内有 2 个以上开心的 NPC 时才可使用)
+func register_pylon(pylon_name: String, global_pos: Vector2):
+	active_pylons[pylon_name] = global_pos
+	print("SettlementManager: 晶塔 [", pylon_name, "] 已激活")
+
+## 晶塔传送
+func travel_pylon(to_pylon_name: String):
+	if not active_pylons.has(to_pylon_name): return
+	
+	var player = get_tree().get_first_node_in_group("player")
+	if player:
+		# 只有在另一个晶塔附近时才能传送 (泰拉瑞亚规则)
+		var near_any = false
+		for p_pos in active_pylons.values():
+			if player.global_position.distance_to(p_pos) < 100:
+				near_any = true
+				break
 				
+		if near_any:
+			player.global_position = active_pylons[to_pylon_name]
+			print("SettlementManager: 传送至 ", to_pylon_name)
+		else:
+			print("SettlementManager: 你需要靠近一个晶塔才能进行传送")
+
 func _find_valid_ground_pos(target_x: float, search_start_y: float) -> Vector2:
 	# 垂直射线寻找地面
 	var space_state = get_tree().root.get_world_2d().direct_space_state
@@ -302,14 +539,3 @@ func assign_job(npc_data: CharacterData, job_id: String) -> void:
 ## 获取 NPC 当前职业
 func get_npc_job(npc_data: CharacterData) -> String:
 	return job_assignments.get(npc_data.display_name, "None")
-
-## 获取位置附近的效率加成 (0.0 - 1.0)
-func get_efficiency_bonus(global_pos: Vector2) -> float:
-	var total_bonus = 0.0
-	for b_node in buildings.keys():
-		if b_node.has_method("_apply_buffs"): 
-			var dist = b_node.global_position.distance_to(global_pos)
-			var radius = b_node.get("buff_radius") if "buff_radius" in b_node else 0.0
-			if dist <= radius:
-				total_bonus += b_node.get("efficiency_bonus") if "efficiency_bonus" in b_node else 0.0
-	return clamp(total_bonus, 0.0, 1.0)

@@ -41,6 +41,13 @@ var knockback_velocity: Vector2 = Vector2.ZERO
 var attributes: AttributeComponent
 var camera: Camera2D
 var input_enabled: bool = true
+var invincible: bool = false
+var _gravity_enabled: bool = true
+
+func set_gravity_enabled(enabled: bool) -> void:
+	_gravity_enabled = enabled
+	if not enabled:
+		velocity.y = 0
 
 # Inventory
 var inventory: InventoryManager
@@ -74,6 +81,7 @@ func _ready() -> void:
 	# Weapon Attachment Setup (Wand Decoration System)
 	weapon_pivot = Marker2D.new()
 	weapon_pivot.name = "WeaponPivot"
+	weapon_pivot.position = Vector2(0, -12) # 移至角色躯干中心
 	add_child(weapon_pivot)
 	
 	wand_sprite = Sprite2D.new()
@@ -184,6 +192,8 @@ func _process(_delta: float) -> void:
 
 # Combat Juice Interfaces
 func take_damage(amount: float, _type: String = "physical") -> void:
+	if invincible: return # 无敌状态下不响应伤害
+	
 	if attributes and attributes.data:
 		attributes.data.health -= amount
 		print("Player takes damage: ", amount, " | New HP: ", attributes.data.health)
@@ -246,15 +256,62 @@ func _setup_inventory_ui():
 
 
 func _on_equipped_item_changed(item: Resource):
+	# 允许重复触发，以便在右键取消后，再次点击同一格能重新唤出预览
+	var bm = get_tree().get_first_node_in_group("building_manager")
+	
 	if item is WandItem:
+		if bm: bm.cancel_building()
 		current_wand = item.wand_data
-		# Note: We now generate the texture from data, not use item icon directly for in-hand visual
-		# unless we want to support generic icon fallback?
-		# For now, let's force regeneration to match decoration system
+		if wand_sprite: wand_sprite.visible = true
 		_update_wand_visual()
+	elif item is TileItemData or (item and item.has_meta("building_resource")) or (item and (item.id == "workbench" or item.id == "workbench_item")):
+		if bm: 
+			if bm.is_building(): bm.cancel_building()
+			_try_place_held_item() # 内部已经处理了建筑启动逻辑
+		
+		current_wand = null
+		if wand_sprite and item: 
+			wand_sprite.visible = true
+			if item.icon:
+				wand_sprite.texture = item.icon
+			else:
+				# 容错：如果物品没图标，不清除旧贴图以免变黑，或者给个默认的
+				pass
+			wand_sprite.offset = Vector2(16, 0)
+			wand_sprite.centered = true
+			wand_sprite.rotation = 0
+			wand_sprite.scale = Vector2(0.5, 0.5) 
+			wand_sprite.modulate = Color(1, 1, 1, 1)
+			wand_sprite.z_index = 5
+	elif item and (item.has_meta("building_resource") or item.id == "workbench" or item.id == "workbench_item"):
+		# 建筑类物品：立即进入建造预览模式
+		current_wand = null
+		if wand_sprite: 
+			wand_sprite.visible = true
+			wand_sprite.texture = item.icon
+			wand_sprite.offset = Vector2(16, 0)
+			wand_sprite.scale = Vector2(0.8, 0.8)
+			wand_sprite.modulate = Color(1, 1, 1, 0.8)
+			
+		if bm:
+			if bm.is_building(): bm.cancel_building()
+			if item.id == "workbench" or item.id == "workbench_item":
+				var res = BuildingResource.new()
+				res.scene = load("res://scenes/world/workbench.tscn")
+				res.cost = { item.id: 1 }
+				res.id = item.id
+				res.display_name = item.display_name
+				res.requires_flat_ground = true
+				res.influence_radius = 160.0 # 明确设置工作台的影响范围/可见圈
+				bm.start_building(res)
+			elif item.has_meta("building_resource"):
+				bm.start_building(item.get_meta("building_resource"))
 	else:
 		current_wand = null
-		if wand_sprite: wand_sprite.texture = null
+		if wand_sprite: 
+			wand_sprite.texture = null
+			wand_sprite.visible = false
+		if bm: bm.cancel_building()
 	
 	if interaction_area:
 		interaction_area.collision_layer = 0
@@ -269,8 +326,14 @@ const ACTION_INTERVAL: float = 0.25 # 0.25秒触发一次动作
 # Wand System Helpers
 func _setup_test_wand():
 	var test_path = "res://scenes/test_wand.tres"
+	
+	# Try loading if exists
 	if ResourceLoader.exists(test_path):
-		current_wand = ResourceLoader.load(test_path, "", ResourceLoader.CACHE_MODE_IGNORE)
+		var loaded = ResourceLoader.load(test_path, "", ResourceLoader.CACHE_MODE_IGNORE)
+		if loaded is WandData:
+			current_wand = loaded
+
+	if current_wand:
 		print("Loaded existing wand from ", test_path)
 		# Ensure embryo exists
 		if not current_wand.embryo:
@@ -313,9 +376,12 @@ func _update_wand_visual():
 	var tex = WandTextureGenerator.generate_texture(current_wand)
 	if wand_sprite:
 		wand_sprite.texture = tex
+		# 恢复魔杖的特殊中心和旋转位移
+		wand_sprite.centered = false
+		wand_sprite.offset = Vector2(-8, -48)
+		wand_sprite.rotation = PI / 2
 		# Remove old scale hack if present, keep 1:1 pixel art
 		wand_sprite.scale = Vector2.ONE 
-		# Rotation fixed at -90deg in _ready for vertical-to-horizontal mapping
 	
 	# Update Inventory Icon if applicable
 	if current_wand and tex:
@@ -373,15 +439,26 @@ func _unhandled_input(event: InputEvent) -> void:
 			camera.zoom = (camera.zoom - Vector2(0.1, 0.1)).clamp(Vector2(0.5, 0.5), Vector2(4.0, 4.0))
 			get_viewport().set_input_as_handled()
 	
-	# 右键放置特殊物品 (如工作台)
+	# 鼠标点击逻辑优化：
+	# 1. 如果手里拿着可放置物品，且当前不在建造模式，点击左键先启动预览
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		var bm = get_tree().get_first_node_in_group("building_manager")
+		if bm and not bm.is_building():
+			_try_place_held_item()
+	
+	# 右键取消建造
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
-		print("Player: Right click detected - attempting placement")
-		_try_place_held_item()
+		var bm = get_tree().get_first_node_in_group("building_manager")
+		if bm and bm.is_building():
+			bm.cancel_building()
+			get_viewport().set_input_as_handled()
 
 func _physics_process(delta: float) -> void:
 	# --- 无限地图更新 ---
 	if InfiniteChunkManager and Engine.get_frames_drawn() % 10 == 0:
 		InfiniteChunkManager.update_player_vicinity(global_position)
+		if MinimapManager:
+			MinimapManager.reveal_area(global_position, 30) # 约 1.5 个屏幕半径的探索范围
 
 	if action_cooldown > 0:
 		action_cooldown -= delta
@@ -395,7 +472,8 @@ func _physics_process(delta: float) -> void:
 	if not input_enabled:
 		velocity.x = move_toward(velocity.x, 0, SPEED)
 		if not is_on_floor():
-			velocity.y += GRAVITY * delta
+			if _gravity_enabled:
+				velocity.y += GRAVITY * delta
 		velocity += knockback_velocity 
 		move_and_slide()
 		return
@@ -443,13 +521,14 @@ func _physics_process(delta: float) -> void:
 		jump_ramp_timer = max(0.0, jump_ramp_timer - delta)
 
 	if not is_on_floor():
-		if velocity.y < 0:
-			var g_mult = GRAVITY_HOLD_MULTIPLIER if Input.is_action_pressed("space") else GRAVITY_RELEASE_MULTIPLIER
-			velocity.y += GRAVITY * g_mult * delta
-		else:
-			fall_time += delta
-			var dynamic_fall_multiplier = clamp(GRAVITY_FALL_MULTIPLIER + fall_time * FALL_GRAVITY_GROWTH, GRAVITY_FALL_MULTIPLIER, 4.5)
-			velocity.y += GRAVITY * dynamic_fall_multiplier * delta
+		if _gravity_enabled:
+			if velocity.y < 0:
+				var g_mult = GRAVITY_HOLD_MULTIPLIER if Input.is_action_pressed("space") else GRAVITY_RELEASE_MULTIPLIER
+				velocity.y += GRAVITY * g_mult * delta
+			else:
+				fall_time += delta
+				var dynamic_fall_multiplier = clamp(GRAVITY_FALL_MULTIPLIER + fall_time * FALL_GRAVITY_GROWTH, GRAVITY_FALL_MULTIPLIER, 4.5)
+				velocity.y += GRAVITY * dynamic_fall_multiplier * delta
 
 	# --- 空气阻力 ---
 	if velocity.length() > 0.0:
@@ -464,6 +543,22 @@ func _physics_process(delta: float) -> void:
 	
 	if is_on_wall() and was_on_floor:
 		_handle_step_up()
+
+func _attempt_execution() -> void:
+	var enemies = get_tree().get_nodes_in_group("npcs")
+	var closest: Node2D = null
+	var min_dist = 120.0 # Slightly larger than 100 to feel generous
+	
+	for enemy in enemies:
+		# Check if property exists first
+		if enemy.get("is_executable"):
+			var dist = global_position.distance_to(enemy.global_position)
+			if dist < min_dist:
+				min_dist = dist
+				closest = enemy
+	
+	if closest and closest.has_method("execute_by_player"):
+		closest.execute_by_player(self)
 
 func _handle_step_up() -> void:
 	var direction = Input.get_axis("left", "right")
@@ -508,6 +603,9 @@ func _handle_continuous_actions() -> void:
 			action_cooldown = recharge
 
 func _handle_input_actions() -> void:
+	if Input.is_key_pressed(KEY_F):
+		_attempt_execution()
+
 	if Input.is_action_just_pressed("interact"):
 		_interact()
 	
@@ -574,6 +672,14 @@ func _handle_input_actions() -> void:
 			current_mining_tile = Vector2i(-1, -1)
 
 func _handle_mouse_action() -> bool:
+	# 检查当前装备是否为工具
+	var equipped = inventory.get_equipped_item() if inventory else null
+	if equipped is ToolItemData:
+		if action_cooldown <= 0:
+			equipped._on_use(self)
+			action_cooldown = ACTION_INTERVAL
+		return true
+
 	# 如果正在建造，不执行挖掘逻辑
 	var building_mgr = get_tree().get_first_node_in_group("building_manager")
 	if building_mgr and building_mgr.has_method("is_building") and building_mgr.is_building():
@@ -628,23 +734,32 @@ func _handle_mouse_action() -> bool:
 						has_tile = tree_layer.get_cell_source_id(map_pos) != -1
 
 			# 检查距离，防止全屏挖掘
-			if global_position.distance_to(mouse_pos) < 150 and has_tile:
-				# 如果切换了瓦片，重置旧瓦片的进度
-				if current_mining_tile != map_pos:
-					if current_mining_tile != Vector2i(-1, -1):
-						GameState.digging.reset_mining_progress(current_mining_tile)
-					current_mining_tile = map_pos
-				
-				# 暂时使用 0 作为徒手挖掘力，后续可从装备系统获取
-				var power = 0 
-				# 使用持续挖掘逻辑
-				GameState.digging.mine_tile_step(map_pos, get_physics_process_delta_time(), power)
-				return true
-			else:
-				# 超出距离或无瓦片，重置进度
-				if current_mining_tile != Vector2i(-1, -1):
-					GameState.digging.reset_mining_progress(current_mining_tile)
-					current_mining_tile = Vector2i(-1, -1)
+			if global_position.distance_to(mouse_pos) < 150:
+				if has_tile:
+					# 如果切换了瓦片，重置旧瓦片的进度
+					if current_mining_tile != map_pos:
+						if current_mining_tile != Vector2i(-1, -1):
+							GameState.digging.reset_mining_progress(current_mining_tile)
+						current_mining_tile = map_pos
+					
+					var power = 0 
+					GameState.digging.mine_tile_step(map_pos, get_physics_process_delta_time(), power)
+					return true
+				else:
+					# 检查是否有可挖掘建筑
+					var buildings = get_tree().get_nodes_in_group("doors") + get_tree().get_nodes_in_group("tables") + get_tree().get_nodes_in_group("torches")
+					for b in buildings:
+						# 使用简单的碰撞矩形或距离检查
+						var local_m_pos = b.to_local(mouse_pos)
+						# 假设建筑大小约为 1-2 格 (16-32px)
+						if abs(local_m_pos.x) < 24 and abs(local_m_pos.y) < 32:
+							GameState.digging.mine_building_step(b, get_physics_process_delta_time(), 0)
+							return true
+
+			# 超出距离或无瓦片/建筑，重置进度
+			if current_mining_tile != Vector2i(-1, -1):
+				GameState.digging.reset_mining_progress(current_mining_tile)
+				current_mining_tile = Vector2i(-1, -1)
 	
 	return false
 
@@ -655,27 +770,37 @@ func _try_place_held_item() -> void:
 	if not item: return
 	
 	# 检查是否是可放置物品
-	# 1. 工作台
+	# 改为统一的左键点击启动建造模式逻辑
+	var bm = get_tree().get_first_node_in_group("building_manager")
+	if not bm: return
+	
+	# 如果已经在建造中，则忽略，防止冲突
+	# 但如果我们要“切换”建筑，可能需要逻辑
+	
+	# 1. 检查元数据中是否有预载的建筑资源 (针对门、桌子、火把等)
+	if item.has_meta("building_resource"):
+		# 传递 override cost，确保消耗物品本身而不是原材料
+		bm.start_building(item.get_meta("building_resource"), { item.id: 1 })
+		return
+
+	# 2. 特殊处理工作台
 	if item.id == "workbench" or item.id == "workbench_item":
-		print("Player: Holding workbench, starting building mode")
-		var bm = get_tree().get_first_node_in_group("building_manager")
-		if not bm: return
-		
-		# 如果已经在建造中，则忽略，防止冲突
-		if bm.has_method("is_building") and bm.is_building():
-			return
-			
 		var res = BuildingResource.new()
-		# 动态加载场景
 		res.scene = load("res://scenes/world/workbench.tscn")
-		# 设置消耗为物品本身
-		res.cost = { "workbench": 1 }
-		res.id = "workbench_placement"
-		res.display_name = "Workbench"
+		# 强制工作台物品消耗自身，而不是 wood:4 这种配方成本
+		res.cost = { item.id: 1 }
+		res.id = item.id
+		res.display_name = item.display_name
 		res.requires_flat_ground = true
-		
-		# 启动建造模式
-		bm.start_building(res)
+		res.grid_size = Vector2i(2, 1) # 工作台是 2x1 规格
+		res.influence_radius = 160.0
+		bm.start_building(res, { item.id: 1 })
+		return
+	
+	# 3. 处理瓦片物品 (泥土、石头等)
+	if item is TileItemData:
+		bm.start_building(item)
+		return
 
 func _interact() -> void:
 	if not interaction_area:

@@ -19,6 +19,8 @@ func _input(event: InputEvent) -> void:
 		_debug_grow_child(get_hovered_npc())
 	elif event.keycode == KEY_F4: # 自杀 (原F7)
 		_debug_kill_player()
+	elif event.keycode == KEY_F5: # 全解锁 (新增)
+		_debug_unlock_everything()
 	elif event.keycode == KEY_F12: # 公主 (原F9)
 		spawn_princess()
 
@@ -104,6 +106,35 @@ func _debug_kill_player() -> void:
 	if GameState.player_data:
 		LifespanManager.consume_lifespan(GameState.player_data, 9999.0)
 		print("Debug: Player Killed.")
+
+func _debug_unlock_everything() -> void:
+	print("Debug: Unlocking EVERYTHING...")
+	
+	# 1. 获得所有物品
+	var player = get_tree().get_first_node_in_group("player")
+	if player and player.inventory:
+		for item_id in GameState.item_db:
+			var item = GameState.item_db[item_id]
+			if item:
+				player.inventory.add_item(item, 100)
+		print("Debug: Added 100 of all items to inventory.")
+	
+	# 2. 解锁所有法术
+	var all_spells = [
+		"generator", 
+		"trigger_cast", "trigger_collision", "trigger_timer",
+		"action_projectile", 
+		"projectile_slime", "projectile_tnt", "projectile_blackhole", "projectile_teleport",
+		"modifier_damage", "modifier_pierce", "modifier_speed", "modifier_delay",
+		"element_fire", "element_ice", # 假设这是ID
+		"modifier_element_fire", "modifier_element_ice", # 尝试两种命名以防万一
+		"logic_splitter", "logic_sequence"
+	]
+	
+	for s in all_spells:
+		GameState.unlock_spell(s)
+	
+	UIManager.show_floating_text("DEV MODE: UNLOCKED ALL", player.global_position, Color.MAGENTA)
 
 func spawn_princess() -> void:
 	var player = get_tree().get_first_node_in_group("player")

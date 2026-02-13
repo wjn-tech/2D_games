@@ -9,6 +9,11 @@ class_name BaseNPC
 @export var attack_range: float = 50.0
 @export var wander_radius: float = 300.0 
 
+# Progression & Execution
+var is_executable: bool = false
+var _execution_prompt_instance: Control = null
+var loot_item_scene: PackedScene = preload("res://scenes/world/loot_item.tscn")
+
 var stun_timer: float = 0.0
 
 # LimboAI components
@@ -47,6 +52,19 @@ var name_label: Label
 func _ready() -> void:
 	spawn_position = global_position
 	
+	if npc_data:
+		# 加载数据驱动的行为树
+		if not npc_data.behavior_tree_path.is_empty():
+			var bt = load(npc_data.behavior_tree_path)
+			if bt is BehaviorTree:
+				bt_player.behavior_tree = bt
+				bt_player.restart()
+		
+		# 初始化黑板属性
+		bt_player.blackboard.set_var(&"max_health", npc_data.max_health)
+		bt_player.blackboard.set_var(&"is_hostile", npc_data.npc_type == "Hostile")
+		bt_player.blackboard.set_var(&"preferred_biome", npc_data.preferred_biome)
+
 	# 初始化导航代理
 	nav_agent.velocity_computed.connect(_on_velocity_computed)
 	
@@ -134,6 +152,7 @@ func _ready() -> void:
 		# 强制设置初始状态
 		var idle_state = hsm.get_node_or_null("Idle")
 		var combat_state = hsm.get_node_or_null("Combat")
+		var home_state = hsm.get_node_or_null("Home")
 		
 		if idle_state:
 			print("[BaseNPC] Setting initial state to Idle.")
@@ -141,11 +160,17 @@ func _ready() -> void:
 		else:
 			push_error("[BaseNPC] CRITICAL: Idle state node not found!")
 			
-		# 关键修复：注册状态转换 (之前缺失导致无法切换到战斗状态)
+		# 关键修复：注册状态转换
 		if idle_state and combat_state:
 			print("[BaseNPC] Registering HSM transitions.")
 			hsm.add_transition(idle_state, combat_state, &"enemy_detected")
 			hsm.add_transition(combat_state, idle_state, &"threat_cleared")
+			
+			if home_state:
+				hsm.add_transition(idle_state, home_state, &"night_started")
+				hsm.add_transition(home_state, idle_state, &"day_started")
+				hsm.add_transition(combat_state, home_state, &"night_started")
+				hsm.add_transition(home_state, combat_state, &"enemy_detected")
 		else:
 			push_error("[BaseNPC] CRITICAL: Cannot register transitions, missing states.")
 			
@@ -155,14 +180,10 @@ func _ready() -> void:
 func _setup_nameplate() -> void:
 	nameplate = Control.new()
 	nameplate.name = "Nameplate"
-	nameplate.set_script(load("res://src/ui/context_prompt.gd")) # Attach ContextPrompt script
-	add_child(nameplate)
 	nameplate.position = Vector2(0, -60) 
-
-	# Mimic the structure expected by ContextPrompt.gd
-	# $VBoxContainer/Label 
-	# $VBoxContainer/ActionContainer
 	
+	# Create children BEFORE adding nameplate to tree or setting script
+	# to avoid @onready race conditions or "Node not found" errors
 	var vbox = VBoxContainer.new()
 	vbox.name = "VBoxContainer"
 	vbox.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
@@ -181,6 +202,10 @@ func _setup_nameplate() -> void:
 	action_box.alignment = BoxContainer.ALIGNMENT_CENTER
 	vbox.add_child(action_box)
 
+	# Now attach script and add to tree
+	nameplate.set_script(load("res://src/ui/context_prompt.gd")) 
+	add_child(nameplate)
+
 	# Initial Setup
 	var type_str = name
 	if npc_data and npc_data.display_name != "":
@@ -189,8 +214,6 @@ func _setup_nameplate() -> void:
 	if nameplate.has_method("setup"):
 		nameplate.setup(type_str, npc_data.alignment)
 
-	# Removed Manual Label Color/Text setting here as it is handled by setup(), 
-	# but we need to ensure the container variable is updated for the progress bar below
 	var container = vbox 
 	
 	# Continue with HP Bar (attached to vbox)
@@ -392,13 +415,45 @@ func update_home_position(pos: Vector2) -> void:
 func _on_night_toggled(is_night: bool) -> void:
 	if bt_player and bt_player.blackboard:
 		bt_player.blackboard.set_var("is_night", is_night)
-	# 具体的行为反应现在由行为树处理
+	
+	if hsm:
+		if is_night:
+			hsm.dispatch(&"night_started")
+		else:
+			hsm.dispatch(&"day_started")
+	
+	# Terraria 风格：夜晚时如果玩家不在视野，NPC 瞬移回家
+	if is_night and npc_data and npc_data.is_settled:
+		var dist_to_home = global_position.distance_to(npc_data.home_pos)
+		if dist_to_home > 32:
+			# 简单的离屏判断 (简化版)
+			var player = get_tree().get_first_node_in_group("player")
+			if player and global_position.distance_to(player.global_position) > 600:
+				global_position = npc_data.home_pos
+				print(name, ": 瞬移回住所")
+
+## 分配住所接口 (由 SettlementManager 调用)
+func assign_home(room_info: Dictionary):
+	if npc_data:
+		npc_data.is_settled = true
+		# 取填充列表的第一个点作为家
+		if not room_info.interior.is_empty():
+			# 转换 map_pos 为 global_pos
+			var lm = get_node_or_null("/root/LayerManager")
+			var l0 = lm.layer_nodes.get(0) if lm else null
+			if l0:
+				npc_data.home_pos = l0.to_global(l0.map_to_local(room_info.interior[0]))
+				home_position = npc_data.home_pos
 
 func take_damage(amount: float, _type: String = "physical") -> void:
 	if npc_data:
 		var old_hp = npc_data.health
 		npc_data.health -= amount
 		print(name, " takes damage: ", amount, " | HP: ", old_hp, " -> ", npc_data.health)
+
+		# Check Execution Threshold (20%)
+		if npc_data.health <= npc_data.max_health * 0.2 and npc_data.health > 0:
+			_check_execution_state()
 		
 		# Visual feedback: Flash Red
 		if min_visual:
@@ -459,6 +514,14 @@ func _die() -> void:
 		if npc_data:
 			xp_gain += npc_data.level * 10
 		GameState.player_data.add_experience(xp_gain)
+		
+		# --- 新增：击败敌对目标产出金币 ---
+		if npc_data and npc_data.alignment == "Hostile":
+			var gold_drop = randi_range(5, 15) + (npc_data.level * 2)
+			GameState.player_data.change_money(gold_drop)
+			if UIManager:
+				UIManager.show_floating_text("+%d Gold" % gold_drop, global_position + Vector2(0, -20), Color.YELLOW)
+		
 		if UIManager:
 			UIManager.show_floating_text("+%d XP" % xp_gain, global_position, Color.SKY_BLUE)
 	
@@ -560,57 +623,57 @@ func interact(_interactor: Node = null) -> void:
 				bt_player.blackboard.set_var("is_interacting", false)
 		)
 
-	# --- Contextual Interaction ---
-	var actions = get_contextual_actions()
-	if actions.size() > 0:
-		var primary = actions[0]
-		# Execute primary action
-		call(primary.method)
-	else:
-		_start_default_dialogue()
-
-func get_contextual_actions() -> Array:
-	var actions = []
-	if npc_data.alignment == "Hostile":
-		return [] 
-
-	# 1. Occupation Actions
-	match occupation:
-		"Merchant":
-			actions.append({"label": "Trade", "key": "E", "method": "_open_trade"})
-		"Healer":
-			actions.append({"label": "Heal", "key": "E", "method": "_perform_heal"})
-	
-	# 2. General Dialogue (Always registered as Secondary if not Primary)
-	var talk_key = "F" if actions.size() > 0 else "E"
-	actions.append({"label": "Talk", "key": talk_key, "method": "_start_default_dialogue"})
-	
-	return actions
+	# --- Unified Interaction Logic ---
+	_start_default_dialogue()
 
 func _perform_heal() -> void:
+	if npc_data.alignment == "Hostile": return
 	# TODO: Heal logic implementation
 	pass
 
 func _start_default_dialogue() -> void:
-	# 触发对话系统
-	if get_node_or_null("/root/DialogueManager"):
-		var dm = get_node("/root/DialogueManager")
-		var options = [
-			{"text": "交易", "action": func(): _open_trade()},
-			{"text": "招募", "action": func(): _try_recruit()}
-		]
+	var dm = get_node_or_null("/root/DialogueManager")
+	if not dm: return
 
-		# 如果有任务且未接受，添加任务选项
-		if quest_template and get_node_or_null("/root/QuestManager"):
-			var qm = get_node("/root/QuestManager")
-			if not qm.is_quest_active(quest_template.quest_id) and not qm.is_quest_completed(quest_template.quest_id):
-				options.append({"text": "任务", "action": func(): _offer_quest()})
-			elif qm.is_quest_active(quest_template.quest_id):
-				options.append({"text": "交付任务", "action": func(): _check_quest_completion()})
+	if npc_data.alignment == "Hostile":
+		dm.start_dialogue(npc_data.display_name, ["... (Growls at you) ..."], [{"text": "Leave", "action": func(): pass}])
+		return
 
-		options.append({"text": "离开", "action": func(): pass})
+	var options = []
 
-		dm.start_dialogue(npc_data.display_name, ["你好！我是" + npc_data.display_name + "。", "有什么我可以帮你的吗？"], options)
+	# 1. Occupation Actions
+	match occupation:
+		"Merchant":
+			options.append({"text": "交易", "action": func(): _open_trade()})
+		"Healer":
+			options.append({"text": "治疗", "action": func(): _perform_heal()})
+		"Guard":
+			options.append({"text": "报告", "action": func(): pass})
+
+	# 2. Quest Actions
+	if quest_template and get_node_or_null("/root/QuestManager"):
+		var qm = get_node("/root/QuestManager")
+		if not qm.is_quest_active(quest_template.quest_id) and not qm.is_quest_completed(quest_template.quest_id):
+			# Offer Quest -> Chains to Quest Description (Don't close window)
+			options.append({"text": "任务", "action": func(): _offer_quest(), "close_after": false})
+		elif qm.is_quest_active(quest_template.quest_id):
+			options.append({"text": "交付任务", "action": func(): _check_quest_completion(), "close_after": false})
+
+	# 3. Recruitment Actions
+	if npc_data.npc_type != "Town":
+		options.append({"text": "招募", "action": func(): _try_recruit(), "close_after": false})
+	
+	# 4. Social Actions
+	options.append({"text": "送礼", "action": func(): _open_gift_menu()})
+
+	# 5. Exit
+	options.append({"text": "离开", "action": func(): pass})
+
+	dm.start_dialogue(npc_data.display_name, ["你好！我是" + npc_data.display_name + "。", "有什么我可以帮你的吗？"], options)
+
+func _open_gift_menu() -> void:
+	# Placeholder for gift menu
+	pass
 
 func _offer_quest() -> void:
 	if not quest_template: return
@@ -619,8 +682,8 @@ func _offer_quest() -> void:
 	var accept_action = func():
 		var qm = get_node("/root/QuestManager")
 		qm.accept_quest(quest_template)
-		# Removed overhead bubbles
 	
+	# Display description and offer
 	dm.start_dialogue(npc_data.display_name, [quest_template.description], [
 		{"text": "接受", "action": accept_action},
 		{"text": "拒绝", "action": func(): pass}
@@ -628,12 +691,12 @@ func _offer_quest() -> void:
 
 func _check_quest_completion() -> void:
 	var qm = get_node("/root/QuestManager")
+	var dm = get_node("/root/DialogueManager")
+	
 	if qm.complete_quest(quest_template.quest_id):
-		# Removed overhead bubbles
-		pass
+		if dm: dm.start_dialogue(npc_data.display_name, ["太感谢了！这是给你的报酬。"], [{"text": "不用谢", "action": func(): pass}])
 	else:
-		# Removed overhead bubbles
-		pass
+		if dm: dm.start_dialogue(npc_data.display_name, ["你还没有完成任务要求。", "请完成后再来找我。"], [{"text": "好的", "action": func(): pass}])
 
 func _open_trade() -> void:
 	if UIManager:
@@ -645,19 +708,150 @@ func _try_recruit() -> void:
 	if npc_data.npc_type == "Town":
 		return
 		
+	var dm = get_node("/root/DialogueManager")
+	
 	if npc_data.loyalty >= 50:
-		# Success message moved to dialogue manager or omitted
 		npc_data.npc_type = "Town"
 		npc_data.alignment = "Friendly"
 		var sm = get_node_or_null("/root/SettlementManager")
 		if sm:
 			sm.recruited_npcs.append(npc_data)
 			sm._recalculate_stats()
+			
+		if dm: dm.start_dialogue(npc_data.display_name, ["我愿意加入你的队伍！"], [{"text": "太棒了！", "action": func(): pass}])
 	else:
 		# Failure feedback
 		npc_data.loyalty += 5
+		if dm: dm.start_dialogue(npc_data.display_name, ["我还不够信任你... (需要 50 忠诚度)"], [{"text": "我会努力的", "action": func(): pass}])
 
-func get_inventory() -> Array:
+# --- Execution & Loot Logic ---
+func _check_execution_state() -> void:
+	if is_executable: return
+	is_executable = true
+	_show_execution_prompt()
+
+func _show_execution_prompt() -> void:
+	if not _execution_prompt_instance:
+		var label = Label.new()
+		label.text = "[F] 斩杀"
+		label.modulate = Color(1.0, 0.3, 0.3)
+		label.position = Vector2(-25, -45)
+		label.z_index = 100
+		add_child(label)
+		_execution_prompt_instance = label
+		
+		# Pulse Animation
+		var tween = create_tween().set_loops()
+		tween.tween_property(label, "scale", Vector2(1.2, 1.2), 0.5)
+		tween.tween_property(label, "scale", Vector2(1.0, 1.0), 0.5)
+
+func execute_by_player(player: Node2D) -> void:
+	if not is_executable: return
+	is_executable = false
+	
+	# Disable AI
+	if bt_player: bt_player.set_active(false)
+	if nav_agent: nav_agent.set_velocity(Vector2.ZERO)
+	
+	# Player Invincibility during execution sequence
+	var original_invincible = player.get("invincible") if "invincible" in player else false
+	if "invincible" in player:
+		player.invincible = true
+		# 强制修改碰撞检测 (如果玩家脚本里有这个变量)
+		player.set_deferred("monitoring", false) # 如果玩家是 Area2D，暂时关闭检测
+	
+	# Stop player movement briefly
+	if player.has_method("set_physics_process"):
+		player.set_physics_process(false)
+	
+	# Pull Effect
+	var tween = create_tween()
+	tween.tween_property(self, "global_position", player.global_position, 0.25).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_callback(func():
+		# Effect
+		if UIManager and UIManager.has_method("show_floating_text"):
+			UIManager.show_floating_text("斩杀!", global_position + Vector2(0, -30), Color(1.0, 0.2, 0.2))
+		
+		# Restore player state
+		if is_instance_valid(player):
+			if "invincible" in player:
+				player.invincible = original_invincible
+			player.set_deferred("monitoring", true)
+			if player.has_method("set_physics_process"):
+				player.set_physics_process(true)
+		
+		_drop_execution_loot()
+		_die()
+	)
+
+func _drop_execution_loot() -> void:
+	# 1. Determine Material and Spell ID based on NPC identity
+	var mat_id = "gold_nugget" # Default material
+	var spell_id = "projectile_magic_missile" # Default spell
+	
+	var d_name = npc_data.display_name
+	
+	if "史莱姆" in d_name or "Slime" in d_name:
+		mat_id = "slime_essence"
+		if randf() < 0.15: 
+			spell_id = "projectile_tnt"
+		else:
+			spell_id = "projectile_slime"
+	elif "骨" in d_name or "Skeleton" in d_name or "僵尸" in d_name or "Zombie" in d_name:
+		mat_id = "bone_fragment"
+		spell_id = "modifier_pierce"
+	elif "眼" in d_name or "Eye" in d_name:
+		mat_id = "crystalline_lens"
+		var r = randf()
+		if r < 0.2: spell_id = "projectile_blackhole"
+		elif r < 0.4: spell_id = "projectile_teleport"
+		else: spell_id = "modifier_speed" 
+	elif "蚁" in d_name or "Antlion" in d_name:
+		mat_id = "scrap_metal"
+		spell_id = "logic_splitter"
+	elif "公主" in d_name or "Princess" in d_name:
+		mat_id = "noble_essence" 
+		spell_id = "logic_sequence" # New Order Relay
+	
+	# Load material resource safely
+	var mat_path = "res://data/items/" + mat_id + ".tres"
+	if ResourceLoader.exists(mat_path):
+		var item_res = load(mat_path)
+		if item_res:
+			_spawn_loot(item_res, 1)
+	else:
+		# Fallback if specific resource doesn't exist yet
+		var default_mat = load("res://data/items/gold_nugget.tres")
+		if default_mat: _spawn_loot(default_mat, randi_range(2, 5))
+	
+	# 2. Chance for Spell (50%)
+	if randf() < 0.5:
+		if spell_id != "":
+			_spawn_spell_item(spell_id)
+
+func _spawn_loot(item: Resource, count: int) -> void:
+	if not loot_item_scene or not item: return
+	var loot = loot_item_scene.instantiate()
+	get_parent().call_deferred("add_child", loot)
+	loot.global_position = global_position
+	if loot.has_method("setup"):
+		loot.call_deferred("setup", item, count)
+
+func _spawn_spell_item(spell_id: String) -> void:
+	var spell_item = SpellItem.new()
+	spell_item.id = "spell_scroll_" + spell_id
+	spell_item.spell_unlock_id = spell_id
+	spell_item.display_name = "法术: " + spell_id
+	spell_item.item_type = "Consumable"
+	# Placeholder icon from palette
+	var atlas = AtlasTexture.new()
+	atlas.atlas = load("res://assets/minimalist_palette.png")
+	atlas.region = Rect2(48, 0, 16, 16) # Magic looking region
+	spell_item.icon = atlas
+	
+	_spawn_loot(spell_item, 1)
+
+func get_inventory():
 	# 移除之前的随机生成逻辑，现在由 WorldGenerator 在生成时初始化
 	return inventory
 

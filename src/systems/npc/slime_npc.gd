@@ -55,8 +55,8 @@ func _ready() -> void:
 	
 	ai_type = AIType.FIGHTER
 	
-	if npc_data and "speed" in npc_data:
-		speed = npc_data.get("speed")
+	if npc_data:
+		speed = npc_data.speed
 	
 	state_timer = randf_range(0.0, 1.0)
 

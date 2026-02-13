@@ -23,6 +23,20 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	# 默认路径初始化，实际应由 SaveManager 设置
 	_ensure_save_dir()
+	
+func restart() -> void:
+	print("InfiniteChunkManager: Restarting world state...")
+	loaded_chunks.clear()
+	# chunk_entity_containers 实际上可能包含了已经添加到场景树的节点引用
+	# 当 WorldGenerator 清理子节点时，这些引用会变为空或非法，但为了安全我们清空字典
+	chunk_entity_containers.clear()
+	# 如果是新游戏，我们必须清空之前保存的所有区块 Delta
+	world_delta_data.clear()
+	
+	_wipe_save_data_debug() # 彻底清理磁盘上的旧区块文件
+	
+	# 重置最后玩家位置，强制立刻更新
+	update_player_vicinity(Vector2(0, -999999)) # Force update on next frame
 
 func set_save_root(path_root: String) -> void:
 	# e.g. "user://saves/slot_1/world/"
@@ -75,7 +89,7 @@ func get_local_tile_pos(world_pos: Vector2) -> Vector2i:
 	)
 
 ## 记录玩家修改
-func record_delta(world_pos: Vector2, layer_idx: int, tile_id: int) -> void:
+func record_delta(world_pos: Vector2, layer_idx: int, source_id: int, atlas_coords: Vector2i = Vector2i.ZERO) -> void:
 	var c_coord = get_chunk_coord(world_pos)
 	var l_pos = get_local_tile_pos(world_pos)
 	
@@ -88,7 +102,7 @@ func record_delta(world_pos: Vector2, layer_idx: int, tile_id: int) -> void:
 			world_delta_data[c_coord] = WorldChunk.new()
 			world_delta_data[c_coord].coord = c_coord
 	
-	world_delta_data[c_coord].add_delta(layer_idx, l_pos, tile_id)
+	world_delta_data[c_coord].add_delta(layer_idx, l_pos, source_id, atlas_coords)
 
 ## 更新玩家周边的区块加载状态
 func update_player_vicinity(player_pos: Vector2) -> void:
@@ -159,10 +173,15 @@ func _get_top_tile_y(cells: Dictionary, local_x: int) -> int:
 	return -1
 
 func get_chunk_hash(c_coord: Vector2i) -> int:
-	# 使用更鲁棒的非对称哈希，加入魔数盐值，并处理 0 点
-	var x = c_coord.x + 12345
-	var y = c_coord.y + 67890
-	return abs((x * 73856093) ^ (y * 19349663) ^ 5381)
+	# 引入世界种子作为额外的盐值，确保每局游戏的结构位置都不同
+	var seed_salt = 0
+	var gen = get_tree().get_first_node_in_group("world_generator")
+	if gen and "seed_value" in gen:
+		seed_salt = gen.seed_value
+	
+	var x = c_coord.x + 12345 + (seed_salt % 9999)
+	var y = c_coord.y + 67890 + (seed_salt / 9999)
+	return abs((x * 73856093) ^ (y * 19349663) ^ 5381 ^ seed_salt)
 
 func _get_chunk_world_origin(c_coord: Vector2i) -> Vector2:
 	return Vector2(c_coord.x * CHUNK_SIZE * TILE_SIZE, c_coord.y * CHUNK_SIZE * TILE_SIZE)
@@ -517,8 +536,9 @@ func _generate_tree_at(cells: Dictionary, local_pos: Vector2i, rng: RandomNumber
 			cells[tree_layer_idx][p] = {"source": sid, "atlas": canopy_tile}
 
 func _finalize_chunk_load(coord: Vector2i, cells: Dictionary, new_entities: Array = []) -> void:
-	if not _loading_queue.has(coord): return 
-	_loading_queue.erase(coord)
+	# 如果是异步任务触发的，清理队列。如果是强制同步加载的，可能不在队列中
+	if _loading_queue.has(coord):
+		_loading_queue.erase(coord)
 	
 	# 双重加载检查：如果此时已经有其他地方加载了该区块，直接返回
 	if loaded_chunks.has(coord) or chunk_entity_containers.has(coord):
@@ -553,8 +573,85 @@ func _finalize_chunk_load(coord: Vector2i, cells: Dictionary, new_entities: Arra
 	
 	_apply_cells_to_layers(coord, cells, chunk)
 	_spawn_chunk_entities(coord, chunk) 
+	
+	# 显式刷新 TileMapLayer 属性 (根据图层类型决定碰撞)
+	var gen = get_tree().get_first_node_in_group("world_generator")
+	if gen:
+		if gen.layer_0: gen.layer_0.collision_enabled = true
+		if gen.layer_1: gen.layer_1.collision_enabled = true
+		# Layer 2 是背景墙图层，不应开启物理碰撞
+		if gen.layer_2: gen.layer_2.collision_enabled = false
+	
 	_spawn_chunk_particles(coord, cells) 
+	
+	if MinimapManager:
+		MinimapManager.update_from_chunk(coord, cells, chunk)
+		
 	chunk_loaded.emit(coord)
+
+## 强制同步加载指定位置的区块 (用于传送等紧急情况)
+func force_load_at_world_pos(world_pos: Vector2) -> void:
+	var coord = get_chunk_coord(world_pos)
+	if loaded_chunks.has(coord): return
+	
+	print("InfiniteChunkManager: SYNC forcing load for chunk ", coord)
+	var generator = get_tree().get_first_node_in_group("world_generator")
+	if not generator: return
+	
+	var cells = generator.generate_chunk_cells(coord)
+	var spawned_entities = []
+	
+	var natural_ground_y = []
+	for x in range(64):
+		natural_ground_y.append(_get_top_tile_y(cells, x))
+		
+	_apply_structures(coord, cells, spawned_entities)
+	_apply_trees(coord, cells, natural_ground_y)
+	
+	# 同步调用最终应用
+	_finalize_chunk_load(coord, cells, spawned_entities)
+
+## 寻找安全的地面位置 (用于防止掉入虚空)
+## 返回有效的 Global Position (Vector2) 或 null (未找到)
+func find_safe_ground(start_pos: Vector2, max_depth: float = 1200.0) -> Variant:
+	# 1. 确保该区域已加载 (数据层)
+	force_load_at_world_pos(start_pos)
+	
+	var generator = get_tree().get_first_node_in_group("world_generator")
+	if not generator: return null
+	
+	# 这里假设 generator.layer_0 是主要的参照层
+	var layer_0 = generator.layer_0
+	if not layer_0: return null
+	
+	var map_pos = layer_0.local_to_map(start_pos)
+	var max_y_offset = int(max_depth / float(TILE_SIZE))
+	
+	# 检查当前是否在墙里
+	if _is_solid_at_map(generator, map_pos):
+		# 如果卡在墙里，向上寻找空气
+		for i in range(1, 20): # 向上找20格
+			if not _is_solid_at_map(generator, map_pos + Vector2i(0, -i)):
+				# 找到空气
+				return layer_0.map_to_local(map_pos + Vector2i(0, -i))
+		return start_pos # 放弃治疗，交给物理引擎挤出
+		
+	# 检查下方是否有地面 (防止虚空)
+	for y_off in range(0, max_y_offset):
+		var check_pos = map_pos + Vector2i(0, y_off)
+		if _is_solid_at_map(generator, check_pos):
+			# 找到地面！
+			var ground_center = layer_0.map_to_local(check_pos)
+			# 返回地面上方一格的位置 (防止脚嵌入地面)
+			return ground_center + Vector2(0, -TILE_SIZE)
+			
+	return null # 下方全是虚空
+
+func _is_solid_at_map(gen, coord: Vector2i) -> bool:
+	if gen.layer_0.get_cell_source_id(coord) != -1: return true
+	if gen.layer_1 and gen.layer_1.get_cell_source_id(coord) != -1: return true
+	if gen.layer_2 and gen.layer_2.get_cell_source_id(coord) != -1: return true
+	return false
 
 func _spawn_chunk_entities(coord: Vector2i, chunk: WorldChunk) -> void:
 	if chunk.entities.is_empty(): return
@@ -747,30 +844,55 @@ func _apply_cells_to_layers(chunk_coord: Vector2i, cells: Dictionary, chunk: Wor
 	
 	var origin = chunk_coord * CHUNK_SIZE
 	
-	for layer_idx in cells.keys():
+	# 修改：不仅遍历 cells.keys()，还要确保遍历所有可能的逻辑图层，以便应用玩家 Delta
+	var all_relevant_layers = cells.keys()
+	for l_idx in [0, 1, 2]: # 核心物理/背景层
+		if not l_idx in all_relevant_layers:
+			all_relevant_layers.append(l_idx)
+	
+	for layer_idx in all_relevant_layers:
 		var layer = layers.get(layer_idx)
 		if not layer: continue
 		
 		# 确保图层可见且启用碰撞
 		if layer is TileMapLayer:
 			layer.visible = true 
-			layer.collision_enabled = true
+			# Layer 0 是核心物理层
+			# Layer 1 是背景墙 (由生成器填充地下部分)，不应有碰撞
+			# Layer 2 是深度背景，不应有碰撞
+			layer.collision_enabled = (layer_idx == 0 or layer_idx >= 10) # 树木层 (10+) 视情况而定
 		
-		# 放置原始生成的瓦片
-		for local_pos in cells[layer_idx]:
-			var data = cells[layer_idx][local_pos]
-			var map_pos = origin + local_pos
+		# 获取该层原始数据或空字典
+		var layer_cells = cells.get(layer_idx, {})
+		
+		# 我们需要处理该层中所有可能的位置：包括生成的和 Delta 记录的
+		# 首先处理 Delta（玩家修改）
+		var chunk_deltas = chunk.deltas.get(layer_idx, {})
+		
+		# 1. 应用生成的瓦片 (如果没有 Delta 覆盖)
+		for local_pos in layer_cells:
+			if chunk_deltas.has(local_pos): continue # 跳过，由 Delta 处理
 			
-			# 检查是否有玩家修改 (Delta) 覆盖
-			var delta_tile = chunk.get_delta(layer_idx, local_pos)
-			if delta_tile == -1: # 被挖掘
+			var data = layer_cells[local_pos]
+			var map_pos = origin + local_pos
+			layer.set_cell(map_pos, data["source"], data["atlas"])
+			
+		# 2. 应用玩家修改 (Delta)
+		for local_pos in chunk_deltas:
+			var map_pos = origin + local_pos
+			var delta = chunk_deltas[local_pos]
+			
+			if delta["source"] == -1:
 				layer.set_cell(map_pos, -1)
-			elif delta_tile >= 0: # 被重新放置
-				# 注意：这里的 delta_tile 暂时假定 ID
-				layer.set_cell(map_pos, delta_tile, Vector2i(0,0))
 			else:
-				# 结构生成器设置的 source 可能也是 -1
-				layer.set_cell(map_pos, data["source"], data["atlas"])
+				layer.set_cell(map_pos, delta["source"], delta["atlas"])
+	
+	# --- 强制物理重刷 ---
+	# 在传送后的同步加载中，此举至关重要，它强制本帧生成物理形状
+	for layer_idx in layers:
+		var layer = layers[layer_idx]
+		if layer is TileMapLayer:
+			layer.update_internals() # 触发 Godot 内部重绘与物理刷新
 
 func _unload_chunk(coord: Vector2i) -> void:
 	# 1. 如果有修改，保存到磁盘并释放内存

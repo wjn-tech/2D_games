@@ -14,9 +14,13 @@ const LAYER_PLAYER = 16 # Bit 4
 const LAYER_NPC = 32 # Bit 5
 
 @export var active_layer: int = 0
-@export var layer_dim_color: Color = Color(1.0, 1.0, 1.0, 0.4) # 修改：不再使用暗色，而是使用透明度
+@export var layer_dim_color: Color = Color(0.7, 0.7, 0.7, 0.6) # 修改：提高可见度 (0.4 -> 0.6) 并略微调暗但不透明
 
 var layer_nodes: Dictionary = {} # { index: Node }
+
+func _ready() -> void:
+	# 初始同步世界层级状态
+	call_deferred("switch_to_layer", 0)
 
 func register_layer(index: int, node: Node) -> void:
 	# 清理旧节点的组和标记（如果存在）
@@ -26,6 +30,13 @@ func register_layer(index: int, node: Node) -> void:
 	layer_nodes[index] = node
 	node.set_meta("layer_index", index)
 	node.add_to_group("map_layers")
+	
+	# 同步当前活跃状态的视觉效果
+	var idx = index
+	var is_active = (idx == active_layer)
+	if node is CanvasItem:
+		node.modulate = Color.WHITE if is_active else layer_dim_color
+		node.z_index = (active_layer - idx) * 20
 	
 	# 物理隔离核心逻辑：
 	# 为每个图层唯一化 TileSet 并设置其碰撞层位
@@ -65,15 +76,26 @@ func switch_to_layer(layer_index: int) -> void:
 		
 		# 视觉反馈：非活跃层半透明
 		if layer.has_method("set_modulate"):
-			layer.modulate = Color.WHITE if is_active else layer_dim_color
+			# 如果是背景层 (Layer 1/2)，在活跃层为 Layer 0 时，保持一定可见度
+			if not is_active and idx > 0 and active_layer == 0:
+				layer.modulate = Color(0.8, 0.8, 0.8, 0.7)
+			else:
+				layer.modulate = Color.WHITE if is_active else layer_dim_color
 		
 		# Z-Index 渲染排序
+		# 核心逻辑：背景图层 (idx > 0) 必须使用负的 Z-Index 确保在角色后方
+		# 前景图层 (idx = 0) 使用 0 或正值
 		if layer is CanvasItem:
-			layer.z_index = (active_layer - idx) * 20
+			if idx == 0:
+				layer.z_index = 0 if is_active else -5
+			else:
+				# idx 为 1, 2... 的层作为背景，Z-Index 为负
+				layer.z_index = -idx * 50 + (0 if is_active else -10)
 				
 	# 仅更新玩家及其视野内的实体
 	var player = tree.get_first_node_in_group("player")
 	if player:
+		player.z_index = 10 # 确保玩家始终在背景墙 (-10, -50等) 和当前地块 (0) 之上
 		_update_entity_collision(player, layer_index)
 
 func _update_entity_collision(entity: Node2D, layer_index: int) -> void:

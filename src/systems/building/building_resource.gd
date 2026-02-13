@@ -23,3 +23,7 @@ func _get_building_name(): return display_name
 @export var food_production: float = 0.0
 @export var defense_bonus: int = 0
 @export var influence_radius: float = 200.0
+
+# 摆放类型: "Any", "Floor", "Wall", "Ceiling"
+@export var placement_type: String = "Any"
+@export var grid_size: Vector2i = Vector2i(1, 1) # 占用网格大小

@@ -174,20 +174,23 @@ func _open_wand_selector():
 func _on_wand_selected(item: WandItem):
 	current_wand_item = item
 	edit_wand(item.wand_data)
-	if has_node("VBoxContainer/Header/WandNameLabel"):
-		$VBoxContainer/Header/WandNameLabel.text = "正在编辑: " + item.display_name
+	var label = get_node_or_null("VBoxContainer/Header/WandNameLabel")
+	if label:
+		label.text = "正在编辑: " + item.display_name
 	
 	# 更新属性显示
 	_update_stats_display()
 		
 	# 更新重命名输入框内容
-	if has_node("VBoxContainer/Header/RenameEdit"):
-		$VBoxContainer/Header/RenameEdit.text = item.display_name
+	var rename_edit = get_node_or_null("VBoxContainer/Header/RenameEdit")
+	if rename_edit:
+		rename_edit.text = item.display_name
 		
 	wand_selector.visible = false
 
 func _setup_rename_ui():
-	var header = $VBoxContainer/Header
+	var header = get_node_or_null("VBoxContainer/Header")
+	if not header: return
 	if header.has_node("RenameEdit"): return
 	
 	var edit = LineEdit.new()
@@ -201,11 +204,13 @@ func _setup_rename_ui():
 func _on_rename_changed(new_text: String):
 	if current_wand_item:
 		current_wand_item.display_name = new_text
-		if has_node("VBoxContainer/Header/WandNameLabel"):
-			$VBoxContainer/Header/WandNameLabel.text = "正在编辑: " + new_text
+		var label = get_node_or_null("VBoxContainer/Header/WandNameLabel")
+		if label:
+			label.text = "正在编辑: " + new_text
 
 func _setup_stats_ui():
-	var header = $VBoxContainer/Header
+	var header = get_node_or_null("VBoxContainer/Header")
+	if not header: return
 	if header.has_node("StatsLabel"): 
 		stats_label = header.get_node("StatsLabel")
 		return
@@ -301,8 +306,9 @@ func edit_wand(wand: WandData):
 	if logic_board:
 		logic_board.set_data(wand)
 	
-	if current_wand_item and has_node("VBoxContainer/Header/WandNameLabel"):
-		$VBoxContainer/Header/WandNameLabel.text = "正在编辑: " + current_wand_item.display_name
+	var label = get_node_or_null("VBoxContainer/Header/WandNameLabel")
+	if current_wand_item and label:
+		label.text = "正在编辑: " + current_wand_item.display_name
 	
 	# 添加改名输入框（如果不存在）
 	_setup_rename_ui()
@@ -342,23 +348,54 @@ func _on_test_spell_pressed():
 
 func _setup_libraries():
 	# --- Logic Library ---
+	# 1. Define all possible logic items
 	var logic_items = [
 		_create_mock_item("能量源", "generator", Color(0.2, 1.0, 0.4), {}, null),
 		_create_mock_item("触发器 (法术释放)", "trigger", Color(1, 0.84, 0.0), {"trigger_type": "cast"}, null), 
 		_create_mock_item("触发器 (命中)", "trigger", Color(1, 0.5, 0.0), {"trigger_type": "collision"}, null),
 		_create_mock_item("触发器 (定时)", "trigger", Color(1, 0.8, 0.3), {"trigger_type": "timer", "duration": 0.5}, null),
+		
 		_create_mock_item("火焰核心", "modifier_element", Color(0.8, 0.2, 0.2), {"element": "fire"}, null),
 		_create_mock_item("寒冰核心", "modifier_element", Color(0.2, 0.6, 0.9), {"element": "ice"}, null),
 		_create_mock_item("增幅器", "modifier_damage", Color(0.6, 0.6, 0.6), {"amount": 20}, null),
+		_create_mock_item("穿透强化", "modifier_pierce", Color(0.8, 0.2, 0.8), {"pierce": 1}, null),
+		_create_mock_item("速度修正", "modifier_speed", Color(0.2, 0.8, 0.6), {}, null),
+		_create_mock_item("延迟修正", "modifier_delay", Color(0.4, 0.4, 0.4), {"amount": 0.2}, null),
+		
 		_create_mock_item("分流器", "splitter", Color(0.0, 0.9, 0.9), {}, null),
-		_create_mock_item("发射器", "action_projectile", Color(0.9, 0.4, 0.4), {}, null)
+		_create_mock_item("顺序释放", "logic_sequence", Color(0.5, 0.5, 0.5), {}, null),
+		
+		_create_mock_item("发射器", "action_projectile", Color(0.9, 0.4, 0.4), {}, null),
+		_create_mock_item("史莱姆弹", "action_projectile", Color(0.0, 1.0, 0.0), {"projectile_id": "slime", "speed": 400.0, "damage": 12.0, "element": "slime"}, null),
+		_create_mock_item("TNT", "action_projectile", Color(0.9, 0.2, 0.2), {"projectile_id": "tnt", "damage": 0, "lifetime": 3.0}, null),
+		_create_mock_item("黑洞", "action_projectile", Color(0.1, 0.0, 0.2), {"projectile_id": "blackhole", "damage": 5, "lifetime": 8.0, "speed": 50.0}, null),
+		_create_mock_item("传送", "action_projectile", Color(0.6, 0.2, 0.8), {"projectile_id": "teleport", "damage": 0, "lifetime": 1.0}, null)
 	]
 	
 	for child in palette_grid.get_children():
 		child.queue_free()
-		
+	
+	# 2. Filter based on Unlocked Status
+	var always_unlocked = [
+		"generator", "trigger_cast", "action_projectile", 
+		"modifier_speed", "modifier_delay"
+	] # Basic set: Only source, cast trigger, base projectile and basic speed/delay
+	if GameState:
+		# Add GameState unlocks to allowed list
+		# (Or check against them)
+		pass
+
 	for item in logic_items:
-		_add_logic_palette_button(palette_grid, item)
+		var item_id = _get_item_id(item)
+		
+		var is_unlocked = false
+		if item_id in always_unlocked: 
+			is_unlocked = true
+		elif GameState and item_id in GameState.unlocked_spells:
+			is_unlocked = true
+		
+		if is_unlocked:
+			_add_logic_palette_button(palette_grid, item)
 
 	# --- Module Library (Visual) ---
 	var module_items = [
@@ -394,10 +431,46 @@ func _setup_libraries():
 	for item in module_items:
 		_add_visual_palette_button(module_palette, item)
 
+func _get_item_id(item: Resource) -> String:
+	var type = item.wand_logic_type
+	var val = item.wand_logic_value
+	
+	if type == "generator": return "generator"
+	if type == "trigger":
+		if val.get("trigger_type") == "cast": return "trigger_cast"
+		if val.get("trigger_type") == "collision": return "trigger_collision"
+		if val.get("trigger_type") == "timer": return "trigger_timer"
+	
+	if type == "modifier_element":
+		var elem = val.get("element", "")
+		if elem == "fire": return "element_fire" # Mismatch with BaseNPC "modifier_element_fire" vs "element_fire"
+		# BaseNPC code was: "projectile_slime", "modifier_pierce", "logic_splitter"
+		# It didn't handle elements.
+		return "modifier_element_" + elem
+		
+	if type == "modifier_damage": return "modifier_damage"
+	if type == "modifier_pierce": return "modifier_pierce"
+	if type == "modifier_speed": return "modifier_speed"
+	if type == "modifier_delay": return "modifier_delay"
+	
+	if type == "splitter": return "logic_splitter"
+	if type == "logic_sequence": return "logic_sequence"
+	
+	if type == "action_projectile":
+		var pid = val.get("projectile_id", "")
+		if pid == "slime": return "projectile_slime"
+		if pid == "tnt": return "projectile_tnt"
+		if pid == "blackhole": return "projectile_blackhole"
+		if pid == "teleport": return "projectile_teleport"
+		if pid == "" or pid == "basic": return "action_projectile"
+	
+	return item.id # Fallback
+
 func _add_visual_palette_button(parent, item):
 	var btn = PanelContainer.new()
-	btn.custom_minimum_size = Vector2(50, 50) # Compact square
+	btn.custom_minimum_size = Vector2(50, 50)
 	parent.add_child(btn)
+
 	_setup_interactive_glow(btn)
 	
 	if not FileAccess.file_exists("res://src/ui/wand_editor/components/visual_palette_button.gd"):

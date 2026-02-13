@@ -1,28 +1,32 @@
 extends Control
 class_name ContextPrompt
 
-@onready var label: Label = $VBoxContainer/Label
-@onready var action_container: VBoxContainer = $VBoxContainer/ActionContainer
+var label: Label
+var action_container: VBoxContainer
 
 func _ready() -> void:
+	_ensure_nodes()
+
+func _ensure_nodes() -> void:
 	if not label:
-		# Fallback if scene structure is different or created via code
-		pass
+		label = get_node_or_null("VBoxContainer/Label")
+	if not action_container:
+		action_container = get_node_or_null("VBoxContainer/ActionContainer")
 
 func setup(npc_name: String, alignment: String) -> void:
-	if has_node("VBoxContainer/Label"):
-		$VBoxContainer/Label.text = "[ " + npc_name + " ]"
+	_ensure_nodes()
+	if label:
+		label.text = "[ " + npc_name + " ]"
 		if alignment == "Hostile":
-			$VBoxContainer/Label.add_theme_color_override("font_color", Color(1.0, 0.2, 0.2))
+			label.add_theme_color_override("font_color", Color(1.0, 0.2, 0.2))
 		elif alignment == "Friendly":
-			$VBoxContainer/Label.add_theme_color_override("font_color", Color(0.2, 0.6, 1.0))
+			label.add_theme_color_override("font_color", Color(0.2, 0.6, 1.0))
 
 func update_prompt(npc: Node) -> void:
-	# Clear old prompts (except name)
-	if not has_node("VBoxContainer/ActionContainer"): return
+	_ensure_nodes()
+	if not action_container: return
 	
-	var container = $VBoxContainer/ActionContainer
-	for c in container.get_children():
+	for c in action_container.get_children():
 		c.queue_free()
 		
 	if npc.has_method("get_contextual_actions"):
@@ -35,4 +39,4 @@ func update_prompt(npc: Node) -> void:
 				prompt_label.add_theme_color_override("font_color", Color.YELLOW)
 			else:
 				prompt_label.add_theme_color_override("font_color", Color.LIGHT_GRAY)
-			container.add_child(prompt_label)
+			action_container.add_child(prompt_label)

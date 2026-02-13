@@ -1,0 +1,23 @@
+# Tasks: Spell Progression & Monster Execution
+
+- [x] **Data Foundation**
+    - [x] Add `unlocked_spells` array to `GameState.gd`.
+    - [x] Implement `unlock_spell(spell_id: String)` method in `GameState.gd`.
+    - [x] Create `SpellItem` resource type and register sample spells.
+    - [x] **Task**: Create base material items (`slime_essence`, `bone_fragment`, `scrap_metal`) in `data/items/`.
+- [x] **Monster Logic (BaseNPC)**
+    - [x] Add health threshold check in `take_damage` (20%).
+    - [x] Implement `is_executable` state and visual indicator support.
+    - [x] Create `execute()` sequence (Bind -> Pull to Player -> Visual Explode).
+- [x] **Player Integration**
+    - [x] Add execution input detection (**Key: F**).
+    - [x] Implement target selection for execution (closest executable enemy in range < 100px).
+- [x] **Loot & Unlocking**
+    - [x] Update `BaseNPC._die()` to drop guaranteed materials.
+    - [x] Implement specific spell drops for monster types (Slime -> Projectile, etc.).
+    - [x] Implement logic for "Spell Items" to trigger `GameState.unlock_spell` on pickup.
+- [x] **Wand Editor Integration**
+    - [x] Update `WandEditor._setup_libraries` to **hide** components not in `unlocked_spells`.
+- [x] **Visuals & Feedback**
+    - [x] Create visual effects for the execution pull/explosion.
+    - [x] Implement the execution prompt UI ("F 斩杀").

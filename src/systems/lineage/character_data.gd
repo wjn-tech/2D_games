@@ -13,6 +13,7 @@ signal stat_changed(stat_name: String, new_value: float)
 
 # NPC 特定属性
 @export var npc_type: String = "Animal"     # Hostile, Town, Animal
+@export var behavior_tree_path: String = "" # Path to .tres or .bt file
 @export var happiness: float = 1.0          # 1.0 为标准, 越小越快乐(价格折扣)
 @export var preferred_biome: String = "Forest"
 @export var loved_neighbors: Array[String] = []  # 喜爱的 NPC 类别名
@@ -24,7 +25,9 @@ const BASE_STATS = {
 	"agility": 10.0,
 	"intelligence": 10.0,
 	"constitution": 10.0,
-	"max_health": 100.0
+	"max_health": 100.0,
+	"speed": 100.0,
+	"damage": 10.0
 }
 const INC_PER_WILD_LEVEL = 0.05 # 5% per wild level
 const INC_PER_TAMED_LEVEL = 0.02 # 2% per tamed level
@@ -32,6 +35,7 @@ const INC_PER_TAMED_LEVEL = 0.02 # 2% per tamed level
 # Runtime Data
 # { "strength": { "wild": 0, "tamed": 0, "mutation": 0 }, ... }
 @export var stat_levels: Dictionary = {}
+@export var attributes: Dictionary = { "money": 0 }
 
 # Mutation Counters
 @export var mutations: Dictionary = {
@@ -50,6 +54,18 @@ const INC_PER_TAMED_LEVEL = 0.02 # 2% per tamed level
 @export var uuid: int = -1 # Unique Identifier
 @export var affinity_map: Dictionary = {} # { target_uuid: affinity_value }
 
+# Housing & Settlement Data
+@export var home_pos: Vector2 = Vector2.INF
+@export var is_settled: bool = false
+@export var pylon_unlocked: bool = false
+
+var stats: Dictionary:
+	get:
+		var s = {}
+		for key in BASE_STATS.keys():
+			s[key] = get_stat_value(key)
+		return s
+
 # 基础属性
 var strength: float:
 	get: return get_stat_value("strength")
@@ -66,6 +82,14 @@ var intelligence: float:
 var constitution: float: # 体质：影响血量与抗性
 	get: return get_stat_value("constitution")
 	set(v): _set_stat_legacy("constitution", v)
+
+var speed: float:
+	get: return get_stat_value("speed")
+	set(v): _set_stat_legacy("speed", v)
+
+var damage: float:
+	get: return get_stat_value("damage")
+	set(v): _set_stat_legacy("damage", v)
 
 var max_health: float:
 	get: return get_stat_value("max_health")
@@ -109,10 +133,7 @@ func get_stat_value(stat_name: String) -> float:
 	# So I will just increment wild.
 	# The `mutation` key in stat_levels might be redundant OR used to track how many mutations applied to THIS stat specifically?
 	# Let's keep the structure flexible: 
-	var total_wild = levels.wild + (levels.get("mutation", 0) * 2) # Assuming mutation count * 2 levels?
-	# Wait, Spec: "Add +2 to wild level". So I should just modify `wild`.
-	# But if I modify `wild`, I can't easily tell what was mutation.
-	# Let's assume `mutation` in `stat_levels` tracks number of mutation EVENTS on this stat.
+	# The `mutation` key in stat_levels tracks number of mutation EVENTS on this stat.
 	# Each event adds equivalent of 2 wild levels.
 	
 	var effective_wild = levels.wild + (levels.get("mutation", 0) * 2)
@@ -194,12 +215,6 @@ func _check_level_up() -> void:
 		stat_points += 5 # 每级给 5 点属性点
 		needed = get_next_level_experience()
 		print("CharacterData: 等级提升! 当前等级: ", level)
-
-# 扩展属性（金币、声望等）
-@export var attributes: Dictionary = {
-	"money": 0,
-	# reputation is now legacy or global
-}
 
 ## 增加/减少金币
 func change_money(amount: int) -> bool:

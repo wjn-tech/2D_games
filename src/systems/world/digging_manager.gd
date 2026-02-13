@@ -26,10 +26,14 @@ var respawn_queue: Dictionary = {}
 var mining_progress_map: Dictionary = {}
 
 func _ready() -> void:
+	add_to_group("digging_manager")
+	if GameState.get("digging") == null:
+		GameState.set("digging", self)
+	
 	# 初始化碎裂渲染层 (使用一个新的 TileMapLayer)
 	cracking_layer = TileMapLayer.new()
 	cracking_layer.name = "CrackingLayer"
-	cracking_layer.z_index = 10 
+	cracking_layer.z_index = 50 # 提升 Z-Index，确保在所有地块之上
 	cracking_layer.collision_enabled = false
 	add_child(cracking_layer)
 	
@@ -63,6 +67,35 @@ func _find_tilemap_recursive(node: Node) -> Node:
 
 func _process(delta: float) -> void:
 	_handle_respawn(delta)
+
+## 持续挖掘建筑逻辑
+func mine_building_step(building: Node2D, delta: float, power: int) -> bool:
+	if not building.has_method("handle_mining"):
+		return false
+		
+	if not mining_progress_map.has(building):
+		mining_progress_map[building] = 0.0
+		
+	var hardness = building.get("health") if "health" in building else 1.0
+	mining_progress_map[building] += delta * (1.0 + power * 0.5)
+	
+	# 特效反馈 (在中心点生成尘土)
+	if dust_particles:
+		dust_particles.global_position = building.global_position
+		# 不要永久设为 true，使用 emit_one_shot 或类似的逻辑，或者至少确保它能自动停止
+		dust_particles.emitting = true
+		
+		# 强制在 0.1 秒后停止，除非再次被调用
+		var timer = get_tree().create_timer(0.1)
+		timer.timeout.connect(func(): if is_instance_valid(dust_particles): dust_particles.emitting = false)
+	
+	if mining_progress_map[building] >= hardness:
+		mining_progress_map.erase(building)
+		building.handle_mining(100.0) # 挖掘完成
+		dust_particles.emitting = false
+		return true
+		
+	return false
 
 ## 持续挖掘逻辑
 func mine_tile_step(coords: Vector2i, delta: float, pickaxe_power: int) -> bool:
@@ -437,25 +470,15 @@ func _do_mine_at_layer(current_tile_map: Node, coords: Vector2i, pickaxe_power: 
 	# --- 获取掉落物路径 (在移除之前或传递参数) ---
 	var drop_path = _get_custom_data(tile_data, current_tile_map, coords, "drop_item", "", atlas_coords, source_id)
 	
-	# 移除 Tile
+	# --- 移除 Tile ---
 	if current_tile_map is TileMap:
 		current_tile_map.set_cell(mining_layer, coords, -1)
 	else:
 		current_tile_map.set_cell(coords, -1)
 	
 	# --- 生成掉落物 ---
-	if drop_path != "":
-		var drop_item = load(drop_path)
-		if drop_item:
-			var loot = loot_scene.instantiate()
-			get_tree().current_scene.add_child(loot)
-			loot.global_position = current_tile_map.to_global(current_tile_map.map_to_local(coords))
-			# 使用 setup 而不是直接赋值
-			if loot.has_method("setup"):
-				loot.setup(drop_item, 1)
-			else:
-				loot.item_data = drop_item
-
+	_spawn_loot(coords, tile_data, current_tile_map, atlas_coords, source_id)
+	
 	# --- 无限地图 Delta 记录与粒子反馈 ---
 	var world_pos = current_tile_map.map_to_local(coords)
 	if InfiniteChunkManager:
@@ -563,13 +586,13 @@ func _fell_tree(mined_coords: Vector2i, target_map: Node, world_gen: WorldGenera
 			loot.global_position = tile_map.to_global(tile_map.map_to_local(mined_coords)) + Vector2(randf_range(-10, 10), randf_range(-10, 10))
 			loot.setup(wood_res)
 
-func _spawn_loot(coords: Vector2i, tile_data: TileData, current_tile_map: Node, atlas_coords: Vector2i) -> void:
+func _spawn_loot(coords: Vector2i, tile_data: TileData, current_tile_map: Node, atlas_coords: Vector2i, source_id: int = -1) -> void:
 	# 使用 map_to_local 获取中心点，然后转为全局坐标
 	var local_pos = current_tile_map.map_to_local(coords)
 	var world_pos = current_tile_map.to_global(local_pos)
 	
 	# 尝试从 TileData 获取掉落物资源路径
-	var item_path = _get_custom_data(tile_data, current_tile_map, coords, "drop_item", "", atlas_coords)
+	var item_path = _get_custom_data(tile_data, current_tile_map, coords, "drop_item", "", atlas_coords, source_id)
 	
 	# print("DiggingManager: 尝试生成掉落物, 路径: ", item_path, " atlas: ", atlas_coords)
 	
@@ -587,6 +610,26 @@ func _spawn_loot(coords: Vector2i, tile_data: TileData, current_tile_map: Node, 
 			push_warning("DiggingManager: 无法加载物品资源: " + item_path)
 	else:
 		print("DiggingManager: 挖掘成功，但该 Tile 未配置 drop_item 属性。")
+
+# --- Magic Interaction API ---
+func explode_at(global_pos: Vector2, radius: float, power: int = 100) -> void:
+	var ground_layer = _get_current_tile_map()
+	if not ground_layer: return
+	
+	var center_map_coords = ground_layer.local_to_map(ground_layer.to_local(global_pos))
+	var rad_tiles = int(ceil(radius / 16.0)) 
+	
+	for x in range(-rad_tiles, rad_tiles + 1):
+		for y in range(-rad_tiles, rad_tiles + 1):
+			var target = center_map_coords + Vector2i(x, y)
+			var cell_center = ground_layer.to_global(ground_layer.map_to_local(target))
+			
+			if cell_center.distance_to(global_pos) <= radius:
+				try_mine_tile(target, power)
+
+func dissolve_at(global_pos: Vector2, radius: float) -> void:
+	# Blackhole logic: infinite mining power
+	explode_at(global_pos, radius, 999999)
 
 func _setup_cracking_tileset():
 	# 创建一个包含 10 帧裂纹效果的动态 TileSet

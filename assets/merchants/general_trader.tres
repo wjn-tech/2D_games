@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="MerchantProfile" load_steps=5 format=3]
+
+[ext_resource type="Resource" path="res://data/items/wood.tres" id="1_wood"]
+[ext_resource type="Resource" path="res://data/items/iron.tres" id="2_iron"]
+[ext_resource type="Script" path="res://src/systems/trading/merchant_profile.gd" id="3_profile"]
+[ext_resource type="Script" path="res://src/systems/trading/weighted_item_data.gd" id="4_weighted"]
+
+[sub_resource type="Resource" id="Stock_Wood"]
+script = ExtResource("4_weighted")
+item_data = ExtResource("1_wood")
+weight = 1.0
+min_quantity = 10
+max_quantity = 50
+price_multiplier = 1.0
+
+[sub_resource type="Resource" id="Stock_Iron"]
+script = ExtResource("4_weighted")
+item_data = ExtResource("2_iron")
+weight = 0.5
+min_quantity = 2
+max_quantity = 10
+price_multiplier = 1.2
+
+[resource]
+script = ExtResource("3_profile")
+restock_interval = 24.0
+base_price_multiplier = 1.1
+max_slots = 15
+stock_pool = [SubResource("Stock_Wood"), SubResource("Stock_Iron")]

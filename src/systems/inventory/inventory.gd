@@ -34,3 +34,16 @@ func clear_slot(index: int):
 	if index < 0 or index >= capacity: return
 	slots[index] = { "item": null, "count": 0 }
 	content_changed.emit(index)
+
+## 从指定槽位移除指定数量的物品
+func remove_from_slot(index: int, amount: int) -> bool:
+	if index < 0 or index >= capacity: return false
+	var slot = get_slot(index)
+	if not slot.item or slot.count < amount: return false
+	
+	slot.count -= amount
+	if slot.count <= 0:
+		slots[index] = { "item": null, "count": 0 }
+	
+	content_changed.emit(index)
+	return true

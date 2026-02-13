@@ -71,8 +71,9 @@ static func _build_adjacency(wand_data: WandData) -> Dictionary:
 	for conn in wand_data.logic_connections:
 		var from_id = int(conn["from_id"])
 		var to_id = int(conn["to_id"])
+		var from_port = int(conn.get("from_port", 0))
 		if from_id in adj:
-			adj[from_id].append(to_id)
+			adj[from_id].append({"to_id": to_id, "from_port": from_port})
 			
 	return adj
 
@@ -92,7 +93,8 @@ static func _dfs_cycle_check(current_id: int, adj: Dictionary, visited: Dictiona
 	stack[current_id] = true
 	
 	if current_id in adj:
-		for neighbor_id in adj[current_id]:
+		for struct_obj in adj[current_id]:
+			var neighbor_id = struct_obj.to_id
 			if neighbor_id not in visited:
 				if _dfs_cycle_check(neighbor_id, adj, visited, stack):
 					return true
@@ -160,12 +162,35 @@ static func _traverse_path(wand_data: WandData, current_node: Dictionary, adj: D
 	if node_type == NODE_TYPE_ACTION or node_type == "action_projectile":
 		var instruction = SpellInstruction.new()
 		instruction.type = SpellInstruction.TYPE_PROJECTILE
-		instruction.params = current_node.get("wand_logic_value", {}).duplicate()
+		
+		# Consistency Fix: try both value keys
+		var val = current_node.get("value", {})
+		if val.is_empty(): val = current_node.get("wand_logic_value", {})
+		
+		instruction.params = val.duplicate()
 		instruction.modifiers = modifiers.duplicate()
 		tier.instructions.append(instruction)
 		# Stop traversal here (Bullet fired)
 		return
+
+	if node_type == "logic_sequence":
+		var outputs = adj.get(int(current_node.id), [])
+		# Sort by port (Top to Bottom)
+		outputs.sort_custom(func(a, b): return a.from_port < b.from_port)
 		
+		for i in range(outputs.size()):
+			var out_obj = outputs[i]
+			var neighbor = _get_node_by_id(wand_data, out_obj.to_id)
+			if not neighbor: continue
+			
+			var instr = SpellInstruction.new()
+			instr.type = SpellInstruction.TYPE_TRIGGER_TIMER
+			instr.params = {"duration": i * 0.2} # 0.2s delay step
+			instr.modifiers = modifiers.duplicate()
+			instr.child_tier = _compile_tier(wand_data, [neighbor], adj, depth + 1)
+			tier.instructions.append(instr)
+		return
+
 	if node_type == NODE_TYPE_TRIGGER or node_type == "trigger":
 		var instruction = SpellInstruction.new()
 		# Use 'value' or 'wand_logic_value' consistent with logic_board export types
@@ -188,10 +213,10 @@ static func _traverse_path(wand_data: WandData, current_node: Dictionary, adj: D
 		# CRITICAL FIX 3: Trigger is a bullet that holds the NEXT logic.
 		# Compile downstream nodes into the CHILD TIER.
 		# And STOP traversing the current tier (don't create duplicates).
-		var output_ids = adj.get(int(current_node.id), [])
+		var output_objs = adj.get(int(current_node.id), [])
 		var next_nodes = []
-		for nid in output_ids:
-			var n = _get_node_by_id(wand_data, nid)
+		for obj in output_objs:
+			var n = _get_node_by_id(wand_data, obj.to_id)
 			if n: next_nodes.append(n)
 		
 		# Compile the payload (Reset modifiers for the payload? Usually yes, unless specified)
@@ -209,9 +234,9 @@ static func _traverse_path(wand_data: WandData, current_node: Dictionary, adj: D
 			next_modifiers.append(current_node)
 	
 	# Continue Traversal
-	var output_ids = adj.get(int(current_node.id), [])
-	for nid in output_ids:
-		var next_node = _get_node_by_id(wand_data, nid)
+	var output_objs = adj.get(int(current_node.id), [])
+	for obj in output_objs:
+		var next_node = _get_node_by_id(wand_data, obj.to_id)
 		if next_node:
 			_traverse_path(wand_data, next_node, adj, next_modifiers, tier, depth)
 

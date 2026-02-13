@@ -25,9 +25,9 @@ static func cast_spell(wand_data: WandData, source_entity: Node2D, direction: Ve
 		return
 
 	var cast_origin = start_pos if start_pos != Vector2.INF else source_entity.global_position
-	execute_tier(program.root_tier, cast_origin, direction)
+	execute_tier(program.root_tier, cast_origin, direction, source_entity)
 
-static func execute_tier(tier: ExecutionTier, position: Vector2, direction: Vector2, world_context: Node = null):
+static func execute_tier(tier: ExecutionTier, position: Vector2, direction: Vector2, source: Node2D = null, world_context: Node = null):
 	if not tier: return
 	
 	var world = world_context
@@ -39,9 +39,9 @@ static func execute_tier(tier: ExecutionTier, position: Vector2, direction: Vect
 		return
 
 	for instr in tier.instructions:
-		_spawn_instruction(instr, world, position, direction)
+		_spawn_instruction(instr, world, position, direction, source)
 
-static func _spawn_instruction(instr: SpellInstruction, parent: Node, pos: Vector2, dir: Vector2):
+static func _spawn_instruction(instr: SpellInstruction, parent: Node, pos: Vector2, dir: Vector2, source: Node2D = null):
 	var scene_to_spawn = SCENE_PROJECTILE
 	
 	match instr.type:
@@ -68,6 +68,9 @@ static func _spawn_instruction(instr: SpellInstruction, parent: Node, pos: Vecto
 	
 	if instance.has_method("setup"):
 		instance.setup(instr.params, instr.modifiers)
+	
+	if source and "caster" in instance:
+		instance.caster = source
 	
 	# Ensure projectiles can hit both the world and NPCs (Layer 1 | Layer 32)
 	if instance is CharacterBody2D:

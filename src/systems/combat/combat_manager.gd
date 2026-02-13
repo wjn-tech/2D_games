@@ -35,6 +35,10 @@ func deal_damage(attacker: Node, target: Node, base_damage: float, damage_type: 
 		
 	target.take_damage(final_damage, damage_type)
 	damage_dealt.emit(target, final_damage, is_critical)
+
+	# Corrosive effect for Slime
+	if damage_type == "slime":
+		_apply_corrosive_effect(target)
 	
 	if target is CharacterBody2D and hit_dir != Vector2.ZERO:
 		_apply_knockback(target, hit_dir, 300.0)
@@ -60,3 +64,28 @@ func _trigger_screen_shake(duration: float, intensity: float) -> void:
 	var camera = get_viewport().get_camera_2d()
 	if camera and camera.has_method("shake"):
 		camera.shake(duration, intensity)
+
+func _apply_corrosive_effect(target: Node) -> void:
+	if not target.has_method("take_damage"): return
+	
+	# DOT: 5 samples of 3 damage every 0.4s (Total 15 extra dmg)
+	# Increased from 3 samples to make it more noticeable
+	for i in range(5):
+		var timer = get_tree().create_timer(0.4 * (i + 1))
+		timer.timeout.connect(func():
+			if is_instance_valid(target):
+				target.take_damage(3.0, "acid")
+				# Enhanced Visual cue: Lime Green flash + Bubble text
+				if target.has_method("get_node_or_null"):
+					var tv = target.get_node_or_null("MinimalistEntity")
+					if not tv: tv = target.get_node_or_null("Sprite2D")
+					
+					if tv:
+						var tw = create_tween()
+						tw.tween_property(tv, "modulate", Color(0, 2.0, 0, 1.0), 0.1) # Bright green burst
+						tw.tween_property(tv, "modulate", Color.WHITE, 0.1)
+				
+				# Show toxic damage number
+				if UIManager:
+					UIManager.show_floating_text(str(3), target.global_position + Vector2(randf_range(-10,10), -40), Color.LIME_GREEN)
+		)

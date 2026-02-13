@@ -61,6 +61,11 @@ func change_state(new_state: State) -> void:
 				if old_state == State.START_MENU or old_state == State.GAME_OVER:
 					var world_gen = get_tree().current_scene.find_child("WorldGenerator", true, false)
 					if world_gen:
+						# 新游戏强制随机种子
+						if world_gen.get("seed_value") != null:
+							world_gen.seed_value = randi()
+							print("GameManager: 新游戏种子已设定: ", world_gen.seed_value)
+
 						if world_gen.has_method("start_generation"):
 							world_gen.start_generation()
 						elif world_gen.has_method("generate_world"):

@@ -55,17 +55,72 @@ func add_item(item: Resource, count: int = 1) -> bool:
 	
 	if not item: return false
 	
+	# Special Handling for SpellItem (Unlock and consume)
+	if item is SpellItem:
+		item.on_pickup()
+		return true
+
 	# 2. Try stacking in Hotbar
 	var remaining = _try_add_to_inventory(hotbar, item, count)
-	if remaining == 0: return true
+	if remaining == 0: 
+		inventory_changed.emit()
+		return true
 	
 	# 2. Try stacking in Backpack
 	remaining = _try_add_to_inventory(backpack, item, remaining)
-	if remaining == 0: return true
+	if remaining == 0: 
+		inventory_changed.emit()
+		return true
 	
 	# If failed to add all, return false (inventory full)
-	# (In a real game, you might drop the excess)
+	# Notify caller or drop? For now we return false so caller can drop.
+	inventory_changed.emit()
 	return false
+
+func add_item_or_drop(item: Resource, count: int = 1, pos: Vector2 = Vector2.ZERO) -> void:
+	if not item: return
+	
+	# Try adding
+	var remaining = _try_add_to_inventory(hotbar, item, count)
+	if remaining > 0:
+		remaining = _try_add_to_inventory(backpack, item, remaining)
+	
+	# Drop remaining
+	if remaining > 0:
+		drop_item(item, remaining, pos)
+		print("Inventory Full: Dropped %d x %s" % [remaining, item.display_name])
+	
+	inventory_changed.emit()
+
+func drop_item_from_slot(inv: Inventory, index: int) -> void:
+	if not inv: return
+	var slot = inv.get_slot(index)
+	var item = slot.get("item")
+	var count = slot.get("count", 0)
+	
+	if item:
+		drop_item(item, count)
+		inv.clear_slot(index)
+		inventory_changed.emit()
+
+func drop_item(item: Resource, count: int, pos: Vector2 = Vector2.ZERO) -> void:
+	var loot_scene = load("res://scenes/world/loot_item.tscn")
+	if not loot_scene: return
+	
+	var loot = loot_scene.instantiate()
+	# 添加到场景
+	var root = get_tree().current_scene
+	root.add_child(loot)
+	
+	# 设置位置
+	if pos == Vector2.ZERO:
+		var player = get_tree().get_first_node_in_group("player")
+		if player:
+			pos = player.global_position
+	
+	loot.global_position = pos
+	if loot.has_method("setup"):
+		loot.setup(item, count)
 
 func remove_item(from_inv: Inventory, slot_index: int, count: int) -> int:
 	var slot = from_inv.get_slot(slot_index)
@@ -92,9 +147,10 @@ func swap_items(inv_a: Inventory, idx_a: int, inv_b: Inventory, idx_b: int):
 
 func select_hotbar_slot(index: int):
 	if index < 0 or index >= hotbar_capacity: return
-	if active_hotbar_index != index:
-		active_hotbar_index = index
-		emit_signal("equipped_item_changed", get_equipped_item())
+	
+	# 即使索引没变也允许发出信号，这样点击当前格可以重新触发放置圈预览
+	active_hotbar_index = index
+	emit_signal("equipped_item_changed", get_equipped_item())
 
 func get_equipped_item() -> Resource:
 	var slot = hotbar.get_slot(active_hotbar_index)

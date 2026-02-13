@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="BaseItem" load_steps=4 format=3]
+
+[ext_resource type="Texture2D" uid="uid://c2q32bl7s3wnl" path="res://assets/minimalist_palette.png" id="2_tex"]
+[ext_resource type="Script" path="res://src/core/resources/base_item.gd" id="1_script"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_icon"]
+atlas = ExtResource("2_tex")
+region = Rect2(32, 32, 16, 16) 
+
+[resource]
+script = ExtResource("1_script")
+id = "scrap_metal"
+display_name = "废金属"
+description = "生锈的金属碎片。"
+icon = SubResource("AtlasTexture_icon")
+stackable = true
+max_stack = 99
+value = 25
+item_type = "General"
+ammo_type = ""
+damage_modifier = 0.0
+element_type = "None"
+durability = 100.0
+is_wand_material = true
+wand_visual_color = Color(0.6, 0.6, 0.6, 1)
+wand_logic_type = ""
+wand_logic_value = {}

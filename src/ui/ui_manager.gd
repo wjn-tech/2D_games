@@ -224,3 +224,30 @@ func toggle_window(window_name: String, scene_path: String, blocks_input: bool =
 		close_window(window_name)
 	else:
 		open_window(window_name, scene_path, blocks_input)
+
+## 显示简短通知 (如房屋合法性提示)
+func show_notification(message: String) -> void:
+	var label = Label.new()
+	label.text = message
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	
+	# 设置样式
+	label.add_theme_font_size_override("font_size", 24)
+	label.add_theme_color_override("font_outline_color", Color.BLACK)
+	label.add_theme_constant_override("outline_size", 4)
+	
+	var canvas = CanvasLayer.new()
+	canvas.layer = 120
+	add_child(canvas)
+	canvas.add_child(label)
+	
+	# 置于屏幕中央稍靠上的位置
+	label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	label.position.y += 100
+	
+	# 动画
+	var tween = create_tween()
+	tween.tween_property(label, "position:y", label.position.y - 50, 2.0).set_trans(Tween.TRANS_SINE)
+	tween.parallel().tween_property(label, "modulate:a", 0.0, 2.0).set_delay(1.0)
+	tween.tween_callback(canvas.queue_free)

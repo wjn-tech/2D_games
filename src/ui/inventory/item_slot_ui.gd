@@ -11,8 +11,15 @@ class_name ItemSlotUI
 @onready var count_label: Label = get_node(count_label_path)
 
 var slot_index: int = -1
+var current_item: Resource = null # 缓存当前格子的物品数据
+var name_tooltip: Label # 新增：格子自带的名称标签
 
 func _ready() -> void:
+	# 确保接收鼠标事件
+	mouse_filter = Control.MOUSE_FILTER_STOP
+	
+	_setup_internal_name_label()
+	
 	# 重置布局属性，防止在编辑器中误设的巨大偏移影响显示
 	set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 	
@@ -30,19 +37,21 @@ func _ready() -> void:
 	style.set_corner_radius_all(4)
 	add_theme_stylebox_override("panel", style)
 	
-	# 确保图标居中且不超出
+	# 确保图标居中且不超出，并让鼠标事件穿透到父容器 (ItemSlotUI)
 	if icon_rect:
 		icon_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		icon_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		icon_rect.custom_minimum_size = Vector2(40, 40)
+		icon_rect.mouse_filter = Control.MOUSE_FILTER_PASS
 	
-	# 确保数量标签在右下角
+	# 确保数量标签在右下角，且鼠标穿透
 	if count_label:
 		count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		count_label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 		count_label.add_theme_color_override("font_outline_color", Color.BLACK)
 		count_label.add_theme_constant_override("outline_size", 4)
 		count_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+		count_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	
 	# 隐藏调试用的 ColorRect
 	var debug_rect = find_child("ColorRect")
@@ -52,36 +61,75 @@ func _ready() -> void:
 	mouse_entered.connect(_on_mouse_entered)
 	mouse_exited.connect(_on_mouse_exited)
 
-func _on_mouse_entered() -> void:
-	if has_item():
-		# 向上寻找 InventoryUI 并通知显示名称
-		var inventory_ui = _find_parent_inventory_ui()
-		if inventory_ui:
-			var item_name = GameState.inventory.get_item_at(slot_index).display_name
-			inventory_ui.show_item_name(item_name)
-			
-		# 高亮效果
-		var style = get_theme_stylebox("panel")
-		if style is StyleBoxFlat:
-			style.border_color = Color(1.0, 1.0, 1.0, 1.0)
-			style.bg_color = Color(0.25, 0.25, 0.25, 0.9)
+func _setup_internal_name_label() -> void:
+	# 方案：将标签作为格子的子节点，但开启 top_level 以实现绝对定位
+	# 这样它不会被 PanelContainer 的自动布局干扰
+	name_tooltip = Label.new()
+	name_tooltip.name = "HoverNameLabel"
+	add_child(name_tooltip)
+	
+	# 关键：开启 top_level 允许我们直接在全局坐标系操作它
+	name_tooltip.top_level = true
+	
+	# 样式调整
+	name_tooltip.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	name_tooltip.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	name_tooltip.add_theme_font_size_override("font_size", 10)
+	name_tooltip.add_theme_color_override("font_outline_color", Color.BLACK)
+	name_tooltip.add_theme_constant_override("outline_size", 2)
+	
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0, 0, 0, 0.8)
+	style.content_margin_left = 4
+	style.content_margin_right = 4
+	style.content_margin_top = 1
+	style.content_margin_bottom = 1
+	name_tooltip.add_theme_stylebox_override("normal", style)
+	
+	name_tooltip.visible = false
+	name_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	name_tooltip.z_index = 100 # 确保在最上层
 
-func _on_mouse_exited() -> void:
-	# 向上寻找 InventoryUI 并通知隐藏名称
-	var inventory_ui = _find_parent_inventory_ui()
-	if inventory_ui:
-		inventory_ui.hide_item_name()
+func _on_mouse_entered() -> void:
+	if current_item:
+		var item_name = current_item.display_name if "display_name" in current_item else "Unknown Item"
 		
-	# 恢复外观
+		if name_tooltip:
+			name_tooltip.text = item_name
+			name_tooltip.visible = true
+			name_tooltip.reset_size() # 确保尺寸根据文字更新
+			
+			# 实时计算：将标签右下角贴合到格子右下角
+			# global_position 是格子的左上角，size 是格子大小
+			# 我们的目标位置是 (格子左上角 + 格子大小) - 标签大小
+			var target_pos = global_position + (size * get_global_transform().get_scale())
+			name_tooltip.global_position = target_pos - name_tooltip.size
+
+		# 高亮效果
+		_set_highlight(true)
+
+func _set_highlight(enabled: bool) -> void:
 	var style = get_theme_stylebox("panel")
 	if style is StyleBoxFlat:
-		style.border_color = Color(0.5, 0.5, 0.5, 0.9)
-		style.bg_color = Color(0.15, 0.15, 0.15, 0.8)
+		var highlight_style = style.duplicate()
+		if enabled:
+			highlight_style.border_color = Color(1.0, 1.0, 1.0, 1.0)
+			highlight_style.bg_color = Color(0.25, 0.25, 0.25, 0.9)
+		add_theme_stylebox_override("panel", highlight_style)
 
-func _find_parent_inventory_ui() -> InventoryUI:
+func _on_mouse_exited() -> void:
+	# 隐藏内部标签
+	if name_tooltip:
+		name_tooltip.visible = false
+		
+	# 恢复外观 (移除 Override)
+	remove_theme_stylebox_override("panel")
+
+func _find_parent_inventory_ui() -> Control:
 	var p = get_parent()
 	while p:
-		if p is InventoryUI:
+		# 即使 class_name 判定失败，也可以通过检查方法来确认身份
+		if p.has_method("show_item_name"):
 			return p
 		p = p.get_parent()
 	return null
@@ -93,37 +141,37 @@ func has_item() -> bool:
 
 func setup(index: int, slot_data: Dictionary) -> void:
 	slot_index = index
+	current_item = slot_data.get("item") # 缓存物品
 	
 	if not icon_rect: return
 	
-	# Fix: Use "item" key instead of "item_data" to match Inventory resource
-	if slot_data.is_empty() or not slot_data.has("item") or slot_data["item"] == null:
+	if not current_item:
 		icon_rect.texture = null
 		if count_label:
 			count_label.text = ""
 		return
 	
-	var item = slot_data["item"]
 	var count = slot_data.get("count", 0)
 	
 	# 设置图标
-	if item.get("icon"):
-		icon_rect.texture = item.icon
+	if current_item.get("icon"):
+		icon_rect.texture = current_item.icon
 	
 	# 设置数量
 	if count_label:
 		count_label.text = str(count) if count > 1 else ""
 
-## 鼠标点击处理（示例：右键使用）
+## 鼠标点击处理（右键丢弃）
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_RIGHT:
-			# 调用 InventoryManager 使用物品
-			if GameState.inventory.has_method("use_item"):
-				GameState.inventory.use_item(slot_index) # Be careful with index if use_item distinguishes hotbar/backpack
+			# 调用 InventoryManager 丢弃物品
+			if GameState.inventory.has_method("drop_item_from_slot"):
+				# 注意：InventoryUI 固定对应 backpack
+				GameState.inventory.drop_item_from_slot(GameState.inventory.backpack, slot_index)
 				
 		elif event.button_index == MOUSE_BUTTON_LEFT:
-			# Tap to click/select?
+			# 点击逻辑（目前暂无）
 			pass
 
 ## Drag & Drop Implementation

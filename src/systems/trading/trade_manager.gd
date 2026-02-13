@@ -57,14 +57,62 @@ func execute_checkout() -> bool:
 		var qty = entry.quantity
 		
 		# Add to Player
-		GameState.inventory.add_item(item, qty)
+		GameState.inventory.add_item_or_drop(item, qty)
 		
-		# Remove from Merchant (Logic only, assuming Merchant Inventory is Array of BaseItems)
-		# Note: In a real system we'd find the specific slot in merchant inventory
-		if current_merchant.has_method("remove_item"):
-			current_merchant.remove_item(item, qty)
+		# 从商人库存中扣除 (如果商人有 Inventory 并且提供了接口)
+		if current_merchant.has_method("get_inventory"):
+			var merchant_inv = current_merchant.get_inventory()
+			if merchant_inv:
+				# 查找对应的槽位进行扣除
+				for i in range(merchant_inv.capacity):
+					var slot = merchant_inv.get_slot(i)
+					if slot.item == item:
+						merchant_inv.remove_from_slot(i, qty)
+						break
 	
 	cart.clear()
 	cart_updated.emit()
 	transaction_completed.emit()
 	return true
+
+## 玩家向商人出售
+func sell_to_merchant(inventory_obj: Inventory, slot_index: int, quantity: int = 1) -> bool:
+	if not current_merchant: return false
+	
+	var slot = inventory_obj.get_slot(slot_index)
+	var item = slot.item
+	if not item: return false
+	
+	var sell_value = int(item.value * 0.5) # 默认 50% 回收价
+	
+	# 支付给玩家
+	if GameState.player_data.change_money(sell_value * quantity):
+		# 从来源库存移除
+		inventory_obj.remove_from_slot(slot_index, quantity)
+		
+		# 将物品加入商人库存（回收）
+		if current_merchant.has_method("get_inventory"):
+			var m_inv = current_merchant.get_inventory()
+			if m_inv:
+				_add_item_to_inventory(m_inv, item, quantity)
+		
+		transaction_completed.emit()
+		return true
+	
+	return false
+
+## 内部方法：向库存添加物品
+func _add_item_to_inventory(inv: Inventory, item: Resource, count: int) -> void:
+	# 先尝试堆叠
+	for i in range(inv.capacity):
+		var slot = inv.get_slot(i)
+		if slot.item == item:
+			inv.set_item(i, item, slot.count + count)
+			return
+	
+	# 再找空位
+	for i in range(inv.capacity):
+		var slot = inv.get_slot(i)
+		if not slot.item:
+			inv.set_item(i, item, count)
+			return

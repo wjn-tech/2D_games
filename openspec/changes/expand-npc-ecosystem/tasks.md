@@ -1,0 +1,22 @@
+# Tasks: NPC Ecosystem Expansion
+
+- [ ] **Data & Registry Expansion**
+    - [ ] Update `npc_spawner.gd` with new `SpawnRule` entries for Guards, Merchants, Wizards, and Ranged enemies.
+    - [ ] Create placeholder `.tscn` files for Wizard and other new types.
+- [ ] **Visual Identity (Accessories)**
+    - [ ] Update `MinimalistEntity.gd` to draw Role Accessories (Shields, Hats, Packs).
+    - [ ] Implement color-coding for different NPC occupations.
+- [ ] **Performance (AI LoD)**
+    - [ ] Implement distance-based AI throttling in `BaseNPC.gd`.
+    - [ ] Create "Simulation Mode" for distant NPCs.
+- [ ] **Role Behaviors**
+    - [ ] Implement "Guard" AI: Hostile detection and engagement.
+    - [ ] Implement "Wizard" AI: Basic spell casting behavior.
+    - [ ] Implement "Flee" behavior for Passive NPCs.
+- [ ] **Density & Herd Mechanics**
+    - [ ] Implement `area_capacity` scaling in `npc_spawner.gd`.
+    - [ ] Add herd spawning logic to `_try_spawn_cycle`.
+- [ ] **Personalization**
+    - [ ] Implement name randomization and visual scale shifts.
+- [ ] **UI & Feedback**
+    - [ ] Update NPC nameplates to display roles.

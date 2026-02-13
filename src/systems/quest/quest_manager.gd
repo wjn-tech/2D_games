@@ -74,7 +74,7 @@ func _give_rewards(quest: QuestResource) -> void:
 	for item_id in quest.reward_items:
 		var item_data = GameState.item_db.get(item_id)
 		if item_data:
-			GameState.inventory.add_item(item_data, 1)
+			GameState.inventory.add_item_or_drop(item_data, 1)
 	
 	print("QuestManager: 已发放奖励: ", quest.reward_money, " 金币")
 

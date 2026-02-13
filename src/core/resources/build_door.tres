@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="BuildingResource" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/systems/building/building_resource.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/world/buildings/door.tscn" id="2_scene"]
+
+[resource]
+script = ExtResource("1_script")
+id = "door"
+display_name = "门"
+description = "高2宽1的木门，可以交互开启或关闭。"
+scene = ExtResource("2_scene")
+cost = { "wood": 3 }
+category = "Furniture"
+requires_flat_ground = true
+grid_size = Vector2i(1, 2)
+placement_type = "Floor"

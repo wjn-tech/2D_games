@@ -5,10 +5,21 @@ extends VBoxContainer
 @onready var age_bar: ProgressBar = $AgeBar
 @onready var age_label: Label = $AgeBar/Label
 
+@export var gold_color: Color = Color.GOLD
+
 var stats_label: Label
+var money_label: Label
 
 func _ready() -> void:
 	add_to_group("hud_stats")
+	
+	# 创建金币显示
+	money_label = Label.new()
+	money_label.name = "MoneyLabel"
+	money_label.add_theme_color_override("font_color", gold_color)
+	money_label.add_theme_font_size_override("font_size", 16)
+	add_child(money_label)
+	
 	# 动态创建一个用于显示详细属性的 Label
 	stats_label = Label.new()
 	stats_label.name = "StatsLabel"
@@ -50,6 +61,10 @@ func _refresh_visuals(player_data: CharacterData) -> void:
 		age_bar.value = player_data.current_age
 	if age_label:
 		age_label.text = "Age: %.1f / %.0f" % [player_data.current_age, player_data.max_life_span]
+	
+	# 更新金币显示
+	if is_instance_valid(money_label):
+		money_label.text = "Wealth: $%d" % player_data.attributes.get("money", 0)
 	
 	# 更新详细属性 UI
 	if is_instance_valid(stats_label):

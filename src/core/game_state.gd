@@ -8,16 +8,38 @@ var player_data: CharacterData = CharacterData.new()
 
 var item_db: Dictionary = {}
 var recipe_db: Dictionary = {}
+var unlocked_spells: Array[String] = []
+
+signal spell_unlocked(spell_id: String)
 
 @onready var inventory: Node = _create_inventory_manager()
 @onready var digging: Node = _create_digging_manager()
+var crafting_manager: Node = null # 显式声明，防止属性访问错误
 
 func _ready() -> void:
 	_load_databases()
 	
-	# 初始化玩家默认数据（如果需要）
-	if player_data.display_name == "":
+	# 初始化玩家默认数据
+	if player_data:
 		player_data.display_name = "主角"
+		if player_data.attributes.get("money", 0) == 0:
+			player_data.attributes["money"] = 200 # 初始赠送 200 金币用于测试
+			
+		# 赠送几个初始物品测试交易
+		await get_tree().process_frame
+		if inventory and inventory.has_method("add_item"):
+			var wood = item_db.get("wood")
+			if wood: inventory.add_item(wood, 5)
+			var iron = item_db.get("iron")
+			if iron: inventory.add_item(iron, 2)
+
+func unlock_spell(spell_id: String) -> void:
+	if spell_id not in unlocked_spells:
+		unlocked_spells.append(spell_id)
+		spell_unlocked.emit(spell_id)
+		print("GameState: Spell unlocked: ", spell_id)
+		if get_node_or_null("/root/FeedbackManager"):
+			get_node("/root/FeedbackManager").show_message("新法术已解锁: " + spell_id)
 
 func _load_databases() -> void:
 	# 加载物品数据库

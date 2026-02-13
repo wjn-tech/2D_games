@@ -50,6 +50,11 @@ func _load_all_recipes() -> void:
 	recipe_workbench.required_station = "" # 徒手即可制作工作台
 	all_recipes.append(recipe_workbench)
 
+	# --- 新增家具/光源食谱 (在工作台制作) ---
+	_add_building_recipe("door", "res://src/core/resources/build_door.tres", "workbench")
+	_add_building_recipe("table", "res://src/core/resources/build_table.tres", "workbench")
+	_add_building_recipe("torch", "res://src/core/resources/build_torch.tres", "workbench")
+
 	# 2. 法杖杖芯 (铜)
 	_add_billet_recipe("wand_billet_copper", "铜制法杖胚", "copper_ore", default_icon, "workbench", Color.BROWN, 0.5)
 	
@@ -63,6 +68,25 @@ func _load_all_recipes() -> void:
 	_add_billet_recipe("wand_billet_diamond", "钻石法杖胚", "diamond", default_icon, "workbench", Color.CYAN, 0.2)
 	
 	print("CraftingManager: Loaded %d recipes." % all_recipes.size())
+
+func _add_building_recipe(id: String, resource_path: String, station: String = "") -> void:
+	var recipe = CraftingRecipe.new()
+	var build_res = load(resource_path) as BuildingResource
+	if not build_res: return
+	
+	var item = BaseItem.new()
+	item.id = id
+	item.display_name = build_res.display_name
+	item.description = build_res.description
+	item.icon = build_res.icon
+	item.item_type = "Placeable"
+	# 关联建筑资源以便建造系统识别
+	item.set_meta("building_resource", build_res)
+	
+	recipe.result_item = item
+	recipe.ingredients = build_res.cost
+	recipe.required_station = station
+	all_recipes.append(recipe)
 
 func _add_billet_recipe(id: String, name: String, ore_id: String, icon: Texture2D, station: String = "", color: Color = Color.WHITE, recharge: float = 0.5) -> void:
 	var recipe = CraftingRecipe.new()
@@ -96,6 +120,12 @@ func _add_billet_recipe(id: String, name: String, ore_id: String, icon: Texture2
 	recipe.ingredients = { ore_id: 2 }
 	recipe.required_station = station
 	all_recipes.append(recipe)
+
+func get_item_by_id(id: String) -> BaseItem:
+	for r in all_recipes:
+		if r.result_item.id == id:
+			return r.result_item
+	return null
 
 func get_handcrafting_recipes() -> Array[CraftingRecipe]:
 	var result: Array[CraftingRecipe] = []
@@ -160,8 +190,8 @@ func craft(recipe: CraftingRecipe) -> bool:
 	result_item.quality_grade = quality_info.grade
 	result_item.crafted_by = "Player" # 占位
 	
-	# 4. 添加产物
-	GameState.inventory.add_item(result_item, recipe.result_amount)
+	# 4. 添加产物 (如果背包满则自动掉落在地上)
+	GameState.inventory.add_item_or_drop(result_item, recipe.result_amount)
 	
 	print("制作成功: %s (%s)" % [result_item.display_name, result_item.quality_grade])
 	return true

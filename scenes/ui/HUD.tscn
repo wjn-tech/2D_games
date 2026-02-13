@@ -3,6 +3,7 @@
 [ext_resource type="Script" uid="uid://cd1ni7tlc2gt6" path="res://scenes/ui/hud.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://src/ui/attribute_display.tscn" id="2_atyv1"]
 [ext_resource type="PackedScene" path="res://src/ui/world_info_ui.tscn" id="3_world"]
+[ext_resource type="PackedScene" path="res://src/ui/minimap/minimap.tscn" id="4_minimap"]
 
 [node name="HUD" type="Control"]
 layout_mode = 3
@@ -13,6 +14,32 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("1_script")
+
+[node name="Sidebar" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 4
+anchor_top = 0.5
+anchor_bottom = 0.5
+offset_left = 10.0
+offset_top = -100.0
+offset_right = 50.0
+offset_bottom = 100.0
+grow_vertical = 2
+theme_override_constants/separation = 10
+
+[node name="HousingBtn" type="Button" parent="Sidebar"]
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+focus_mode = 0
+tooltip_text = "房屋管理 (H)"
+text = "H"
+
+[node name="InventoryBtn" type="Button" parent="Sidebar"]
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+focus_mode = 0
+tooltip_text = "背包 (I)"
+text = "I"
 
 [node name="MarginContainer" type="MarginContainer" parent="."]
 layout_mode = 1
@@ -32,6 +59,9 @@ layout_mode = 2
 size_flags_horizontal = 8
 size_flags_vertical = 0
 theme_override_constants/separation = 12
+
+[node name="Minimap" parent="MarginContainer/TopRight" instance=ExtResource("4_minimap")]
+layout_mode = 2
 
 [node name="WorldInfoUI" parent="MarginContainer/TopRight" instance=ExtResource("3_world")]
 layout_mode = 2

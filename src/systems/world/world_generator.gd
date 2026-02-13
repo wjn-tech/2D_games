@@ -74,8 +74,18 @@ class_name WorldGenerator
 }
 
 @onready var layer_0: TileMapLayer = $Layer0 # Surface
-@onready var layer_1: TileMapLayer = $Layer1 # Underground
-@onready var layer_2: TileMapLayer = $Layer2 # Deep
+@onready var layer_1: TileMapLayer = _find_layer_node(["Layer1", "TileMapLayer", "Layer_Background"])
+@onready var layer_2: TileMapLayer = _find_layer_node(["Layer2", "Layer_Deep"])
+
+func _find_layer_node(possible_names: Array) -> TileMapLayer:
+	for n_name in possible_names:
+		if has_node(n_name):
+			return get_node(n_name) as TileMapLayer
+	# 如果找不到，动态创建一个，防止报错
+	var new_layer = TileMapLayer.new()
+	new_layer.name = possible_names[0]
+	add_child(new_layer)
+	return new_layer
 
 @onready var tree_layer_0: TileMapLayer = $TreeLayer0
 @onready var tree_layer_1: TileMapLayer = $TreeLayer1
@@ -182,6 +192,12 @@ func _ready() -> void:
 	
 	_setup_noises()
 	
+	# 确保所有图层强制共享同一个 TileSet 资源
+	if layer_0.tile_set:
+		for l in [layer_1, layer_2, tree_layer_0, tree_layer_1, tree_layer_2]:
+			if l:
+				l.tile_set = layer_0.tile_set
+				
 	# 注册图层
 	if LayerManager:
 		LayerManager.register_layer(0, layer_0)
@@ -579,6 +595,21 @@ func start_generation() -> void:
 	if LayerManager:
 		LayerManager.switch_to_layer(0)
 	
+	# 重置无限区块管理器
+	if InfiniteChunkManager:
+		InfiniteChunkManager.restart()
+		
+	# 彻底清空当前所有图层
+	if layer_0: layer_0.clear()
+	if layer_1: layer_1.clear()
+	if layer_2: layer_2.clear()
+	if tree_layer_0: tree_layer_0.clear()
+	if tree_layer_1: tree_layer_1.clear()
+	if tree_layer_2: tree_layer_2.clear()
+
+	# 重新配置所有噪声，确保新的种子被应用到所有噪声类型
+	_setup_noises()
+
 	# 清理旧的实体 (NPC, 资源点等)
 	for child in get_children():
 		if child is CharacterBody2D or child is Area2D:

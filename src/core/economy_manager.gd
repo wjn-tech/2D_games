@@ -26,8 +26,10 @@ func get_buy_price(item_data: BaseItem, merchant: Node) -> int:
 	var fluctuation = market_fluctuation.get(item_data.id, 1.0)
 	
 	var merchant_modifier = 1.0
+	if merchant and "price_multiplier" in merchant:
+		merchant_modifier = merchant.price_multiplier
 	
-	# Relationship Modifier (New Spec)
+	return int(base * fluctuation * merchant_modifier)
 	var rel_mod = 1.0
 	if merchant and "relationship" in merchant:
 		var rel = float(merchant.relationship)

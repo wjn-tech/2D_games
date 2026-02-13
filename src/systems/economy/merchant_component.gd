@@ -28,7 +28,7 @@ func buy_item(item_data: BaseItem, amount: int) -> bool:
 	# 检查玩家金币
 	if GameState.player_data.attributes.get("money", 0) >= price * amount:
 		GameState.player_data.attributes["money"] -= price * amount
-		GameState.inventory.add_item(item_data, amount)
+		GameState.inventory.add_item_or_drop(item_data, amount)
 		return true
 	return false
 

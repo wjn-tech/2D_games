@@ -1,10 +1,11 @@
-[gd_scene load_steps=3 format=3 uid="uid://merchant_npc_uid"]
+[gd_scene load_steps=5 format=3 uid="uid://merchant_npc_uid"]
 
 [ext_resource type="PackedScene" uid="uid://dxfn1jff7u766" path="res://NPC.tscn" id="1_base"]
-[ext_resource type="Script" uid="uid://cufim4ppwao8c" path="res://src/systems/lineage/character_data.gd" id="2_data"]
+[ext_resource type="Script" uid="uid://dg824m1pkj2re" path="res://src/systems/trading/merchant.gd" id="2_script"]
+[ext_resource type="Script" uid="uid://cufim4ppwao8c" path="res://src/systems/lineage/character_data.gd" id="3_data"]
 
 [sub_resource type="Resource" id="Resource_merch"]
-script = ExtResource("2_data")
+script = ExtResource("3_data")
 display_name = "商人"
 alignment = "Friendly"
 npc_type = "Town"
@@ -13,6 +14,7 @@ hated_neighbors = []
 preferred_biome = "Forest"
 
 [node name="Merchant" instance=ExtResource("1_base")]
+script = ExtResource("2_script")
 npc_data = SubResource("Resource_merch")
 speed = 100.0
 ai_type = 3 # PASSIVE

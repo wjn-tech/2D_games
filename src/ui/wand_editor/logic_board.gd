@@ -86,7 +86,8 @@ func _drop_data(at_position, data):
 		"position": snapped_pos,
 		"display_name": data.display_name,
 		"value": data.wand_logic_value,
-		"icon_path": data.icon.resource_path if data.icon else ""
+		"icon_path": data.icon.resource_path if data.icon else "",
+		"visual_color": data.wand_visual_color if "wand_visual_color" in data else Color.GRAY
 	}
 	add_logic_node(node_data, data)
 	nodes_changed.emit()
@@ -151,6 +152,7 @@ func add_logic_node(node_data: Dictionary, item: BaseItem = null):
 	gnode.set_meta("node_type", node_data.get("type", "modifier"))
 	gnode.set_meta("node_value", node_data.get("value", {}))
 	gnode.set_meta("display_name", node_data.get("display_name", "Node"))
+	gnode.set_meta("icon_path", node_data.get("icon_path", ""))
 	
 	# Visual Styling
 	var type = node_data.get("type", "modifier")
@@ -159,13 +161,23 @@ func add_logic_node(node_data: Dictionary, item: BaseItem = null):
 	var border_color = Color.GRAY
 	if item and item.wand_visual_color:
 		border_color = item.wand_visual_color
+	elif node_data.has("visual_color"):
+		var vc = node_data.get("visual_color")
+		if vc is Color:
+			border_color = vc
+		elif vc is String:
+			border_color = Color.html(vc)
 	else:
+		# Fallbacks for legacy/undefined
 		match type:
 			"trigger": border_color = Color(1.0, 0.8, 0.2)
 			"modifier_damage": border_color = Color(1.0, 0.3, 0.3)
 			"modifier_element": border_color = Color(0.2, 0.5, 1.0)
 			"splitter": border_color = Color(0.2, 1.0, 0.8)
 			"action_projectile": border_color = Color(1.0, 0.4, 0.8)
+			"generator": border_color = Color(0.1, 0.9, 0.1) # Default Generator to Green
+
+	gnode.set_meta("visual_color", border_color)
 
 	var sb = StyleBoxFlat.new()
 	sb.bg_color = Color(0.08, 0.08, 0.1, 0.9) # Dark background matching palette icon style
@@ -225,6 +237,60 @@ func add_logic_node(node_data: Dictionary, item: BaseItem = null):
 	
 	gnode.add_child(box)
 
+	# --- Tooltip Logic Start ---
+	gnode.set_script(preload("res://src/ui/wand_editor/components/logic_node_script.gd"))
+	
+	var t_title = node_data.get("display_name", "Node")
+	var t_desc = ""
+	match type:
+		"generator": t_desc = "核心组件: 提供魔力源"
+		"trigger": t_desc = "触发器: 响应输入信号"
+		"modifier_damage": t_desc = "修正: 强化伤害"
+		"modifier_speed": t_desc = "修正: 提升飞行速度"
+		"modifier_pierce": t_desc = "修正: 增加穿透力"
+		"logic_splitter": t_desc = "逻辑: 并行分流"
+		"logic_sequence": t_desc = "逻辑: 顺序执行"
+		"projectile_tnt": t_desc = "法术: 高爆TNT"
+		"projectile_blackhole": t_desc = "法术: 奇点黑洞"
+		"projectile_teleport": t_desc = "法术: 传送道标"
+
+	var tooltip = "[b][font_size=18][color=#ffffff]%s[/color][/font_size][/b]" % t_title
+	if t_desc != "": tooltip += "\n[color=#cccccc]%s[/color]" % t_desc
+	
+	var val = node_data.get("value", {})
+	if not val.is_empty():
+		tooltip += "\n[color=#555555]----------------[/color]"
+		for k in val:
+			var v = val[k]
+			var k_map = {
+				"amount": "数值", "damage": "伤害", "speed": "速度", 
+				"duration": "持续", "radius": "半径", "force": "力度",
+				"cost": "魔耗"
+			}
+			var k_display = k_map.get(k, k.capitalize())
+			
+			var v_display = str(v)
+			if typeof(v) in [TYPE_INT, TYPE_FLOAT]:
+				# Highlight Numbers in Bold Pink
+				v_display = "[b][color=#ff88cc]%s[/color][/b]" % str(v)
+			
+			tooltip += "\n[color=#aaaaaa]%s:[/color] %s" % [k_display, v_display]
+	
+	# 使用元数据存储 Tooltip 内容，完美避开系统默认黑框提示
+	gnode.set_meta("custom_tooltip", tooltip)
+	# 显式清空系统内置属性
+	gnode.tooltip_text = ""
+	
+	gnode.mouse_filter = Control.MOUSE_FILTER_STOP # 确保接收鼠标事件
+	
+	# 仅设置鼠标穿透，不再设置内置 Tooltip 文本，防止系统默认黑框出现
+	box.tooltip_text = ""
+	box.mouse_filter = Control.MOUSE_FILTER_PASS # 允许穿透给父级节点
+	
+	# 修正 RichTextLabel 解析：
+	# GraphNode 的内置 Tooltip 渲染器可能不支持 BBCode，或者 _make_custom_tooltip 需要正确处理
+	# --- Tooltip Logic End ---
+
 	# Interaction: Port Hotzones Only (Removed Scaling)
 	# User requested distinct entities, but GraphNode constraint applies.
 	# We rely on the theme overrides in _ready for port interaction.
@@ -242,6 +308,11 @@ func add_logic_node(node_data: Dictionary, item: BaseItem = null):
 			# Spacer for branch port
 			# Slot 1 is the branch
 			gnode.set_slot(1, false, 0, Color.BLACK, true, 0, branch_color)
+		"logic_sequence":
+			# Sequence: 1 Input, 3 Outputs (Sequential)
+			gnode.set_slot(0, true, 0, flow_color, true, 0, flow_color)
+			gnode.set_slot(1, false, 0, Color.BLACK, true, 0, flow_color) # Sequence 2
+			gnode.set_slot(2, false, 0, Color.BLACK, true, 0, flow_color) # Sequence 3
 		"action_projectile":
 			gnode.set_slot(0, true, 0, flow_color, false, 0, Color.BLACK)
 		"generator":
@@ -271,7 +342,9 @@ func get_logic_data() -> Dictionary:
 				"type": child.get_meta("node_type", "modifier"),
 				"display_name": child.get_meta("display_name", "Node"),
 				"value": child.get_meta("node_value", {}),
-				"position": child.position_offset
+				"position": child.position_offset,
+				"visual_color": child.get_meta("visual_color", Color.GRAY),
+				"icon_path": child.get_meta("icon_path", "")
 			}
 			nodes_out.append(n)
 			

@@ -7,7 +7,7 @@
 
 [sub_resource type="Resource" id="Resource_skeleton"]
 script = ExtResource("2_data")
-display_name = "骷髅"
+display_name = "地底洞人"
 alignment = "Hostile"
 npc_type = "Hostile"
 max_health = 40.0

@@ -8,7 +8,7 @@
 
 [sub_resource type="Resource" id="Resource_slime"]
 script = ExtResource("2_data")
-display_name = "史莱姆"
+display_name = "apocryphal man"
 alignment = "Hostile"
 npc_type = "Hostile"
 max_health = 20.0

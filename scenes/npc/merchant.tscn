@@ -6,7 +6,7 @@
 
 [sub_resource type="Resource" id="Resource_merch"]
 script = ExtResource("3_data")
-display_name = "商人"
+display_name = "黑心资本家"
 alignment = "Friendly"
 npc_type = "Town"
 loved_neighbors = ["向导"]

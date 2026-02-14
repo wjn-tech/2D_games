@@ -6,7 +6,7 @@
 
 [sub_resource type="Resource" id="Resource_eye"]
 script = ExtResource("2_data")
-display_name = "恶魔之眼"
+display_name = "furious jia"
 alignment = "Hostile"
 npc_type = "Hostile"
 max_health = 60.0

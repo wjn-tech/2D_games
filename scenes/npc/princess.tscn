@@ -5,7 +5,7 @@
 
 [sub_resource type="Resource" id="Resource_princess"]
 script = ExtResource("2_data")
-display_name = "公主"
+display_name = "Crush"
 gender = 1 # Female
 personality = "Noble"
 alignment = "Friendly"

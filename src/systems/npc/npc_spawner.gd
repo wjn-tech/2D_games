@@ -50,11 +50,12 @@ func _build_registry() -> void:
 	slime.requires_no_wall = true 
 	spawn_table.append(slime)
 	
-	# 僵尸：种群适中
-	var zombie = SpawnRule.new("res://scenes/npc/zombie.tscn", 80, ["Any"], [Zone.SURFACE], ["Night"], "burrow", 5)
+	# 僵尸（敌国追兵）：种群适中，任意时间生成
+	var zombie = SpawnRule.new("res://scenes/npc/zombie.tscn", 80, ["Any"], [Zone.SURFACE], ["Any"], "burrow", 5)
 	zombie.requires_no_wall = true 
 	spawn_table.append(zombie)
 	
+	# 骷髅（地底洞人）：种群稍大，任意时间生成
 	var skeleton = SpawnRule.new("res://scenes/npc/skeleton.tscn", 120, ["Any"], [Zone.UNDERGROUND, Zone.CAVERN], ["Any"], "burrow", 6)
 	spawn_table.append(skeleton)
 	
@@ -294,8 +295,13 @@ func _spawn_mob(path: String, pos: Vector2) -> void:
 		# 防止因为模板资源（.tres）在内存中被旧实体修改，导致新实体“继承”残血。
 		mob.npc_data.health = mob.npc_data.max_health
 			
-		mob.npc_data.alignment = "Hostile"
-		mob.add_to_group("hostile_npcs")
+		mob.npc_data.alignment = "Hostile"		
+		# 根据NPC类型设置自定义display_name
+		if path.contains("zombie"):
+			mob.npc_data.display_name = "敌国追兵"
+		elif path.contains("skeleton"):
+			mob.npc_data.display_name = "地底洞人"
+				mob.add_to_group("hostile_npcs")
 		# 确保血条显示正确同步
 		if mob.has_method("_update_hp_bar"):
 			mob._update_hp_bar()

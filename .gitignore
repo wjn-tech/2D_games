@@ -10,6 +10,6 @@ build/
 # IDE files
 .vscode/
 
-# Project specific
+# Project specific 
 *.tmp
 *.log

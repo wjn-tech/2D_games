@@ -84,6 +84,10 @@ func set_zoom(val: float):
 	grid_container.custom_minimum_size = Vector2(base_w, base_h)
 
 func set_cell(coords: Vector2i, item: BaseItem):
+	# Safety: Ignore coordinates outside the defined grid
+	if coords.x < 0 or coords.x >= grid_width or coords.y < 0 or coords.y >= grid_height:
+		return
+		
 	if item == null:
 		grid_data.erase(coords)
 	else:

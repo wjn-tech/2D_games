@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="BuildingResource" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/systems/building/building_resource.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://assets/world/custom_furniture.png" id="2_texture"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_chair_icon"]
+atlas = ExtResource("2_texture")
+region = Rect2(48, 16, 16, 32)
+
+[resource]
+script = ExtResource("1_script")
+id = "chair"
+display_name = "木椅"
+description = "一张简单的木椅子，提供房屋舒适度。"
+icon = SubResource("AtlasTexture_chair_icon")
+atlas_coords = Vector2i(2, 1)
+source_id = 1
+cost = { "wood": 3 }
+category = "Furniture"
+requires_flat_ground = true
+grid_size = Vector2i(1, 2)
+placement_type = "Floor"
+influence_radius = 48.0
+should_face_player = true

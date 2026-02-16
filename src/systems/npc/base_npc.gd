@@ -52,6 +52,12 @@ var name_label: Label
 func _ready() -> void:
 	spawn_position = global_position
 	
+	# 新增：如果是友方 NPC，则与玩家忽略物理碰撞
+	if npc_data and npc_data.npc_type != "Hostile":
+		var player = get_tree().get_first_node_in_group("player")
+		if player:
+			add_collision_exception_with(player)
+	
 	if npc_data:
 		# 加载数据驱动的行为树
 		if not npc_data.behavior_tree_path.is_empty():
@@ -503,6 +509,9 @@ func update_growth_visual() -> void:
 func _die() -> void:
 	print(name, " died.")
 	
+	# 触发常规掉落 (Noita 风格)
+	_drop_normal_loot()
+	
 	# 触发群体仇恨
 	var player = get_tree().get_first_node_in_group("player")
 	if player and get_node_or_null("/root/FactionManager"):
@@ -529,6 +538,49 @@ func _die() -> void:
 		EventBus.enemy_killed.emit(npc_data.display_name, npc_data.alignment)
 		
 	queue_free()
+
+func _drop_normal_loot() -> void:
+	# 基础掉落逻辑：所有 NPC 都有极低概率掉落随机法术，
+	# 特定 NPC 有更高概率掉落特定法术。
+	
+	var drop_chance = 0.05 # 默认 5% 掉落法术
+	if npc_data and npc_data.alignment == "Hostile":
+		drop_chance = 0.1 # 敌对生物 10%
+	
+	if randf() < drop_chance:
+		var spell_id = _get_random_spell_for_npc()
+		if spell_id != "":
+			_spawn_spell_item(spell_id)
+
+func _get_random_spell_for_npc() -> String:
+	var d_name = npc_data.display_name.to_lower()
+	var spells = []
+	
+	# 1. 通语法术 (Noita 风格基础池)
+	var common_spells = ["spark_bolt", "action_projectile", "modifier_speed", "modifier_delay"]
+	
+	# 2. 特色法术
+	if "slime" in d_name or "史莱姆" in d_name:
+		spells = ["projectile_slime", "modifier_element_slime", "spark_bolt"]
+	elif "skeleton" in d_name or "bone" in d_name or "骨" in d_name:
+		spells = ["modifier_pierce", "magic_bolt", "modifier_damage"]
+	elif "eye" in d_name or "眼" in d_name:
+		spells = ["projectile_blackhole", "projectile_teleport", "modifier_speed"]
+	elif "fire" in d_name or "火" in d_name:
+		spells = ["modifier_element_fire", "spark_bolt", "projectile_tnt"]
+	elif "ice" in d_name or "冰" in d_name:
+		spells = ["modifier_element_ice", "magic_bolt"]
+	elif "boss" in d_name:
+		spells = ["projectile_blackhole", "modifier_damage_plus", "logic_splitter", "logic_sequence"]
+	
+	if spells.is_empty():
+		return common_spells.pick_random()
+	
+	# 80% 几率掉落特色法术，20% 几率掉落通语法术
+	if randf() < 0.8:
+		return spells.pick_random()
+	else:
+		return common_spells.pick_random()
 
 func get_faction() -> String:
 	return npc_data.alignment # 暂时用 alignment 代替具体阵营名
@@ -785,49 +837,36 @@ func execute_by_player(player: Node2D) -> void:
 	)
 
 func _drop_execution_loot() -> void:
-	# 1. Determine Material and Spell ID based on NPC identity
+	# 1. Determine Material based on NPC identity
 	var mat_id = "gold_nugget" # Default material
-	var spell_id = "projectile_magic_missile" # Default spell
-	
 	var d_name = npc_data.display_name
 	
 	if "史莱姆" in d_name or "Slime" in d_name:
 		mat_id = "slime_essence"
-		if randf() < 0.15: 
-			spell_id = "projectile_tnt"
-		else:
-			spell_id = "projectile_slime"
 	elif "骨" in d_name or "Skeleton" in d_name or "僵尸" in d_name or "Zombie" in d_name:
 		mat_id = "bone_fragment"
-		spell_id = "modifier_pierce"
 	elif "眼" in d_name or "Eye" in d_name:
 		mat_id = "crystalline_lens"
-		var r = randf()
-		if r < 0.2: spell_id = "projectile_blackhole"
-		elif r < 0.4: spell_id = "projectile_teleport"
-		else: spell_id = "modifier_speed" 
 	elif "蚁" in d_name or "Antlion" in d_name:
 		mat_id = "scrap_metal"
-		spell_id = "logic_splitter"
 	elif "公主" in d_name or "Princess" in d_name:
 		mat_id = "noble_essence" 
-		spell_id = "logic_sequence" # New Order Relay
 	
 	# Load material resource safely
 	var mat_path = "res://data/items/" + mat_id + ".tres"
 	if ResourceLoader.exists(mat_path):
 		var item_res = load(mat_path)
 		if item_res:
-			_spawn_loot(item_res, 1)
+			_spawn_loot(item_res, randi_range(1, 3))
 	else:
 		# Fallback if specific resource doesn't exist yet
 		var default_mat = load("res://data/items/gold_nugget.tres")
 		if default_mat: _spawn_loot(default_mat, randi_range(2, 5))
 	
-	# 2. Chance for Spell (50%)
-	if randf() < 0.5:
-		if spell_id != "":
-			_spawn_spell_item(spell_id)
+	# 2. Execution ALWAYS drops a spell (100% chance for execution)
+	var spell_id = _get_random_spell_for_npc()
+	if spell_id != "":
+		_spawn_spell_item(spell_id)
 
 func _spawn_loot(item: Resource, count: int) -> void:
 	if not loot_item_scene or not item: return
@@ -835,7 +874,8 @@ func _spawn_loot(item: Resource, count: int) -> void:
 	get_parent().call_deferred("add_child", loot)
 	loot.global_position = global_position
 	if loot.has_method("setup"):
-		loot.call_deferred("setup", item, count)
+		# NPC 掉落物品 instant pickup (0.0s delay)
+		loot.call_deferred("setup", item, count, 0.0)
 
 func _spawn_spell_item(spell_id: String) -> void:
 	var spell_item = SpellItem.new()

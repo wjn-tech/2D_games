@@ -4,6 +4,8 @@ extends Control
 @onready var quest_list: VBoxContainer = $MarginContainer/TopRight/QuestList
 @onready var damage_overlay: ColorRect = $DamageOverlay
 
+var wand_mana_bar: ProgressBar
+var wand_mana_label: Label
 var item_tooltip_label: Label
 
 func _ready() -> void:
@@ -59,6 +61,63 @@ func _process(_delta: float) -> void:
 func _update_hud() -> void:
 	if GameState.player_data:
 		pass # 金币显示已迁移或需重新挂载
+	
+	_update_wand_mana_ui()
+
+func _update_wand_mana_ui() -> void:
+	var player = get_tree().get_first_node_in_group("player")
+	if not player or not player.get("current_wand"):
+		if wand_mana_bar: wand_mana_bar.visible = false
+		return
+	
+	var wand = player.current_wand
+	if not wand_mana_bar:
+		_create_wand_mana_bar()
+	
+	wand_mana_bar.visible = true
+	if wand.embryo:
+		wand_mana_bar.max_value = wand.embryo.mana_capacity
+		wand_mana_bar.value = wand.current_mana
+		wand_mana_label.text = "MANA: %d/%d" % [int(wand.current_mana), int(wand.embryo.mana_capacity)]
+
+func _create_wand_mana_bar() -> void:
+	var container = VBoxContainer.new()
+	container.name = "WandManaContainer"
+	$MarginContainer.add_child(container)
+	# Align to Bottom Center
+	container.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	container.size_flags_vertical = Control.SIZE_SHRINK_END
+	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	# Add a bit of bottom margin
+	container.add_theme_constant_override("margin_bottom", 20)
+	
+	wand_mana_label = Label.new()
+	wand_mana_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	wand_mana_label.add_theme_font_size_override("font_size", 14)
+	wand_mana_label.add_theme_color_override("font_color", Color(0.2, 0.8, 1.0))
+	container.add_child(wand_mana_label)
+	
+	wand_mana_bar = ProgressBar.new()
+	wand_mana_bar.custom_minimum_size.y = 12
+	wand_mana_bar.show_percentage = false
+	
+	var style_bg = StyleBoxFlat.new()
+	style_bg.bg_color = Color(0.1, 0.1, 0.1, 0.5)
+	style_bg.set_corner_radius_all(4)
+	wand_mana_bar.add_theme_stylebox_override("background", style_bg)
+	
+	var style_fg = StyleBoxFlat.new()
+	style_fg.bg_color = Color(0.2, 0.6, 1.0)
+	style_fg.set_corner_radius_all(4)
+	style_fg.border_width_left = 1
+	style_fg.border_width_top = 1
+	style_fg.border_width_right = 1
+	style_fg.border_width_bottom = 1
+	style_fg.border_color = Color(0.5, 0.9, 1.0)
+	wand_mana_bar.add_theme_stylebox_override("fill", style_fg)
+	
+	container.add_child(wand_mana_bar)
 
 func show_damage_vignette() -> void:
 	if not damage_overlay: return

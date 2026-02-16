@@ -11,6 +11,9 @@ const WandSelectorScene = preload("res://src/ui/wand_editor/components/wand_sele
 @onready var palette_grid: GridContainer = $VBoxContainer/TabContainer/Logic/HSplitContainer/LibraryContainer/ScrollContainer/PaletteGrid
 @onready var tab_container = $VBoxContainer/TabContainer
 
+@onready var header: HBoxContainer = find_child("Header", true, false)
+@onready var wand_name_label: Label = find_child("WandNameLabel", true, false)
+
 var current_wand: WandData
 var current_wand_item: WandItem
 var simulation_box
@@ -55,29 +58,28 @@ func _ready():
 	# Setup Wand Selector
 	wand_selector = WandSelectorScene.instantiate()
 	wand_selector.visible = false
-	wand_selector.set_anchors_preset(Control.PRESET_CENTER)
+	wand_selector.set_anchors_preset(Control.PRESET_FULL_RECT) # 改为全屏覆盖
 	add_child(wand_selector)
 	wand_selector.wand_selected.connect(_on_wand_selected)
 
 	if visible:
 		_on_visibility_changed()
 	
-	# Add Simulation Button to Logic Library Panel
-	var lib_container = $VBoxContainer/TabContainer/Logic/HSplitContainer/LibraryContainer
-	var btn_sim = Button.new()
-	btn_sim.text = "► 测试法术"
-	btn_sim.add_theme_color_override("font_color", Color.GREEN)
-	btn_sim.custom_minimum_size.y = 40
-	btn_sim.pressed.connect(_on_test_spell_pressed)
-	lib_container.add_child(btn_sim)
-	lib_container.move_child(btn_sim, 0)
-	
-	# Add "Change Wand" Button
-	var btn_change = Button.new()
-	btn_change.text = "切换法杖"
-	btn_change.pressed.connect(_open_wand_selector)
-	lib_container.add_child(btn_change)
-	lib_container.move_child(btn_change, 0)
+	# Add Simulation Button to Header
+	if header:
+		var btn_sim = Button.new()
+		btn_sim.text = "► 测试法术"
+		btn_sim.add_theme_color_override("font_color", Color.GREEN)
+		btn_sim.custom_minimum_size = Vector2(100, 32)
+		btn_sim.pressed.connect(_on_test_spell_pressed)
+		header.add_child(btn_sim)
+		
+		# Add "Change Wand" Button to Header
+		var btn_change = Button.new()
+		btn_change.text = "切换法杖"
+		btn_change.custom_minimum_size = Vector2(100, 32)
+		btn_change.pressed.connect(_open_wand_selector)
+		header.add_child(btn_change)
 
 func _setup_preview_ui():
 	# Add Preview to Visual Library Panel
@@ -149,8 +151,9 @@ func _setup_preview_ui():
 func _on_visual_grid_changed():
 	if not current_wand: return
 	
-	# Sync Data
+	# Sync Data and Normalize
 	current_wand.visual_grid = visual_grid.grid_data.duplicate()
+	current_wand.normalize_grid() # Always ensure Vector2i keys
 	
 	# Update Preview
 	_update_wand_preview()
@@ -165,31 +168,42 @@ func _update_wand_preview():
 	if preview_texture_rect_4x:
 		preview_texture_rect_4x.texture = tex
 
-func _open_wand_selector():
+func _open_wand_selector(force: bool = false):
 	var player = get_tree().get_first_node_in_group("player")
 	if player and player.get("inventory"):
 		wand_selector.refresh(player.inventory)
 		wand_selector.visible = true
+		
+		# Force fullscreen modal behavior
+		wand_selector.set_anchors_preset(Control.PRESET_FULL_RECT)
+		wand_selector.custom_minimum_size = Vector2(0, 0) # Reset min size constraint
+		
+		# Hide other UI? No, just cover them.
+		wand_selector.move_to_front()
+		
+		# If forced (initial open), maybe hide close button?
+		pass
 
 func _on_wand_selected(item: WandItem):
 	current_wand_item = item
-	edit_wand(item.wand_data)
-	var label = get_node_or_null("VBoxContainer/Header/WandNameLabel")
-	if label:
-		label.text = "正在编辑: " + item.display_name
 	
-	# 更新属性显示
+	# 首先同步 UI 关键信息
+	if wand_name_label:
+		wand_name_label.text = "正在编辑: " + item.display_name
+		
+	if header:
+		var rename_edit = header.get_node_or_null("RenameEdit")
+		if rename_edit:
+			rename_edit.text = item.display_name
+	
+	# 应用数据并刷新展示
+	edit_wand(item.wand_data)
+	_setup_libraries()
 	_update_stats_display()
-		
-	# 更新重命名输入框内容
-	var rename_edit = get_node_or_null("VBoxContainer/Header/RenameEdit")
-	if rename_edit:
-		rename_edit.text = item.display_name
-		
+	
 	wand_selector.visible = false
 
 func _setup_rename_ui():
-	var header = get_node_or_null("VBoxContainer/Header")
 	if not header: return
 	if header.has_node("RenameEdit"): return
 	
@@ -204,22 +218,19 @@ func _setup_rename_ui():
 func _on_rename_changed(new_text: String):
 	if current_wand_item:
 		current_wand_item.display_name = new_text
-		var label = get_node_or_null("VBoxContainer/Header/WandNameLabel")
-		if label:
-			label.text = "正在编辑: " + new_text
+		if wand_name_label:
+			wand_name_label.text = "正在编辑: " + new_text
 
 func _setup_stats_ui():
-	var header = get_node_or_null("VBoxContainer/Header")
 	if not header: return
 	if header.has_node("StatsLabel"): 
 		stats_label = header.get_node("StatsLabel")
 		return
 	
 	# 确保名字标签不会挤占所有空间
-	var name_label = header.get_node_or_null("WandNameLabel")
-	if name_label:
-		name_label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-		name_label.custom_minimum_size.x = 200
+	if wand_name_label:
+		wand_name_label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		wand_name_label.custom_minimum_size.x = 200
 
 	stats_label = RichTextLabel.new()
 	stats_label.name = "StatsLabel"
@@ -234,13 +245,36 @@ func _setup_stats_ui():
 	
 	header.add_child(stats_label)
 
+func _process(_delta):
+	# Update real-time mana display if visible
+	if visible and current_wand:
+		_update_mana_display()
+
+func _update_mana_display():
+	var side_panel = find_child("StatsPanel", true, false)
+	if side_panel:
+		# We need to find the specific mana line or just refresh all?
+		# Refreshing all stats every frame is heavy. 
+		# Let's just update the mana label if it exists.
+		var label = side_panel.get_node_or_null("ManaTicker")
+		if not label:
+			label = RichTextLabel.new()
+			label.name = "ManaTicker"
+			label.bbcode_enabled = true
+			label.fit_content = true
+			side_panel.add_child(label)
+			side_panel.move_child(label, 0)
+		
+		var m_color = "cyan" if current_wand.current_mana > current_wand.embryo.mana_capacity * 0.2 else "red"
+		label.text = "[center][b]Mana: [color=%s]%.0f[/color] / %d[/b][/center]" % [m_color, current_wand.current_mana, int(current_wand.embryo.mana_capacity)]
+
 func _update_stats_display():
 	if not current_wand: return
 	
 	# 如果胚料丢失，尝试补充默认（防御性编程）
 	if not current_wand.embryo:
 		current_wand.embryo = WandEmbryo.new()
-		current_wand.embryo.recharge_rate = 0.5
+		current_wand.embryo.recharge_time = 0.5
 		current_wand.embryo.mana_capacity = 100
 		current_wand.embryo.logic_capacity = 5
 
@@ -262,7 +296,7 @@ func _update_stats_display():
 	# Top Bar
 	var top_text = "[right]%s %s%d%s   %s %s%.2fs%s   %s %s%d%s   %s %s%d/%d%s[/right]" % [
 		i_level, c_val, embryo.level, c_end,
-		i_time, c_val, embryo.recharge_rate, c_end,
+		i_time, c_val, embryo.recharge_time, c_end,
 		i_mana, c_val, embryo.mana_capacity, c_end,
 		i_node, c_val, current_wand.logic_nodes.size(), embryo.logic_capacity, c_end
 	]
@@ -271,22 +305,34 @@ func _update_stats_display():
 		stats_label.text = top_text
 	
 	# Sidebar
-	var side_panel = get_node_or_null("VBoxContainer/TabContainer/外观设计/MainLayout/WorkspaceSplit/StatsPanel")
-	if not side_panel:
-		# 兼容旧路径（如果还未重命名完成）
-		side_panel = get_node_or_null("VBoxContainer/TabContainer/Visual/MainLayout/WorkspaceSplit/StatsPanel")
+	var side_panel = find_child("StatsPanel", true, false)
 		
 	if side_panel:
 		var side_display = side_panel.get_node_or_null("StatsDisplay")
 		if side_display and side_display is RichTextLabel:
+			# Get Simulated Stats (Request 2)
+			var sim_stats = SpellProcessor.get_wand_stats(current_wand)
+			var sim_duration = sim_stats.get("duration", 0.0) if sim_stats is Dictionary else 0.0
+			var sim_dmg = sim_stats.get("total_damage", 0.0) if sim_stats is Dictionary else 0.0
+			var sim_projs = sim_stats.get("projectile_count", 0) if sim_stats is Dictionary else 0
+			var sim_mana = sim_stats.get("simulated_mana_usage", 0.0) if sim_stats is Dictionary else 0.0
+			
 			var stats_text = "[center][b][color=#20CCFF]法杖详细属性[/color][/b][/center]\n\n"
 			stats_text += "%s [color=#aaaaaa]等级:[/color] %s\n" % [i_level, embryo.level]
-			stats_text += "%s [color=#aaaaaa]施法延迟:[/color] [color=#66ff66]%.2fs[/color]\n" % [i_time, embryo.recharge_rate]
-			stats_text += "%s [color=#aaaaaa]法力容量:[/color] [color=#66aaff]%d[/color]\n" % [i_mana, embryo.mana_capacity]
-			stats_text += "• [color=#aaaaaa]基础耗能:[/color] [color=#ffaa66]%d[/color]\n" % embryo.base_mana_cost
+			stats_text += "%s [color=#aaaaaa]施法延迟:[/color] [color=#66ff66]%.2fs[/color]\n" % [i_time, embryo.cast_delay]
+			stats_text += "%s [color=#aaaaaa]充能时间:[/color] [color=#66ff66]%.2fs[/color]\n" % [i_time, embryo.recharge_time]
+			stats_text += "%s [color=#aaaaaa]法力容量:[/color] [color=#66aaff]%d[/color]\n" % [i_mana, int(embryo.mana_capacity)]
+			stats_text += "• [color=#aaaaaa]法力回复:[/color] [color=#66ffff]%d[/color]/s\n" % int(embryo.mana_recharge_speed)
+			stats_text += "• [color=#aaaaaa]充能回复:[/color] [color=#66ffff]+%d[/color]\n" % int(embryo.mana_recharge_burst)
 			stats_text += "%s [color=#aaaaaa]逻辑容量:[/color] [color=#ffffff]%d[/color] 节点\n" % [i_node, embryo.logic_capacity]
 			
-			stats_text += "\n[center][b][color=#20CCFF]实时状态[/color][/b][/center]\n\n"
+			stats_text += "\n[center][b][color=#20CCFF]法术预览[/color][/b][/center]\n"
+			stats_text += "• [color=#aaaaaa]单次爆发耗时:[/color] [color=#ffff44]%.2fs[/color]\n" % sim_duration
+			stats_text += "• [color=#aaaaaa]单次爆发法力:[/color] [color=#66aaff]%.0f[/color]\n" % sim_mana
+			stats_text += "• [color=#aaaaaa]理论全额伤害:[/color] [color=#ff4444]%.1f[/color]\n" % sim_dmg
+			stats_text += "• [color=#aaaaaa]投射物数量:[/color] [color=#ccccff]%d[/color]\n" % sim_projs
+			
+			stats_text += "\n[center][b][color=#20CCFF]实时状态[/color][/b][/center]\n"
 			var block_count = current_wand.visual_grid.size()
 			stats_text += "• [color=#aaaaaa]外观模块:[/color] %d\n" % block_count
 			
@@ -303,12 +349,19 @@ func _update_stats_display():
 
 func edit_wand(wand: WandData):
 	current_wand = wand
+	if current_wand:
+		current_wand.normalize_grid()
+	
 	if logic_board:
 		logic_board.set_data(wand)
 	
-	var label = get_node_or_null("VBoxContainer/Header/WandNameLabel")
-	if current_wand_item and label:
-		label.text = "正在编辑: " + current_wand_item.display_name
+	if current_wand_item and wand_name_label:
+		wand_name_label.text = "正在编辑: " + current_wand_item.display_name
+	
+	if current_wand_item and header:
+		var rename_edit = header.get_node_or_null("RenameEdit")
+		if rename_edit:
+			rename_edit.text = current_wand_item.display_name
 	
 	# 添加改名输入框（如果不存在）
 	_setup_rename_ui()
@@ -325,17 +378,26 @@ func edit_wand(wand: WandData):
 
 func _on_visibility_changed():
 	if visible:
-		if current_wand:
+		var player = get_tree().get_first_node_in_group("player")
+		var equipped_item = null
+		if player and player.inventory:
+			equipped_item = player.inventory.get_equipped_item()
+		
+		if equipped_item and equipped_item is WandItem:
+			# 如果当前没在编辑或者装备的法杖变了，自动切换到新装备的法杖
+			if current_wand_item != equipped_item:
+				_on_wand_selected(equipped_item)
+			else:
+				_update_stats_display()
+		elif current_wand:
 			_update_stats_display()
-			_animate_open()
 		else:
-			var player = get_tree().get_first_node_in_group("player")
-			if player and player.inventory:
-				var item = player.inventory.get_equipped_item()
-				if item and item is WandItem:
-					_on_wand_selected(item)
-				else:
-					_open_wand_selector()
+			_open_wand_selector(true)
+			
+		_animate_open()
+
+func _time_str(val):
+	return "%.2fs" % val
 
 func _on_test_spell_pressed():
 	if not current_wand: return
@@ -350,27 +412,52 @@ func _setup_libraries():
 	# --- Logic Library ---
 	# 1. Define all possible logic items
 	var logic_items = [
-		_create_mock_item("能量源", "generator", Color(0.2, 1.0, 0.4), {}, null),
-		_create_mock_item("触发器 (法术释放)", "trigger", Color(1, 0.84, 0.0), {"trigger_type": "cast"}, null), 
-		_create_mock_item("触发器 (命中)", "trigger", Color(1, 0.5, 0.0), {"trigger_type": "collision"}, null),
-		_create_mock_item("触发器 (定时)", "trigger", Color(1, 0.8, 0.3), {"trigger_type": "timer", "duration": 0.5}, null),
+		_create_mock_item("能量源", "generator", Color(0.2, 1.0, 0.4), {"mana_cost": 0, "delay": 0.05, "damage": 0}, null),
+		_create_mock_item("触发器 (法术释放)", "trigger", Color(1, 0.84, 0.0), {"mana_cost": 2, "trigger_type": "cast", "delay": 0.1}, null), 
+		_create_mock_item("触发器 (命中)", "trigger", Color(1, 0.5, 0.0), {"mana_cost": 5, "trigger_type": "collision", "delay": 0.0}, null),
+		_create_mock_item("触发器 (定时)", "trigger", Color(1, 0.8, 0.3), {"mana_cost": 5, "trigger_type": "timer", "duration": 0.5, "delay": 0.0}, null),
 		
-		_create_mock_item("火焰核心", "modifier_element", Color(0.8, 0.2, 0.2), {"element": "fire"}, null),
-		_create_mock_item("寒冰核心", "modifier_element", Color(0.2, 0.6, 0.9), {"element": "ice"}, null),
-		_create_mock_item("增幅器", "modifier_damage", Color(0.6, 0.6, 0.6), {"amount": 20}, null),
-		_create_mock_item("穿透强化", "modifier_pierce", Color(0.8, 0.2, 0.8), {"pierce": 1}, null),
-		_create_mock_item("速度修正", "modifier_speed", Color(0.2, 0.8, 0.6), {}, null),
-		_create_mock_item("延迟修正", "modifier_delay", Color(0.4, 0.4, 0.4), {"amount": 0.2}, null),
+		_create_mock_item("火焰核心", "modifier_element", Color(0.8, 0.2, 0.2), {"mana_cost": 10, "element": "fire", "damage_add": 5, "delay": 0.1}, null),
+		_create_mock_item("寒冰核心", "modifier_element", Color(0.2, 0.6, 0.9), {"mana_cost": 10, "element": "ice", "damage_add": 2, "delay": 0.05}, null),
+		_create_mock_item("增幅器", "modifier_damage", Color(0.6, 0.6, 0.6), {"mana_cost": 15, "amount": 10, "delay": 0.05}, null),
+		_create_mock_item("伤害强化", "modifier_damage", Color(1.0, 0.2, 0.2), {"mana_cost": 25, "amount": 25, "delay": 0.15}, null),
+		_create_mock_item("穿透强化", "modifier_pierce", Color(0.8, 0.2, 0.8), {"mana_cost": 30, "pierce": 1, "delay": 0.1}, null),
+		_create_mock_item("速度修正", "modifier_speed", Color(0.2, 0.8, 0.6), {"mana_cost": 5, "speed_add": 200, "delay": -0.05}, null),
+		_create_mock_item("加速修正", "modifier_speed", Color(0.5, 1.0, 0.5), {"mana_cost": 10, "multiplier": 1.5, "delay": -0.01}, null),
+		_create_mock_item("充能修正", "modifier_delay", Color(0.4, 0.4, 0.4), {"mana_cost": 0, "recharge": -0.15, "delay": -0.05}, null),
+		_create_mock_item("增加法力", "modifier_add_mana", Color(0.0, 0.6, 1.0), {"mana_cost": -30, "delay": 0.05}, null),
 		
-		_create_mock_item("分流器", "splitter", Color(0.0, 0.9, 0.9), {}, null),
-		_create_mock_item("顺序释放", "logic_sequence", Color(0.5, 0.5, 0.5), {}, null),
+		_create_mock_item("分流器", "splitter", Color(0.0, 0.9, 0.9), {"mana_cost": 2, "delay": 0.0}, null),
+		_create_mock_item("顺序释放", "logic_sequence", Color(0.5, 0.5, 0.5), {"mana_cost": 1, "delay": 0.1}, null),
 		
-		_create_mock_item("发射器", "action_projectile", Color(0.9, 0.4, 0.4), {}, null),
-		_create_mock_item("史莱姆弹", "action_projectile", Color(0.0, 1.0, 0.0), {"projectile_id": "slime", "speed": 400.0, "damage": 12.0, "element": "slime"}, null),
-		_create_mock_item("TNT", "action_projectile", Color(0.9, 0.2, 0.2), {"projectile_id": "tnt", "damage": 0, "lifetime": 3.0}, null),
-		_create_mock_item("黑洞", "action_projectile", Color(0.1, 0.0, 0.2), {"projectile_id": "blackhole", "damage": 5, "lifetime": 8.0, "speed": 50.0}, null),
-		_create_mock_item("传送", "action_projectile", Color(0.6, 0.2, 0.8), {"projectile_id": "teleport", "damage": 0, "lifetime": 1.0}, null)
+		_create_mock_item("发射器", "action_projectile", Color(0.9, 0.4, 0.4), {"mana_cost": 10, "speed": 500.0, "damage": 10.0, "delay": 0.2}, null),
+		_create_mock_item("火花弹 (Spark Bolt)", "action_projectile", Color(0.8, 0.9, 10.0), {"projectile_id": "spark_bolt", "mana_cost": 5, "speed": 800.0, "damage": 3.0, "delay": 0.05}, null),
+		_create_mock_item("魔法弹 (Magic Bolt)", "action_projectile", Color(10.0, 1.5, 30.0), {"projectile_id": "magic_bolt", "mana_cost": 25, "speed": 600.0, "damage": 15.0, "delay": 0.1}, null),
+		_create_mock_item("反弹爆发", "action_projectile", Color(10.0, 10.0, 1.0), {"projectile_id": "bouncing_burst", "mana_cost": 15, "speed": 400.0, "damage": 5.0, "delay": 0.1}, null),
+		_create_mock_item("三叉弹", "action_projectile", Color(0.1, 30.0, 10.0), {"projectile_id": "tri_bolt", "mana_cost": 35, "speed": 500.0, "damage": 8.0, "delay": 0.2}, null),
+		_create_mock_item("电锯 (Chainsaw)", "action_projectile", Color(20.0, 20.0, 20.0), {"projectile_id": "chainsaw", "mana_cost": 1, "speed": 100.0, "damage": 1.0, "delay": 0.0, "recharge": -0.17}, null),
+		_create_mock_item("史莱姆弹", "action_projectile", Color(0.0, 1.0, 0.0), {"projectile_id": "slime", "mana_cost": 12, "speed": 400.0, "damage": 12.0, "element": "slime", "delay": 0.15}, null),
+		_create_mock_item("TNT", "action_projectile", Color(0.9, 0.2, 0.2), {"projectile_id": "tnt", "mana_cost": 40, "damage": 50, "lifetime": 3.0, "speed": 200.0, "delay": 0.5}, null),
+		_create_mock_item("黑洞", "action_projectile", Color(0.1, 0.0, 0.2), {"projectile_id": "blackhole", "mana_cost": 180, "damage": 5, "lifetime": 8.0, "speed": 50.0, "delay": 0.8}, null),
+		_create_mock_item("传送", "action_projectile", Color(0.6, 0.2, 0.8), {"projectile_id": "teleport", "mana_cost": 15, "damage": 0, "lifetime": 1.0, "speed": 800.0, "delay": 0.3}, null)
 	]
+
+	# Additional Noita-like modifiers and projectiles (from Noita wiki inspiration)
+	# Projectile modifiers
+	logic_items.append(_create_mock_item("重击 (Heavy Shot)", "modifier_damage", Color(0.9, 0.4, 0.2), {"mana_cost": 20, "damage_add": 30, "speed_multiplier": 0.6, "delay": 0.05}, null))
+	logic_items.append(_create_mock_item("轻击 (Light Shot)", "modifier_damage", Color(0.6, 0.9, 0.6), {"mana_cost": 12, "damage_add": -5, "speed_multiplier": 1.5, "delay": 0.02}, null))
+	logic_items.append(_create_mock_item("增加寿命 (Increase Lifetime)", "modifier_lifetime", Color(0.3, 0.6, 1.0), {"mana_cost": 8, "lifetime_add": 1.5, "delay": 0.02}, null))
+	logic_items.append(_create_mock_item("穿透 (Piercing Shot)", "modifier_pierce", Color(0.8, 0.2, 0.8), {"mana_cost": 25, "pierce": 2, "delay": 0.05}, null))
+	logic_items.append(_create_mock_item("追踪 (Homing)", "modifier_homing", Color(0.9, 0.7, 0.2), {"mana_cost": 30, "homing_strength": 0.8, "delay": 0.05}, null))
+	logic_items.append(_create_mock_item("爆炸反弹 (Explosive Bounce)", "modifier_bounce_explosive", Color(1.0, 0.4, 0.1), {"mana_cost": 18, "explode_on_bounce": true, "delay": 0.05}, null))
+	logic_items.append(_create_mock_item("火弧 (Fire Arc)", "modifier_arc_fire", Color(0.9, 0.2, 0.1), {"mana_cost": 14, "arc_type": "fire", "delay": 0.02}, null))
+	logic_items.append(_create_mock_item("法力转伤 (Mana To Damage)", "modifier_mana_to_damage", Color(0.7, 0.2, 0.9), {"mana_cost": 0, "damage_multiplier": 1.2, "delay": 0.0}, null))
+
+	# Additional projectile spells
+	logic_items.append(_create_mock_item("火球 (Fireball)", "action_projectile", Color(1.0, 0.45, 0.1), {"projectile_id": "fireball", "mana_cost": 35, "damage": 22, "lifetime": 2.5, "speed": 300.0, "delay": 0.25}, null))
+	logic_items.append(_create_mock_item("魔法箭 (Magic Arrow)", "action_projectile", Color(0.8, 0.5, 1.0), {"projectile_id": "magic_arrow", "mana_cost": 18, "damage": 12, "lifetime": 1.8, "speed": 700.0, "delay": 0.08}, null))
+	logic_items.append(_create_mock_item("能量球 (Energy Sphere)", "action_projectile", Color(0.6, 0.9, 1.0), {"projectile_id": "energy_sphere", "mana_cost": 28, "damage": 18, "lifetime": 2.2, "speed": 450.0, "delay": 0.12}, null))
+	logic_items.append(_create_mock_item("分裂弹 (Cluster)", "action_projectile", Color(0.9, 0.6, 0.1), {"projectile_id": "cluster_bomb", "mana_cost": 45, "damage": 12, "lifetime": 1.2, "speed": 250.0, "delay": 0.4}, null))
 	
 	for child in palette_grid.get_children():
 		child.queue_free()
@@ -380,6 +467,11 @@ func _setup_libraries():
 		"generator", "trigger_cast", "action_projectile", 
 		"modifier_speed", "modifier_delay"
 	] # Basic set: Only source, cast trigger, base projectile and basic speed/delay
+	
+	# Fix: Currently forcing everything unlocked for testing because GameState unlock logic is incomplete
+	# To restore limited spell set: is_unlocked = false by default, then check always_unlocked + GameState.
+	# The user requested "Back to only basic spells".
+	
 	if GameState:
 		# Add GameState unlocks to allowed list
 		# (Or check against them)
@@ -388,11 +480,14 @@ func _setup_libraries():
 	for item in logic_items:
 		var item_id = _get_item_id(item)
 		
+		# Restoring Proper Lock Logic
 		var is_unlocked = false
 		if item_id in always_unlocked: 
 			is_unlocked = true
 		elif GameState and item_id in GameState.unlocked_spells:
 			is_unlocked = true
+		
+		# DEBUG OVERRIDE WAS HERE. REMOVING IT per user request.
 		
 		if is_unlocked:
 			_add_logic_palette_button(palette_grid, item)
@@ -448,20 +543,23 @@ func _get_item_id(item: Resource) -> String:
 		# It didn't handle elements.
 		return "modifier_element_" + elem
 		
-	if type == "modifier_damage": return "modifier_damage"
+	if type == "modifier_damage": 
+		if val.get("amount", 0) > 10: return "modifier_damage_plus"
+		return "modifier_damage"
 	if type == "modifier_pierce": return "modifier_pierce"
-	if type == "modifier_speed": return "modifier_speed"
+	if type == "modifier_speed": 
+		if val.has("multiplier"): return "modifier_speed_plus"
+		return "modifier_speed"
 	if type == "modifier_delay": return "modifier_delay"
+	if type == "modifier_add_mana": return "modifier_add_mana"
 	
 	if type == "splitter": return "logic_splitter"
 	if type == "logic_sequence": return "logic_sequence"
 	
 	if type == "action_projectile":
 		var pid = val.get("projectile_id", "")
-		if pid == "slime": return "projectile_slime"
-		if pid == "tnt": return "projectile_tnt"
-		if pid == "blackhole": return "projectile_blackhole"
-		if pid == "teleport": return "projectile_teleport"
+		if pid == "": return "action_projectile"
+		return "projectile_" + pid
 		if pid == "" or pid == "basic": return "action_projectile"
 	
 	return item.id # Fallback

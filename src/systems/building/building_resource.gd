@@ -13,6 +13,10 @@ func _get_building_name(): return display_name
 @export var cost: Dictionary = {} # { "item_id": amount }
 @export var category: String = "General" # Housing, Production, Defense, Utility
 
+# 放置规则
+@export var should_face_player: bool = false # 如果为真，放置时会根据玩家朝向进行水平翻转
+@export var vertical_pixel_offset: int = 0 # 放置时的垂直像素偏移（用于将门嵌入地面等）
+
 # 地形要求
 @export var requires_flat_ground: bool = true
 @export var required_level: int = 1 # 建造所需的城邦等级

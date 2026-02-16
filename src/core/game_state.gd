@@ -8,6 +8,7 @@ var player_data: CharacterData = CharacterData.new()
 
 var item_db: Dictionary = {}
 var recipe_db: Dictionary = {}
+var building_db: Dictionary = {} # 新增：建筑资源库
 var unlocked_spells: Array[String] = []
 
 signal spell_unlocked(spell_id: String)
@@ -66,7 +67,21 @@ func _load_databases() -> void:
 					recipe_db[file_name.get_basename()] = recipe
 			file_name = recipe_dir.get_next()
 	
-	print("GameState: 已加载 ", item_db.size(), " 个物品和 ", recipe_db.size(), " 个配方")
+	# 加载建筑资源库 (以便将物品 ID 映射回建筑功能)
+	var build_dirs = ["res://src/core/resources/", "res://data/buildings/"]
+	for d_path in build_dirs:
+		var b_dir = DirAccess.open(d_path)
+		if b_dir:
+			b_dir.list_dir_begin()
+			var b_name = b_dir.get_next()
+			while b_name != "":
+				if not b_dir.current_is_dir() and b_name.ends_with(".tres"):
+					var res = load(d_path + b_name)
+					if res is BuildingResource:
+						building_db[res.id] = res
+				b_name = b_dir.get_next()
+
+	print("GameState: 已加载 ", item_db.size(), " 个物品, ", recipe_db.size(), " 个配方 和 ", building_db.size(), " 个建筑资源")
 
 func _create_inventory_manager() -> Node:
 	var mgr = load("res://src/systems/inventory/inventory_manager.gd").new()

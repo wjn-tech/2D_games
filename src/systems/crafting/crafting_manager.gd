@@ -45,15 +45,34 @@ func _load_all_recipes() -> void:
 	icon_tex.gradient = fill_gradient
 	item_workbench.icon = icon_tex
 	
+	# Create BuildingResource for Workbench (Tile-based)
+	var build_workbench = BuildingResource.new()
+	build_workbench.id = "workbench"
+	build_workbench.display_name = "工作台"
+	build_workbench.atlas_coords = Vector2i(0, 1) # Furniture sheet plank
+	build_workbench.source_id = 1
+	build_workbench.grid_size = Vector2i(2, 1)
+	build_workbench.cost = { "wood": 4 }
+	item_workbench.set_meta("building_resource", build_workbench)
+	
 	recipe_workbench.result_item = item_workbench
 	recipe_workbench.ingredients = { "wood": 4 }
 	recipe_workbench.required_station = "" # 徒手即可制作工作台
 	all_recipes.append(recipe_workbench)
+	
+	if GameState.get("recipe_db") != null:
+		GameState.recipe_db["workbench"] = recipe_workbench
 
 	# --- 新增家具/光源食谱 (在工作台制作) ---
 	_add_building_recipe("door", "res://src/core/resources/build_door.tres", "workbench")
 	_add_building_recipe("table", "res://src/core/resources/build_table.tres", "workbench")
+	_add_building_recipe("chair", "res://src/core/resources/build_chair.tres", "workbench")
 	_add_building_recipe("torch", "res://src/core/resources/build_torch.tres", "workbench")
+	
+	# 强制同步一次 GameState 以确保 UI 可见
+	if GameState.get("recipe_db") != null:
+		for r in all_recipes:
+			GameState.recipe_db[r.result_item.id] = r
 
 	# 2. 法杖杖芯 (铜)
 	_add_billet_recipe("wand_billet_copper", "铜制法杖胚", "copper_ore", default_icon, "workbench", Color.BROWN, 0.5)
@@ -70,23 +89,48 @@ func _load_all_recipes() -> void:
 	print("CraftingManager: Loaded %d recipes." % all_recipes.size())
 
 func _add_building_recipe(id: String, resource_path: String, station: String = "") -> void:
-	var recipe = CraftingRecipe.new()
 	var build_res = load(resource_path) as BuildingResource
-	if not build_res: return
 	
+	# 容错处理：如果 .tres 加载失败（可能是 ID 冲突或路径问题），强制构造一个基础资源
+	if not build_res:
+		print("CraftingManager: Failed to load ", resource_path, ". Using fallback for ", id)
+		build_res = BuildingResource.new()
+		build_res.id = id
+		if id == "torch":
+			build_res.display_name = "火把"
+			build_res.cost = { "wood": 1 }
+			build_res.category = "Utility"
+			build_res.scene = load("res://scenes/world/buildings/torch.tscn")
+	
+	var recipe = CraftingRecipe.new()
 	var item = BaseItem.new()
 	item.id = id
 	item.display_name = build_res.display_name
-	item.description = build_res.description
-	item.icon = build_res.icon
+	item.description = build_res.description if build_res.description else "建筑组件"
+	
+	# 设置图标
+	if build_res.icon:
+		item.icon = build_res.icon
+	elif id == "torch":
+		# 火把的备选图标：从 atlas 裁剪
+		var tex = load("res://assets/world/custom_furniture.png")
+		if tex:
+			var atlas = AtlasTexture.new()
+			atlas.atlas = tex
+			atlas.region = Rect2(64, 16, 16, 16)
+			item.icon = atlas
+
 	item.item_type = "Placeable"
-	# 关联建筑资源以便建造系统识别
 	item.set_meta("building_resource", build_res)
 	
 	recipe.result_item = item
 	recipe.ingredients = build_res.cost
 	recipe.required_station = station
 	all_recipes.append(recipe)
+	
+	# 同步到全局数据库
+	if GameState.get("recipe_db") != null:
+		GameState.recipe_db[id] = recipe
 
 func _add_billet_recipe(id: String, name: String, ore_id: String, icon: Texture2D, station: String = "", color: Color = Color.WHITE, recharge: float = 0.5) -> void:
 	var recipe = CraftingRecipe.new()
@@ -100,7 +144,7 @@ func _add_billet_recipe(id: String, name: String, ore_id: String, icon: Texture2
 	var w_data = WandData.new()
 	w_data.embryo = WandEmbryo.new()
 	w_data.embryo.grid_resolution = 16
-	w_data.embryo.recharge_rate = recharge # 设置真实的射速（冷却时间）
+	w_data.embryo.recharge_time = recharge # 设置真实的射速（冷却时间）
 	
 	# 可以在胚料中添加一个基础色块作为提示
 	var mat = BaseItem.new()
@@ -119,8 +163,9 @@ func _add_billet_recipe(id: String, name: String, ore_id: String, icon: Texture2
 	recipe.result_item = item
 	recipe.ingredients = { ore_id: 2 }
 	recipe.required_station = station
-	all_recipes.append(recipe)
-
+	all_recipes.append(recipe)	
+	if GameState.get("recipe_db") != null:
+		GameState.recipe_db[id] = recipe
 func get_item_by_id(id: String) -> BaseItem:
 	for r in all_recipes:
 		if r.result_item.id == id:
@@ -141,21 +186,33 @@ func _get_nearby_stations() -> Array[String]:
 	var player = get_tree().get_first_node_in_group("player")
 	if not player: return stations
 	
-	# 检查玩家附近的交互区域
+	# 检查玩家附近的交互区域 (必须确保探测到 Layer 4 即玩家层)
 	var interaction_area = player.get_node_or_null("InteractionArea")
-	if not interaction_area: return stations
-	
-	var bodies = interaction_area.get_overlapping_bodies()
+	var bodies = []
+	if interaction_area:
+		bodies = interaction_area.get_overlapping_bodies()
+	else:
+		# 兜底方案：直接搜索组节点
+		for wb in get_tree().get_nodes_in_group("workbench"):
+			if wb is Node2D and wb.global_position.distance_to(player.global_position) < 60:
+				bodies.append(wb)
+
 	for body in bodies:
-		if body.is_in_group("workbench") or body.name.to_lower().contains("workbench"):
+		if body.is_in_group("workbench") or body.is_in_group("housing_table") or body.name.to_lower().contains("workbench"):
 			if "workbench" not in stations: stations.append("workbench")
 			
 	var areas = interaction_area.get_overlapping_areas()
 	for area in areas:
-		# 有些工作台可能是 Area2D 或者子节点是 Area2D
 		var p = area.get_parent()
-		if area.is_in_group("workbench") or (p and (p.is_in_group("workbench") or p.name.to_lower().contains("workbench"))):
+		var is_wb = area.is_in_group("workbench") or area.is_in_group("housing_table")
+		if p:
+			is_wb = is_wb or p.is_in_group("workbench") or p.is_in_group("housing_table") or p.name.to_lower().contains("workbench")
+		
+		if is_wb:
 			if "workbench" not in stations: stations.append("workbench")
+	
+	if stations.size() > 0:
+		print("CraftingManager: Found nearby stations: ", stations)
 			
 	return stations
 

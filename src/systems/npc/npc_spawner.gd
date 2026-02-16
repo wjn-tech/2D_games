@@ -43,6 +43,11 @@ func _ready() -> void:
 	add_to_group("npc_spawner")
 	_build_registry()
 
+func reset() -> void:
+	print("NPCSpawner: Clearing population registry...")
+	population_map.clear()
+	last_spawn_check_time = 0.0
+
 func _build_registry() -> void:
 	# --- 规则现在包含 max_count ---
 	# 史莱姆：种群较大
@@ -301,7 +306,8 @@ func _spawn_mob(path: String, pos: Vector2) -> void:
 			mob.npc_data.display_name = "敌国追兵"
 		elif path.contains("skeleton"):
 			mob.npc_data.display_name = "地底洞人"
-				mob.add_to_group("hostile_npcs")
+			mob.add_to_group("hostile_npcs")
+		
 		# 确保血条显示正确同步
 		if mob.has_method("_update_hp_bar"):
 			mob._update_hp_bar()

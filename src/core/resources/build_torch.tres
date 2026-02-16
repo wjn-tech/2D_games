@@ -1,13 +1,19 @@
-[gd_resource type="Resource" script_class="BuildingResource" load_steps=3 format=3]
+[gd_resource type="Resource" script_class="BuildingResource" load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://src/systems/building/building_resource.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://scenes/world/buildings/torch.tscn" id="2_scene"]
+[ext_resource type="Texture2D" path="res://assets/world/custom_furniture.png" id="3_texture"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_torch_icon"]
+atlas = ExtResource("3_texture")
+region = Rect2(64, 16, 16, 16)
 
 [resource]
 script = ExtResource("1_script")
 id = "torch"
 display_name = "火把"
 description = "简易光源，必须放置在墙壁上。"
+icon = SubResource("AtlasTexture_torch_icon")
 scene = ExtResource("2_scene")
 cost = { "wood": 1 }
 category = "Utility"

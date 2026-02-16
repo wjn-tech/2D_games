@@ -1,5 +1,8 @@
 extends CharacterBody2D
 
+# Safe transform helpers
+const TransformHelper = preload("res://src/utils/transform_helper.gd")
+
 # 物理参数将由 AttributeComponent 动态调整
 var SPEED: float = 200.0
 var JUMP_VELOCITY: float = -600.0
@@ -184,7 +187,10 @@ func _ready() -> void:
 	if LayerManager:
 		LayerManager.move_entity_to_layer(self, 0)
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if current_wand:
+		current_wand.update_mana(delta)
+		
 	if weapon_pivot and input_enabled:
 		var mouse_pos = get_global_mouse_position()
 		var dir = (mouse_pos - global_position).normalized()
@@ -593,16 +599,22 @@ func _handle_continuous_actions() -> void:
 			var spawn_pos = global_position
 			if projectile_spawn_point:
 				spawn_pos = projectile_spawn_point.global_position
-				
-			SpellProcessor.cast_spell(current_wand, self, dir, spawn_pos)
 			
-			# 充能时间从 wand 数据获取，如果没有默认 0.2
-			var recharge = 0.2
-			if current_wand.embryo:
-				recharge = current_wand.embryo.recharge_rate
-			action_cooldown = recharge
+			# Call Cast Spell - returns internal duration + recharge + delay
+			var total_cooldown = SpellProcessor.cast_spell(current_wand, self, dir, spawn_pos)
+			
+			# Action cooldown prevents firing until sequence is done
+			action_cooldown = max(total_cooldown, 0.05) # Minimum speed cap
 
 func _handle_input_actions() -> void:
+	# --- Cheats (Request 6 & 7) ---
+	if Input.is_physical_key_pressed(KEY_I) and Input.is_physical_key_pressed(KEY_ALT):
+		invincible = !invincible
+		print("Cheat: Invincibility = ", invincible)
+		
+	if Input.is_physical_key_pressed(KEY_H) and Input.is_physical_key_pressed(KEY_ALT):
+		_cheat_build_house()
+		
 	if Input.is_key_pressed(KEY_F):
 		_attempt_execution()
 
@@ -672,18 +684,16 @@ func _handle_input_actions() -> void:
 			current_mining_tile = Vector2i(-1, -1)
 
 func _handle_mouse_action() -> bool:
-	# 检查当前装备是否为工具
-	var equipped = inventory.get_equipped_item() if inventory else null
-	if equipped is ToolItemData:
-		if action_cooldown <= 0:
-			equipped._on_use(self)
-			action_cooldown = ACTION_INTERVAL
-		return true
-
 	# 如果正在建造，不执行挖掘逻辑
 	var building_mgr = get_tree().get_first_node_in_group("building_manager")
 	if building_mgr and building_mgr.has_method("is_building") and building_mgr.is_building():
 		return false
+	
+	# 如果刚刚结束建造（防止一次点击同时完成放置和挖掘）
+	if action_cooldown > 0:
+		return false
+
+	# 检查当前装备是否为工具
 
 	var mouse_pos = get_global_mouse_position()
 	if global_position.distance_to(mouse_pos) > 150:
@@ -747,12 +757,24 @@ func _handle_mouse_action() -> bool:
 					return true
 				else:
 					# 检查是否有可挖掘建筑
-					var buildings = get_tree().get_nodes_in_group("doors") + get_tree().get_nodes_in_group("tables") + get_tree().get_nodes_in_group("torches")
+					# 统一检查所有可破坏物组
+					var buildings = []
+					buildings.append_array(get_tree().get_nodes_in_group("doors"))
+					buildings.append_array(get_tree().get_nodes_in_group("tables"))
+					buildings.append_array(get_tree().get_nodes_in_group("chairs"))
+					buildings.append_array(get_tree().get_nodes_in_group("torches"))
+					buildings.append_array(get_tree().get_nodes_in_group("housing_furniture"))
+					
 					for b in buildings:
+						if not is_instance_valid(b): continue
+						
 						# 使用简单的碰撞矩形或距离检查
-						var local_m_pos = b.to_local(mouse_pos)
+						# 必须转换到局部坐标检查点击位置
+						var local_m_pos = TransformHelper.safe_to_local(b, get_global_mouse_position()) # Use global mouse pos (safe)
+						
 						# 假设建筑大小约为 1-2 格 (16-32px)
-						if abs(local_m_pos.x) < 24 and abs(local_m_pos.y) < 32:
+						#稍微放宽检测范围
+						if abs(local_m_pos.x) < 24 and abs(local_m_pos.y) < 24:
 							GameState.digging.mine_building_step(b, get_physics_process_delta_time(), 0)
 							return true
 
@@ -783,7 +805,12 @@ func _try_place_held_item() -> void:
 		bm.start_building(item.get_meta("building_resource"), { item.id: 1 })
 		return
 
-	# 2. 特殊处理工作台
+	# 2. 检查全局建筑数据库 (解决掉落物捡回后丢失元数据的问题)
+	if GameState.building_db.has(item.id):
+		bm.start_building(GameState.building_db[item.id], { item.id: 1 })
+		return
+
+	# 3. 特殊处理工作台
 	if item.id == "workbench" or item.id == "workbench_item":
 		var res = BuildingResource.new()
 		res.scene = load("res://scenes/world/workbench.tscn")
@@ -894,6 +921,11 @@ func _on_stats_updated(_name: String, _val: float) -> void:
 		SPEED = attributes.get_move_speed(BASE_SPEED)
 		JUMP_VELOCITY = attributes.get_jump_force(BASE_JUMP)
 		print("Player: 属性已同步 (Speed: %.1f, Jump: %.1f)" % [SPEED, JUMP_VELOCITY])
+
+func _cheat_build_house():
+	# Request 7: Instant House Cheat
+	var mpos = get_global_mouse_position()
+	DebugTools.build_instant_house(mpos)
 
 func refresh_data() -> void:
 	if attributes:

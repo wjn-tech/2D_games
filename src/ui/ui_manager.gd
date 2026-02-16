@@ -22,6 +22,13 @@ var is_ui_focused: bool = false:
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 
+## 强制清理所有 UI 引用 (用于场景重载)
+func clear_all_references() -> void:
+	print("UIManager: Clearing all UI references due to scene reload.")
+	active_windows.clear()
+	blocking_windows.clear()
+	is_ui_focused = false
+
 ## 打开窗口
 func open_window(window_name: String, scene_path: String, blocks_input: bool = true) -> Control:
 	print("UIManager: 尝试打开窗口: ", window_name, " 路径: ", scene_path)
@@ -106,11 +113,13 @@ func open_window(window_name: String, scene_path: String, blocks_input: bool = t
 
 ## 播放转场淡入淡出
 func play_fade(to_black: bool, duration: float = 0.5) -> Signal:
-	var fade_node = get_tree().root.get_node_or_null("FadeLayer/ColorRect")
-	if not fade_node:
+	var fade_layer = get_tree().root.get_node_or_null("GlobalFadeLayer")
+	var fade_node: ColorRect = null
+	
+	if not fade_layer:
 		var canvas = CanvasLayer.new()
-		canvas.name = "FadeLayer"
-		canvas.layer = 120 # 最高的层级
+		canvas.name = "GlobalFadeLayer"
+		canvas.layer = 128 # 最高的层级，盖过所有 UI
 		canvas.process_mode = Node.PROCESS_MODE_ALWAYS
 		get_tree().root.add_child(canvas)
 		
@@ -121,6 +130,8 @@ func play_fade(to_black: bool, duration: float = 0.5) -> Signal:
 		rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		canvas.add_child(rect)
 		fade_node = rect
+	else:
+		fade_node = fade_layer.get_node("ColorRect")
 		
 	var target_alpha = 1.0 if to_black else 0.0
 	var tween = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
@@ -147,39 +158,56 @@ func show_floating_text(text: String, global_pos: Vector2, color: Color = Color.
 
 ## 关闭窗口
 func close_window(window_name: String) -> void:
+	var window: Control = null
+	
 	if active_windows.has(window_name):
-		var window = active_windows[window_name]
-		
-		# 设置目标状态为关闭
-		window.set_meta("ui_target_state", "closed")
-		
+		window = active_windows[window_name]
+	else:
+		# 增强：场景重载后可能丢失字典引用，尝试在当前场景中寻找预置节点
+		var scene_root = get_tree().current_scene
+		if scene_root:
+			window = scene_root.find_child(window_name, true, false)
+			if window and window is Control:
+				print("UIManager: 探测并同步场景中的预置窗口: ", window_name)
+				active_windows[window_name] = window
+
+	if not is_instance_valid(window):
+		if active_windows.has(window_name):
+			active_windows.erase(window_name)
 		if window_name in blocking_windows:
 			blocking_windows.erase(window_name)
+		return
 		
-		# 播放关闭动画
-		var tween = _play_close_animation(window)
-		if tween:
-			await tween.finished
-			
-		if is_instance_valid(window):
-			# 检查在等待期间是否被重新打开了
-			if window.has_meta("ui_target_state") and window.get_meta("ui_target_state") == "open":
-				print("UIManager: 窗口 %s 在关闭动画期间被重新打开，取消隐藏动作。" % window_name)
-				return
-				
-			# 只有 MainMenu 和 HUD 是真正持久的预置节点，其他的动态窗口即使在场景中找到也应该销毁
-			var is_persistent = window_name == "MainMenu" or window_name == "HUD"
-			
-			if is_persistent:
-				window.visible = false
-			else:
-				active_windows.erase(window_name)
-				window.queue_free()
-			
-		if blocking_windows.is_empty():
-			is_ui_focused = false
+	# 设置目标状态为关闭
+	window.set_meta("ui_target_state", "closed")
+	
+	if window_name in blocking_windows:
+		blocking_windows.erase(window_name)
+	
+	# 播放关闭动画
+	var tween = _play_close_animation(window)
+	if tween:
+		await tween.finished
 		
-		window_closed.emit(window_name)
+	if is_instance_valid(window):
+		# 检查在等待期间是否被重新打开了
+		if window.has_meta("ui_target_state") and window.get_meta("ui_target_state") == "open":
+			print("UIManager: 窗口 %s 在关闭动画期间被重新打开，取消隐藏动作。" % window_name)
+			return
+			
+		# 只有 MainMenu 和 HUD 是真正持久的预置节点，其他的动态窗口即使在场景中找到也应该销毁
+		var is_persistent = window_name == "MainMenu" or window_name == "HUD"
+		
+		if is_persistent:
+			window.visible = false
+		else:
+			active_windows.erase(window_name)
+			window.queue_free()
+		
+	if blocking_windows.is_empty():
+		is_ui_focused = false
+	
+	window_closed.emit(window_name)
 
 func _play_open_animation(window: Node) -> void:
 	if not window is Control: return
@@ -202,11 +230,17 @@ func _play_close_animation(window: Node) -> Tween:
 
 ## 关闭所有窗口
 func close_all_windows(only_blocking: bool = true, exclude: Array = []) -> void:
-	var names = active_windows.keys()
-	for window_name in names:
+	# 即使 active_windows 是空的（如刚重传场景），也要确保探测并关闭场景中的基础 UI
+	var window_names = active_windows.keys()
+	for common in ["MainMenu", "SaveSelection", "SettingsWindow", "InGameMenu"]:
+		if not common in window_names and not common in exclude:
+			window_names.append(common)
+			
+	for window_name in window_names:
 		if window_name in exclude:
 			continue
-		if only_blocking and not window_name in blocking_windows:
+		if only_blocking and not window_name in blocking_windows and window_name != "MainMenu":
+			# 特例：MainMenu 通常被认为是 blocking 的，即使在重载后丢失了记录也该关闭
 			continue
 		close_window(window_name)
 	

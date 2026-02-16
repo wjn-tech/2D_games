@@ -16,6 +16,9 @@ var chunk_entity_containers: Dictionary = {}
 # 所有的 Delta 数据（即使区块被卸载也保留）: { Vector2i: WorldChunk }
 var world_delta_data: Dictionary = {}
 
+var current_session_id: int = 0
+const TransformHelper = preload("res://src/utils/transform_helper.gd")
+
 signal chunk_loaded(coord: Vector2i)
 signal chunk_unloaded(coord: Vector2i)
 
@@ -26,10 +29,16 @@ func _ready() -> void:
 	
 func restart() -> void:
 	print("InfiniteChunkManager: Restarting world state...")
+	current_session_id += 1 # 增加 Session ID 以使旧的异步任务失效
 	loaded_chunks.clear()
-	# chunk_entity_containers 实际上可能包含了已经添加到场景树的节点引用
-	# 当 WorldGenerator 清理子节点时，这些引用会变为空或非法，但为了安全我们清空字典
+	_loading_queue.clear()
+	
+	# Fix: Explicitly destroy old entity containers (since they are on Main scene, not WorldGenerator)
+	for container in chunk_entity_containers.values():
+		if is_instance_valid(container):
+			container.queue_free()
 	chunk_entity_containers.clear()
+	
 	# 如果是新游戏，我们必须清空之前保存的所有区块 Delta
 	world_delta_data.clear()
 	
@@ -103,6 +112,10 @@ func record_delta(world_pos: Vector2, layer_idx: int, source_id: int, atlas_coor
 			world_delta_data[c_coord].coord = c_coord
 	
 	world_delta_data[c_coord].add_delta(layer_idx, l_pos, source_id, atlas_coords)
+	
+	# 同步更新小地图
+	if MinimapManager and MinimapManager.has_method("update_tile_at_pos"):
+		MinimapManager.update_tile_at_pos(world_pos, source_id, atlas_coords)
 
 ## 更新玩家周边的区块加载状态
 func update_player_vicinity(player_pos: Vector2) -> void:
@@ -133,11 +146,15 @@ var _loading_queue: Dictionary = {}
 
 func _request_chunk_load(coord: Vector2i) -> void:
 	_loading_queue[coord] = true
-	WorkerThreadPool.add_task(_async_load_task.bind(coord))
+	WorkerThreadPool.add_task(_async_load_task.bind(coord, current_session_id))
 
-func _async_load_task(coord: Vector2i) -> void:
+func _async_load_task(coord: Vector2i, session_id: int) -> void:
+	# 如果 Session ID 不匹配，说明是上一局残留的任务，直接退出
+	if session_id != current_session_id:
+		return
+		
 	var generator = get_tree().get_first_node_in_group("world_generator")
-	if not generator: 
+	if not is_instance_valid(generator): 
 		_loading_queue.erase(coord)
 		return
 		
@@ -202,8 +219,8 @@ func _apply_structures(coord: Vector2i, chunk_data: Dictionary, entities_out: Ar
 			# 严格使用整数像素偏差
 			var global_house_x_tiles = check_coord.x * 64 + center_x_local
 			
-			# 安全保护：在世界原点附近 (Spawn Point) ±80 格范围内禁止生成结构
-			if abs(global_house_x_tiles) < 80:
+			# 安全保护：在世界原点附近 (Spawn Point) ±120 格范围内禁止生成结构，防止出生点被房子卡住
+			if abs(global_house_x_tiles) < 120:
 				continue
 			
 			# 高度扫描：扫描房子宽度的地面高度，取全宽度内的最高点（Y值最小）作为基准
@@ -226,9 +243,9 @@ func _apply_structures(coord: Vector2i, chunk_data: Dictionary, entities_out: Ar
 			if local_x > -40 and local_x < 100 and local_y > -40 and local_y < 100:
 				_generate_tile_house(chunk_data, Vector2i(local_x, local_y), entities_out)
 
-		# 移除或大幅降低矿井概率以减少地平线空洞
-		if dx == 0 and hash_val % 100 == 0:
-			_apply_shaft(chunk_data, hash_val)
+		# 彻底移除随机矿井生成，防止地平线出现垂直空洞大坑
+		# if dx == 0 and hash_val % 100 == 0:
+		# 	_apply_shaft(chunk_data, hash_val)
 
 	# 情况 3: 埋没遗迹
 	if coord.y > 6 and get_chunk_hash(coord) % 15 == 0:
@@ -716,7 +733,7 @@ func _spawn_npc_at(pos: Vector2, parent: Node) -> void:
 			# 将标记点的全局坐标转换为 TileMap 坐标
 			# 我们关注的是 "脚底" 所在的瓦片
 			var target_feet_pos_global = pos + Vector2(0, npc_feet_offset)
-			var tile_pos = tile_layer.local_to_map(tile_layer.to_local(target_feet_pos_global))
+			var tile_pos = tile_layer.local_to_map(TransformHelper.safe_to_local(tile_layer, target_feet_pos_global))
 			
 			# 1. 如果脚底在实心瓦片里 -> 向上寻找空地 (卡墙修复)
 			if tile_layer.get_cell_source_id(tile_pos) != -1:
@@ -851,41 +868,41 @@ func _apply_cells_to_layers(chunk_coord: Vector2i, cells: Dictionary, chunk: Wor
 			all_relevant_layers.append(l_idx)
 	
 	for layer_idx in all_relevant_layers:
+		# 严格过滤：仅处理整数图层索引，忽略元数据 (如 _coord)
+		if not layer_idx is int: continue
+		
 		var layer = layers.get(layer_idx)
 		if not layer: continue
 		
-		# 确保图层可见且启用碰撞
-		if layer is TileMapLayer:
-			layer.visible = true 
-			# Layer 0 是核心物理层
-			# Layer 1 是背景墙 (由生成器填充地下部分)，不应有碰撞
-			# Layer 2 是深度背景，不应有碰撞
-			layer.collision_enabled = (layer_idx == 0 or layer_idx >= 10) # 树木层 (10+) 视情况而定
-		
-		# 获取该层原始数据或空字典
-		var layer_cells = cells.get(layer_idx, {})
+		# 获取该层原始数据，并确保其为字典
+		var layer_cells = cells.get(layer_idx)
+		if not (layer_cells is Dictionary): continue
 		
 		# 我们需要处理该层中所有可能的位置：包括生成的和 Delta 记录的
 		# 首先处理 Delta（玩家修改）
 		var chunk_deltas = chunk.deltas.get(layer_idx, {})
+		if not (chunk_deltas is Dictionary): chunk_deltas = {}
 		
 		# 1. 应用生成的瓦片 (如果没有 Delta 覆盖)
 		for local_pos in layer_cells:
 			if chunk_deltas.has(local_pos): continue # 跳过，由 Delta 处理
 			
 			var data = layer_cells[local_pos]
+			if not (data is Dictionary): continue
+			
 			var map_pos = origin + local_pos
-			layer.set_cell(map_pos, data["source"], data["atlas"])
+			layer.set_cell(map_pos, data.get("source", -1), data.get("atlas", Vector2i(-1, -1)))
 			
 		# 2. 应用玩家修改 (Delta)
 		for local_pos in chunk_deltas:
 			var map_pos = origin + local_pos
 			var delta = chunk_deltas[local_pos]
+			if not (delta is Dictionary): continue
 			
-			if delta["source"] == -1:
+			if delta.get("source", -1) == -1:
 				layer.set_cell(map_pos, -1)
 			else:
-				layer.set_cell(map_pos, delta["source"], delta["atlas"])
+				layer.set_cell(map_pos, delta.get("source", -1), delta.get("atlas", Vector2i(-1, -1)))
 	
 	# --- 强制物理重刷 ---
 	# 在传送后的同步加载中，此举至关重要，它强制本帧生成物理形状

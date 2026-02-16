@@ -2,6 +2,7 @@ extends StaticBody2D
 
 func _ready():
 	add_to_group("tables")
+	add_to_group("housing_table") # 用于房屋检测
 
 func handle_mining(_damage: float):
 	# 安全获取桌子物品数据

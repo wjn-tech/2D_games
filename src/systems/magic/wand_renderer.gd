@@ -18,17 +18,25 @@ func render(wand_data: WandData):
 	self.size = Vector2i(resolution, resolution)
 	
 	for coord in wand_data.visual_grid:
-		var item = wand_data.visual_grid[coord]
+		var item = wand_data.visual_grid.get(coord)
 		if item and item is BaseItem:
+			# Safety check: Ensure coord is valid for positioning
+			var pos = Vector2.ZERO
+			if coord is Vector2i:
+				pos = Vector2(coord)
+			elif coord is Vector2:
+				pos = coord
+			else:
+				# Skip invalid coordinates like stringified '(-3, 6)' 
+				# unless we can parse them. normalize_grid handles parsing.
+				continue
+				
 			var sprite = Sprite2D.new()
-			# Ideally items have a specific "pixel texture" or we just use a color
-			# For now, let's assume we tint a 1x1 white pixel or scale down the icon
-			# But pixel art scaling down big icons looks bad.
-			# Let's assume for this prototype we draw a ColorRect 1x1
+			# ...
 			
 			var rect = ColorRect.new()
 			rect.size = Vector2(1, 1)
-			rect.position = coord
+			rect.position = pos
 			
 			if "wand_visual_color" in item:
 				rect.color = item.wand_visual_color

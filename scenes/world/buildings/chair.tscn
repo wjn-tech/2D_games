@@ -1,0 +1,45 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/systems/world/buildings/chair.gd" id="1_script"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_1"]
+size = Vector2(16, 32)
+
+[node name="Chair" type="StaticBody2D"]
+z_index = 10
+collision_layer = 1
+collision_mask = 16
+script = ExtResource("1_script")
+
+[node name="Back" type="ColorRect" parent="."]
+offset_left = -8.0
+offset_top = -32.0
+offset_right = -4.0
+offset_bottom = 0.0
+color = Color(0.4, 0.25, 0.1, 1)
+
+[node name="Seat" type="ColorRect" parent="."]
+offset_left = -8.0
+offset_top = -16.0
+offset_right = 8.0
+offset_bottom = -12.0
+color = Color(0.5, 0.3, 0.15, 1)
+
+[node name="Leg1" type="ColorRect" parent="."]
+offset_left = -8.0
+offset_top = -12.0
+offset_right = -6.0
+offset_bottom = 0.0
+color = Color(0.4, 0.25, 0.1, 1)
+
+[node name="Leg2" type="ColorRect" parent="."]
+offset_left = 6.0
+offset_top = -12.0
+offset_right = 8.0
+offset_bottom = 0.0
+color = Color(0.4, 0.25, 0.1, 1)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+position = Vector2(0, -16)
+shape = SubResource("RectangleShape2D_1")
+one_way_collision = true

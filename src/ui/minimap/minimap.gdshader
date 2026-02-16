@@ -16,9 +16,11 @@ void fragment() {
     vec4 final_color = map_color;
     final_color.rgb *= fog_val;
     
-    // 如果是完全透明的背景，显示深灰色
+    // 如果是完全透明的背景（空气），显示深褐色/背景色，避免看起来像“空洞”
     if (map_color.a < 0.1) {
-        final_color = vec4(0.1, 0.1, 0.1, 0.8 * fog_val);
+        // 使用一个比黑色亮一点的背景色 (深褐色表示矿洞背景)
+        vec3 bg_color = vec3(0.12, 0.08, 0.05); 
+        final_color = vec4(bg_color * fog_val, 0.9 * fog_val);
     }
     
     COLOR = final_color;

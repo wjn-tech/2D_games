@@ -15,6 +15,7 @@ size = Vector2(256, 256)
 custom_minimum_size = Vector2(200, 200)
 layout_mode = 3
 anchors_preset = 0
+mouse_filter = 0
 script = ExtResource("1_script")
 
 [node name="Panel" type="Panel" parent="."]
@@ -25,6 +26,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
 
 [node name="MapTexture" type="TextureRect" parent="Panel"]
 material = SubResource("ShaderMaterial_1")
@@ -34,6 +36,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
 texture = SubResource("PlaceholderTexture2D_1")
 expand_mode = 1
 stretch_mode = 5
@@ -48,6 +51,7 @@ anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -3.0
 offset_top = -3.0
+mouse_filter = 2
 offset_right = 3.0
 offset_bottom = 3.0
 grow_horizontal = 2

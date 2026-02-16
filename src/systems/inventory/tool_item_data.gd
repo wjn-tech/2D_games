@@ -56,9 +56,18 @@ func _spawn_wall_loot(user: Node, source_id: int, atlas_coords: Vector2i):
 	if not loot_scene: return
 	
 	var loot = loot_scene.instantiate()
-	user.get_parent().add_child(loot)
-	var mouse_pos = user.get_global_mouse_position()
-	loot.global_position = mouse_pos
+	
+	# 安全巡查：确保 user 有效且有父节点
+	if is_instance_valid(user) and user.get_parent():
+		user.get_parent().add_child(loot)
+		var mouse_pos = user.get_global_mouse_position()
+		loot.global_position = mouse_pos
+	else:
+		# 兜底：添加到主场景
+		var scene = user.get_tree().current_scene
+		if scene:
+			scene.add_child(loot)
+			loot.global_position = user.global_position if is_instance_valid(user) else Vector2.ZERO
 	
 	# Try to find matching ItemData for this tile
 	# Simplified: Just create a generic item if not found

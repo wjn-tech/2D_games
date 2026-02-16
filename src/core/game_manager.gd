@@ -22,7 +22,7 @@ func _ready() -> void:
 	if LifespanManager:
 		LifespanManager.lifespan_depleted.connect(_on_lifespan_ended)
 		
-	# 延迟一帧确保所有 Autoload 初始化完成
+	# 正常启动流程：进入主菜单
 	call_deferred("change_state", State.START_MENU)
 
 func _on_lifespan_ended(data: CharacterData) -> void:
@@ -46,32 +46,60 @@ func change_state(new_state: State) -> void:
 			UIManager.open_window("MainMenu", "res://scenes/ui/MainMenu.tscn")
 		State.PLAYING:
 			get_tree().paused = false
-			# 仅关闭拦截输入的窗口，保留 HUD
-			UIManager.close_all_windows(true)
-			UIManager.open_window("HUD", "res://scenes/ui/HUD.tscn", false) # HUD 不拦截输入
+			# 1. 强力清理并探测 UI
+			# 修复闪烁：在这里先直接把 MainMenu 隐藏，而不是等待 UIManager 的动画流程
+			var root = get_tree().current_scene
+			if root:
+				var menu = root.find_child("MainMenu", true, false)
+				if menu: menu.visible = false
+				
+			UIManager.close_all_windows(true) 
+			UIManager.open_window("HUD", "res://scenes/ui/HUD.tscn", false)
+			
+			var scene_root = get_tree().current_scene
+			if not scene_root:
+				print("GameManager: 场景根节点尚未就绪，延迟重试 PLAYING 状态...")
+				call_deferred("change_state", State.PLAYING)
+				return
+
+			print("GameManager: 进入 PLAYING 状态, 场景根节点: ", scene_root.name)
 			
 			# 显示实体层
-			var entities = get_tree().current_scene.find_child("Entities", true, false)
+			var entities = scene_root.find_child("Entities", true, false)
 			if entities:
 				entities.visible = true
 			
-			# 只有从菜单进入、从死亡状态恢复或转生成功时才生成/重置玩家位置
+			# 2. 只有从菜单进入、从死亡状态恢复或转生成功时才生成/重置玩家位置
 			if old_state == State.START_MENU or old_state == State.GAME_OVER or old_state == State.REINCARNATING:
-				# 1. 尝试处理世界生成 (主要针对新游戏和死亡重开)
+				# 尝试处理世界生成
 				if old_state == State.START_MENU or old_state == State.GAME_OVER:
-					var world_gen = get_tree().current_scene.find_child("WorldGenerator", true, false)
+					# 广度优先搜索世界生成器，防止嵌套过深
+					var world_gen = scene_root.find_child("WorldGenerator", true, false)
+					if not world_gen:
+						# 最后的努力：通过组寻找
+						var gens = get_tree().get_nodes_in_group("world_generators")
+						if not gens.is_empty(): world_gen = gens[0]
+					
 					if world_gen:
-						# 新游戏强制随机种子
-						if world_gen.get("seed_value") != null:
+						print("GameManager: 找到世界生成器，准备触发生成逻辑...")
+						# 优先使用预设的种子
+						if GameState.has_meta("pending_new_seed"):
+							world_gen.seed_value = GameState.get_meta("pending_new_seed")
+							GameState.remove_meta("pending_new_seed")
+							print("GameManager: 使用 Nuclear Reset 预设种子: ", world_gen.seed_value)
+						elif world_gen.get("seed_value") != null:
+							randomize()
 							world_gen.seed_value = randi()
-							print("GameManager: 新游戏种子已设定: ", world_gen.seed_value)
+							print("GameManager: 随机生成新种子: ", world_gen.seed_value)
 
 						if world_gen.has_method("start_generation"):
 							world_gen.start_generation()
 						elif world_gen.has_method("generate_world"):
 							world_gen.generate_world()
+					else:
+						push_warning("GameManager: 未在当前场景中找到 WorldGenerator！")
 				
-				# 2. 核心位置同步逻辑：必须在所有状态下都尝试执行，确保转生不掉落
+				# 3. 核心位置同步逻辑
 				var player = get_tree().get_first_node_in_group("player")
 				if player:
 					var spawn_pos = Vector2.ZERO
@@ -81,22 +109,19 @@ func change_state(new_state: State) -> void:
 						spawn_pos = GameState.get_meta("load_spawn_pos")
 						GameState.remove_meta("load_spawn_pos")
 						pos_restored = true
-						print("GameManager: 成功应用转生/存档位置: ", spawn_pos)
-					# 补充：处理新游戏或无存档坐标时的默认生成逻辑
 					elif old_state == State.START_MENU or old_state == State.GAME_OVER:
-						var world_gen = get_tree().current_scene.find_child("WorldGenerator", true, false)
+						var world_gen = scene_root.find_child("WorldGenerator", true, false)
 						if world_gen and world_gen.has_method("get_spawn_position"):
 							spawn_pos = world_gen.get_spawn_position()
 							pos_restored = true
-							print("GameManager: 此时无存档坐标，使用世界生成器建议坐标: ", spawn_pos)
 						else:
-							# 终极兜底坐标：地表约在 y=300 块处，即 300*16 = 4800
+							# 终极兜底坐标
 							spawn_pos = Vector2(0, 300 * 16) 
 							pos_restored = true 
 					
 					if pos_restored:
-						# 立即同步位置，并在下一帧再次强制同步以防物理引擎干扰
 						player.global_position = spawn_pos
+						print("GameManager: 玩家位置已同步到: ", spawn_pos)
 						if player is CharacterBody2D:
 							player.velocity = Vector2.ZERO
 						
@@ -143,25 +168,77 @@ func change_state(new_state: State) -> void:
 			get_tree().paused = true
 			UIManager.open_window("GameOver", "res://scenes/ui/GameOverWindow.tscn")
 
+var _is_starting_new_game: bool = false
+
 func start_new_game() -> void:
-	# 初始化游戏数据
-	GameState.player_data = CharacterData.new()
-	GameState.player_data.display_name = "新冒险者"
+	if _is_starting_new_game:
+		return
+	_is_starting_new_game = true
 	
-	# 发出信号通知所有引用玩家数据的组件更新 (例如 HUD 和 Player 节点)
+	# 1. 缓冲机制：先进入黑屏，确保场景切换期间玩家看不到原始 UI 的闪烁
+	if UIManager:
+		await UIManager.play_fade(true, 0.3)
+	
+	# 2. 彻底停掉当前的逻辑，执行数据重置
+	get_tree().paused = true
+	
+	randomize()
+	var new_seed = randi()
+	if GameState:
+		# 清空 meta 但保留种子
+		for meta_key in GameState.get_meta_list():
+			GameState.remove_meta(meta_key)
+		GameState.set_meta("pending_new_seed", new_seed)
+		GameState.player_data = null
+	
+	print("GameManager: 新游戏启动，种子: ", new_seed)
+	
+	if InfiniteChunkManager: InfiniteChunkManager.restart()
+	if NPCSpawner and NPCSpawner.has_method("reset"): NPCSpawner.reset()
+	if Chronometer and Chronometer.has_method("reset"): Chronometer.reset()
+	if LayerManager and LayerManager.has_method("reset"): LayerManager.reset()
+	if UIManager and UIManager.has_method("clear_all_references"):
+		UIManager.clear_all_references()
+	
+	# 2. 执行场景切换
+	current_state = State.GAME_OVER 
+	
+	# 场景切换需要时间，延时 0.2 秒通常足以避开引擎切换时的不稳定期
+	var tree = get_tree()
+	
+	var main_scene_path = ProjectSettings.get_setting("application/run/main_scene")
+	if not main_scene_path: main_scene_path = "res://scenes/main.tscn"
+		
+	var error = get_tree().change_scene_to_file(main_scene_path)
+	if error == OK:
+		# 使用计时器进行一次性延迟初始化，避免在场景过渡帧内运行逻辑
+		tree.create_timer(0.2).timeout.connect(_on_reload_finished)
+	else:
+		get_tree().paused = false
+		get_tree().reload_current_scene()
+
+func _on_reload_finished() -> void:
+	_is_starting_new_game = false
+	print("GameManager: 场景重载完毕，正在初始化...")
+	get_tree().paused = false
+	
+	# 重置小地图数据
+	if MinimapManager:
+		MinimapManager.reset_map()
+	
+	# 初始化玩家数据
+	GameState.player_data = CharacterData.new()
+	GameState.player_data.display_name = "冒险者"
 	if EventBus:
 		EventBus.player_data_refreshed.emit()
 	
-	var player = get_tree().get_first_node_in_group("player")
-	if player and player.has_method("refresh_data"):
-		player.refresh_data()
-	
-	# 重置天气与光照，防止残留黑色滤镜
-	if WeatherManager:
-		WeatherManager.current_weather = WeatherManager.WeatherType.SUNNY
-		WeatherManager._apply_weather_effects()
-	
+	# 强制切换到 PLAYING 状态
+	current_state = State.GAME_OVER # 确保 change_state 能生效
 	change_state(State.PLAYING)
+	
+	# 初始化完成后，平滑淡出黑屏，显示游戏世界
+	if UIManager:
+		UIManager.play_fade(false, 0.5)
 
 func pause_game() -> void:
 	if current_state == State.PLAYING:
@@ -197,3 +274,11 @@ func _input(event: InputEvent) -> void:
 			building_mgr.cancel_building()
 			
 		UIManager.toggle_window("CharacterPanel", "res://scenes/ui/CharacterPanel.tscn")
+
+	# 制作快捷键：按 I 键（同时也是背包键）启动，或单独逻辑
+	# 注意：如果 inventory 动作已经是 'I'，这里可以保持逻辑统一
+	# 如果用户明确要求快捷键 I 用于制作且修复工作台逻辑
+	if event.is_action_pressed("inventory", false) and current_state == State.PLAYING:
+		# 我们在打开 CharacterPanel 的同时也具备了查看配方的能力，
+		# 但如果用户在工作台旁边，我们应该确保制作逻辑可用。
+		pass

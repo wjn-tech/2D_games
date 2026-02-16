@@ -22,10 +22,20 @@ func _ready() -> void:
 	# 初始同步世界层级状态
 	call_deferred("switch_to_layer", 0)
 
+func reset() -> void:
+	print("LayerManager: Resetting layer cache...")
+	layer_nodes.clear()
+	active_layer = 0
+
 func register_layer(index: int, node: Node) -> void:
-	# 清理旧节点的组和标记（如果存在）
-	if layer_nodes.has(index) and is_instance_valid(layer_nodes[index]):
-		layer_nodes[index].remove_from_group("map_layers")
+	if not is_instance_valid(node):
+		return
+		
+	# 清理旧节点的组和标记
+	if layer_nodes.has(index):
+		var old_node = layer_nodes[index]
+		if is_instance_valid(old_node) and old_node != node:
+			old_node.remove_from_group("map_layers")
 	
 	layer_nodes[index] = node
 	node.set_meta("layer_index", index)
@@ -58,11 +68,29 @@ func get_world_bit(index: int) -> int:
 		return 1 << index
 	return 1 << (index + 3)
 
-func get_current_layer() -> TileMapLayer:
-	return layer_nodes.get(active_layer) as TileMapLayer
+func get_current_layer() -> Node:
+	if not layer_nodes.has(active_layer):
+		return null
+		
+	var node = layer_nodes[active_layer]
+	# 核心安全巡查：排除已彻底删减或标记删除的对象，防止 Caller 端的类型转换崩溃
+	if is_instance_valid(node) and not node.is_queued_for_deletion():
+		return node
+		
+	# 自动修复无效引用
+	layer_nodes.erase(active_layer)
+	return null
 
 func get_layer(index: int) -> Node:
-	return layer_nodes.get(index)
+	if not layer_nodes.has(index):
+		return null
+		
+	var node = layer_nodes[index]
+	if is_instance_valid(node) and not node.is_queued_for_deletion():
+		return node
+		
+	layer_nodes.erase(index)
+	return null
 
 func switch_to_layer(layer_index: int) -> void:
 	active_layer = layer_index

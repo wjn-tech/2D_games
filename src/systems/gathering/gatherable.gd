@@ -59,7 +59,8 @@ func interact(_interactor: Node = null) -> void:
 			
 		loot.global_position = global_position
 		if loot.has_method("setup"):
-			loot.setup(item_data, amount)
+			# 采集资源点 instant pickup (0.0s delay)
+			loot.setup(item_data, amount, 0.0)
 		else:
 			loot.item_data = item_data
 			loot.amount = amount

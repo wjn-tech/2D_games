@@ -117,16 +117,7 @@ func _on_start_pressed() -> void:
 	
 	await tween.finished
 	
-	# 如果是"新的开始"，调用 start_new_game
-	if start_button.text == "新的开始":
-		GameManager.start_new_game()
-		GameManager.change_state(GameManager.State.PLAYING)
-	else:
-		# TODO: 这里应该加载最新的存档
-		# 目前暂时当做新游戏处理，或者打开加载界面
-		print("MainMenu: 继续旅程 - 功能待连接到 SaveManager")
-		GameManager.start_new_game()
-		GameManager.change_state(GameManager.State.PLAYING)
+	GameManager.start_new_game()
 
 func _on_load_pressed() -> void:
 	print("MainMenu: 加载按钮被点击")

@@ -50,32 +50,28 @@ func clear_all():
 
 # Core Operations
 func add_item(item: Resource, count: int = 1) -> bool:
+	return add_item_partial(item, count) == 0
+
+func add_item_partial(item: Resource, count: int = 1) -> int:
 	# 1. Adapt BaseItem to ItemData if necessary (Hack for legacy support)
-	# Ideally we should unify, but for now we accept Resource and duck-type
-	
-	if not item: return false
+	if not item: return count
 	
 	# Special Handling for SpellItem (Unlock and consume)
 	if item is SpellItem:
 		item.on_pickup()
-		return true
+		return 0
 
 	# 2. Try stacking in Hotbar
 	var remaining = _try_add_to_inventory(hotbar, item, count)
-	if remaining == 0: 
-		inventory_changed.emit()
-		return true
 	
-	# 2. Try stacking in Backpack
-	remaining = _try_add_to_inventory(backpack, item, remaining)
-	if remaining == 0: 
-		inventory_changed.emit()
-		return true
+	# 3. Try stacking in Backpack
+	if remaining > 0:
+		remaining = _try_add_to_inventory(backpack, item, remaining)
 	
-	# If failed to add all, return false (inventory full)
-	# Notify caller or drop? For now we return false so caller can drop.
-	inventory_changed.emit()
-	return false
+	if remaining < count:
+		inventory_changed.emit()
+		
+	return remaining
 
 func add_item_or_drop(item: Resource, count: int = 1, pos: Vector2 = Vector2.ZERO) -> void:
 	if not item: return
@@ -120,7 +116,8 @@ func drop_item(item: Resource, count: int, pos: Vector2 = Vector2.ZERO) -> void:
 	
 	loot.global_position = pos
 	if loot.has_method("setup"):
-		loot.setup(item, count)
+		# 角色扔出或背包溢出时，拾取延迟设为 1.0s
+		loot.setup(item, count, 1.0)
 
 func remove_item(from_inv: Inventory, slot_index: int, count: int) -> int:
 	var slot = from_inv.get_slot(slot_index)

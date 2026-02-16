@@ -1,0 +1,39 @@
+﻿# Furniture
+var items = [
+# path, tile_grid_offset (x, y) relative to bottom-left origin
+["res://scenes/world/buildings/door.tscn", Vector2(1, 0)],
+["res://scenes/world/buildings/chair.tscn", Vector2(3, 0)],
+["res://scenes/world/buildings/table.tscn", Vector2(5, 0)],
+["res://scenes/world/buildings/torch.tscn", Vector2(5, 3)] 
+]
+
+var parent = get_tree().get_first_node_in_group("buildings_container")
+if not parent: parent = tile_map
+
+for it in items:
+var scn = load(it[0])
+if scn:
+var node = scn.instantiate()
+parent.add_child(node)
+
+var slot_p = origin + Vector2i(it[1].x, -it[1].y)
+var snapped_local = tile_map.map_to_local(slot_p)
+var snapped_global = tile_map.to_global(snapped_local)
+
+# UNIFIED TILE ALIGNMENT (Matching BuildingManager)
+var tile_top_left = snapped_global - Vector2(ts/2.0, ts/2.0)
+
+# For buildings like chairs (1x1) or doors (1x2)
+# We align the bottom of the building with the bottom of the target tile
+var gs = Vector2i(1, 1) # Support grid_size check if available
+if "grid_size" in node: gs = node.grid_size
+elif "door" in it[0]: gs = Vector2i(1, 2)
+
+var bottom_y = tile_top_left.y + ts
+var top_y = bottom_y - (gs.y * ts)
+
+node.global_position = Vector2(tile_top_left.x, top_y)
+
+# Specific fix for Door scene if it has legacy offset
+if "door" in it[0]:
+node.global_position.y += 0 # BuildingManager used offsets, here we keep it clean

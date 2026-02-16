@@ -137,8 +137,8 @@ func check_house(global_pos: Vector2) -> Dictionary:
 		for off in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
 			stack.push_back(p + off)
 	
-	if interior.size() < 60:
-		return {"is_valid": false, "error": "房太小 (Min 60)"}
+	if interior.size() < 30:
+		return {"is_valid": false, "error": "房太小 (Min 30)"}
 	
 	# 2. 检查背景墙 (Layer 2) 覆盖度与空洞
 	var wall_count = 0

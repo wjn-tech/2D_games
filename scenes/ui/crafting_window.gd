@@ -10,13 +10,35 @@ func _ready() -> void:
 	_populate_recipes()
 	craft_button.pressed.connect(_on_craft_pressed)
 	$Panel/CloseButton.pressed.connect(func(): UIManager.close_window("CraftingWindow"))
+	visibility_changed.connect(_on_visibility_changed)
+
+func _on_visibility_changed() -> void:
+	if visible:
+		_populate_recipes()
 
 func _populate_recipes() -> void:
 	for child in recipe_list.get_children():
 		child.queue_free()
 		
+	var nearby_stations = []
+	var cm = get_tree().get_first_node_in_group("crafting_manager")
+	if cm and cm.has_method("_get_nearby_stations"):
+		nearby_stations = cm._get_nearby_stations()
+		
 	for key in GameState.recipe_db.keys():
 		var recipe = GameState.recipe_db[key]
+		
+		# 过滤工作台限制
+		# 如果配方不需要工作台，或者玩家就在对应工作台旁边
+		var can_show = recipe.required_station == "" or recipe.required_station in nearby_stations
+		
+		# 调试打印，方便确认火把配方是否被过滤
+		if recipe.result_item.id == "torch":
+			print("CraftingWindow: Checking torch - required: ", recipe.required_station, " nearby: ", nearby_stations, " can_show: ", can_show)
+
+		if not can_show:
+			continue
+			
 		var btn = Button.new()
 		btn.text = recipe.result_item.display_name
 		btn.pressed.connect(func(): _select_recipe(recipe))

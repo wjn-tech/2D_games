@@ -1,14 +1,20 @@
 [gd_resource type="Resource" script_class="BuildingResource" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://src/systems/building/building_resource.gd" id="1_script"]
-[ext_resource type="PackedScene" path="res://scenes/world/buildings/table.tscn" id="2_scene"]
+[ext_resource type="Texture2D" path="res://assets/world/custom_furniture.png" id="2_texture"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_table_icon"]
+atlas = ExtResource("2_texture")
+region = Rect2(16, 16, 32, 32)
 
 [resource]
 script = ExtResource("1_script")
 id = "table"
 display_name = "桌子"
 description = "2x2规格的木质桌子。"
-scene = ExtResource("2_scene")
+icon = SubResource("AtlasTexture_table_icon")
+atlas_coords = Vector2i(1, 1)
+source_id = 1
 cost = { "wood": 6 }
 category = "Furniture"
 requires_flat_ground = true

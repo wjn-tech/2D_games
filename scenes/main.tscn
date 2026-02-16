@@ -52,6 +52,7 @@ process_mode = 3
 layer = 100
 
 [node name="MainMenu" parent="UI" instance=ExtResource("4_menu")]
+visible = false
 
 [node name="HUD" parent="UI" instance=ExtResource("3_hud")]
 visible = false

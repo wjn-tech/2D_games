@@ -1,60 +1,40 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3 uid="uid://3slse2smkf7f"]
 
-[ext_resource type="Script" path="res://src/systems/world/buildings/door.gd" id="1_script"]
+[ext_resource type="Script" uid="uid://dbnc1880so256" path="res://src/systems/world/interactive_door.gd" id="1_script"]
+[ext_resource type="Texture2D" uid="uid://2xh13ar5jvpc" path="res://assets/world/custom_furniture.png" id="2_assets"]
+[ext_resource type="Script" uid="uid://bjpn5auw3q5q5" path="res://src/visuals/minimalist_entity.gd" id="3_visual"]
 
-[sub_resource type="RectangleShape2D" id="RectangleShape2D_1"]
+[sub_resource type="AtlasTexture" id="AtlasTexture_door"]
+atlas = ExtResource("2_assets")
+region = Rect2(0, 16, 16, 32)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_phys"]
 size = Vector2(16, 32)
 
-[sub_resource type="Animation" id="Animation_1"]
-resource_name = "open"
-tracks/0/type = "value"
-tracks/0/imported = false
-tracks/0/enabled = true
-tracks/0/path = NodePath("Visual:scale")
-tracks/0/interp = 1
-tracks/0/loop_wrap = true
-tracks/0/keys = {
-"times": PackedFloat32Array(0, 0.2),
-"transitions": PackedFloat32Array(1, 1),
-"update": 0,
-"values": [Vector2(1, 1), Vector2(0.2, 1)]
-}
-
-[sub_resource type="Animation" id="Animation_2"]
-resource_name = "close"
-tracks/0/type = "value"
-tracks/0/imported = false
-tracks/0/enabled = true
-tracks/0/path = NodePath("Visual:scale")
-tracks/0/interp = 1
-tracks/0/loop_wrap = true
-tracks/0/keys = {
-"times": PackedFloat32Array(0, 0.2),
-"transitions": PackedFloat32Array(1, 1),
-"update": 0,
-"values": [Vector2(0.2, 1), Vector2(1, 1)]
-}
-
-[sub_resource type="AnimationLibrary" id="AnimationLibrary_1"]
-_data = {
-"close": SubResource("Animation_2"),
-"open": SubResource("Animation_1")
-}
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_d4sb7"]
+size = Vector2(59, 32)
 
 [node name="Door" type="StaticBody2D"]
-collision_layer = 1
+collision_mask = 0
 script = ExtResource("1_script")
 
-[node name="Visual" type="ColorRect" parent="."]
-offset_right = 16.0
-offset_bottom = 32.0
-color = Color(0.4, 0.26, 0.13, 1)
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = SubResource("AtlasTexture_door")
+centered = false
+
+[node name="MinimalistEntity" type="Node2D" parent="."]
+visible = false
+script = ExtResource("3_visual")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 position = Vector2(8, 16)
-shape = SubResource("RectangleShape2D_1")
+shape = SubResource("RectangleShape2D_phys")
 
-[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
-libraries = {
-"": SubResource("AnimationLibrary_1")
-}
+[node name="DetectionArea" type="Area2D" parent="."]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="DetectionArea"]
+position = Vector2(8, 16)
+shape = SubResource("RectangleShape2D_d4sb7")
+
+[connection signal="body_entered" from="DetectionArea" to="." method="_on_body_entered"]
+[connection signal="body_exited" from="DetectionArea" to="." method="_on_body_exited"]

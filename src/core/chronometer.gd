@@ -34,6 +34,16 @@ signal year_passed(y: int)
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 
+func reset() -> void:
+	print("Chronometer: Resetting calendar to Day 1 Hour 8...")
+	total_seconds = 0.0
+	fractional_minutes = 0.0
+	current_minute = 0
+	current_hour = 8
+	current_day = 1
+	current_year = 1
+	is_paused = false
+
 func _process(delta: float) -> void:
 	if is_paused:
 		return

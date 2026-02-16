@@ -5,12 +5,12 @@
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_icon"]
 atlas = ExtResource("2_tex")
-region = Rect2(16, 0, 16, 16)
+region = Rect2(32, 0, 16, 16)
 
 [resource]
 script = ExtResource("1_script")
 target_layer = 0
-tile_atlas_coords = Vector2i(1, 0)
+tile_atlas_coords = Vector2i(2, 0)
 tile_source_id = 0
 description = "坚硬的石头。"
 item_type = "Tile"

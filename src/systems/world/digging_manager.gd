@@ -12,6 +12,7 @@ signal tile_mined(coords: Vector2i, tile_data: Dictionary)
 @onready var loot_scene = preload("res://scenes/world/loot_item.tscn")
 var cracking_layer: TileMapLayer
 var dust_particles: CPUParticles2D
+const TransformHelper = preload("res://src/utils/transform_helper.gd")
 
 # 碎裂 Atlas 坐标映射 (0-9 帧)
 var cracking_atlas_coords = [
@@ -172,7 +173,7 @@ func _get_global_layer_coords(local_coords: Vector2i, from_layer: Node) -> Vecto
 	# 将局部瓦片坐标映射回统一的 CrackingLayer 坐标系
 	var world_pos = from_layer.to_global(from_layer.map_to_local(local_coords))
 	# 使用 floor 确保负数坐标也能正确回写瓦片索引，防止坐标偏移 1 格
-	var local_crack_pos = cracking_layer.to_local(world_pos)
+	var local_crack_pos = TransformHelper.safe_to_local(cracking_layer, world_pos)
 	return Vector2i((local_crack_pos / 16.0).floor())
 
 func _emit_dust_at(coords: Vector2i, target_layer: Node):
@@ -209,9 +210,15 @@ func _update_cracking_visual(coords: Vector2i, progress_ratio: float, target_lay
 	cracking_layer.set_cell(map_pos, 0, atlas_pos)
 
 func _get_current_tile_map() -> Node:
-	if LayerManager and LayerManager.get_current_layer():
-		return LayerManager.get_current_layer()
-	return tile_map
+	if LayerManager:
+		var layer = LayerManager.get_current_layer()
+		if is_instance_valid(layer):
+			return layer
+			
+	if is_instance_valid(tile_map) and not tile_map.is_queued_for_deletion():
+		return tile_map
+		
+	return null
 
 func _get_tile_data(current_tile_map: Node, coords: Vector2i) -> TileData:
 	if current_tile_map is TileMap:
@@ -283,9 +290,10 @@ func _get_custom_data(tile_data: TileData, current_tile_map: Node, coords: Vecto
 			if atlas_coords == world_gen.magic_speed_stone_tile: return 5.0
 		
 		# 强制保底硬度匹配
-		if source_id == 3: return 0.6 # Grass
-		if source_id == 1 and atlas_coords == Vector2i(0, 0): return 0.8 # Dirt
-		if source_id == 1 and atlas_coords == Vector2i(1, 0): return 1.5 # Stone
+		if source_id == 0:
+			if atlas_coords == Vector2i(1, 0): return 0.6 # Grass
+			if atlas_coords == Vector2i(0, 0): return 0.8 # Dirt
+			if atlas_coords == Vector2i(2, 0): return 1.5 # Stone
 		
 		return 1.0
 	
@@ -581,10 +589,17 @@ func _fell_tree(mined_coords: Vector2i, target_map: Node, world_gen: WorldGenera
 	if wood_res:
 		for i in range(total_wood):
 			var loot = loot_scene.instantiate()
-			tile_map.get_parent().add_child(loot)
-			# 在树根位置稍微偏移生成
-			loot.global_position = tile_map.to_global(tile_map.map_to_local(mined_coords)) + Vector2(randf_range(-10, 10), randf_range(-10, 10))
-			loot.setup(wood_res)
+			# 安全检查：确保目标地图仍然有效
+			if is_instance_valid(target_map) and target_map.get_parent():
+				target_map.get_parent().add_child(loot)
+				# 在树根位置稍微偏移生成
+				loot.global_position = target_map.to_global(target_map.map_to_local(mined_coords)) + Vector2(randf_range(-10, 10), randf_range(-10, 10))
+			else:
+				# 备选：添加到场景根部
+				get_tree().current_scene.add_child(loot)
+				loot.global_position = global_position # 兜底坐标
+			# 挖掘掉落物 instant pickup (0.0s delay)
+			loot.setup(wood_res, 1, 0.0)
 
 func _spawn_loot(coords: Vector2i, tile_data: TileData, current_tile_map: Node, atlas_coords: Vector2i, source_id: int = -1) -> void:
 	# 使用 map_to_local 获取中心点，然后转为全局坐标
@@ -601,10 +616,19 @@ func _spawn_loot(coords: Vector2i, tile_data: TileData, current_tile_map: Node, 
 		if item_res and item_res is BaseItem:
 			# 实例化物理掉落物
 			var loot = loot_scene.instantiate()
-			# 将掉落物添加到与 TileMap 相同的父节点下，确保坐标系一致
-			current_tile_map.get_parent().add_child(loot)
-			loot.global_position = world_pos
-			loot.setup(item_res)
+			
+			# 安全巡查：确保当前地图和父节点依然有效
+			if is_instance_valid(current_tile_map) and current_tile_map.get_parent():
+				# 将掉落物添加到与 TileMap 相同的父节点下，确保坐标系一致
+				current_tile_map.get_parent().add_child(loot)
+				loot.global_position = world_pos
+			else:
+				# 兜底：添加到当前场景
+				get_tree().current_scene.add_child(loot)
+				loot.global_position = world_pos
+				
+			# 挖掘掉落物 instant pickup (0.0s delay)
+			loot.setup(item_res, 1, 0.0)
 			print("DiggingManager: 挖掘成功，生成掉落物: ", item_res.display_name, " 位置: ", world_pos)
 		else:
 			push_warning("DiggingManager: 无法加载物品资源: " + item_path)

@@ -26,6 +26,7 @@ const BASE_STATS = {
 	"intelligence": 10.0,
 	"constitution": 10.0,
 	"max_health": 100.0,
+	"max_mana": 100.0,
 	"speed": 100.0,
 	"damage": 10.0
 }
@@ -94,6 +95,10 @@ var damage: float:
 var max_health: float:
 	get: return get_stat_value("max_health")
 	set(v): _set_stat_legacy("max_health", v)
+
+var max_mana: float:
+	get: return get_stat_value("max_mana")
+	set(v): _set_stat_legacy("max_mana", v)
 
 var money: int:
 	get: return attributes.get("money", 0)
@@ -167,6 +172,11 @@ func _set_stat_legacy(stat_name: String, v: float) -> void:
 	set(v):
 		health = clamp(v, 0, max_health)
 		stat_changed.emit("health", health)
+
+@export var mana: float = 100.0:
+	set(v):
+		mana = clamp(v, 0, get_stat_value("max_mana"))
+		stat_changed.emit("mana", mana)
 @export var max_life_span: float = 100.0: # 最大寿命（年）
 	set(v):
 		max_life_span = v

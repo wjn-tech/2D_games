@@ -187,6 +187,8 @@ var pois: Dictionary = {} # {Vector2i: String}
 
 func _ready() -> void:
 	add_to_group("world_generator")
+	# 确保每一局启动时都有真正的随机底色
+	randomize()
 	if seed_value == 0:
 		seed_value = randi()
 	

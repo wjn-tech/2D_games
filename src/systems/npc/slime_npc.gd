@@ -96,10 +96,15 @@ func _change_state(new_state: SlimeState) -> void:
 	state_timer = 0.0
 	
 	# Kill previous tween
-	if _visual_tween: _visual_tween.kill()
+	if _visual_tween:
+		_visual_tween.kill()
+	_visual_tween = null
+
+	if not min_visual:
+		return
+
+	# Create a new tween only once we know visuals exist
 	_visual_tween = create_tween().set_parallel(true)
-	
-	if not min_visual: return
 	
 	match new_state:
 		SlimeState.IDLE:

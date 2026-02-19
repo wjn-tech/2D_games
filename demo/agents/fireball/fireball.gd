@@ -26,7 +26,8 @@ var _is_dead: bool = false
 
 
 func _ready() -> void:
-	var tween := create_tween().set_loops()
+	var tween := create_tween()
+	tween.set_loops(-1)
 	tween.tween_property(fireball_sprite, ^"rotation", PI * signf(dir), 1.0).as_relative()
 
 	var tween2 := create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)

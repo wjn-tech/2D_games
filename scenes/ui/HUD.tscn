@@ -25,7 +25,7 @@ offset_top = -100.0
 offset_right = 50.0
 offset_bottom = 100.0
 grow_vertical = 2
-theme_override_constants/separation = 10
+theme_override_constants/separation = 10.0
 
 [node name="HousingBtn" type="Button" parent="Sidebar"]
 custom_minimum_size = Vector2(40, 40)
@@ -58,7 +58,7 @@ theme_override_constants/margin_bottom = 20
 layout_mode = 2
 size_flags_horizontal = 8
 size_flags_vertical = 0
-theme_override_constants/separation = 12
+theme_override_constants/separation = 12.0
 
 [node name="Minimap" parent="MarginContainer/TopRight" instance=ExtResource("4_minimap")]
 layout_mode = 2
@@ -76,7 +76,7 @@ horizontal_alignment = 2
 
 [node name="QuestList" type="VBoxContainer" parent="MarginContainer/TopRight"]
 layout_mode = 2
-theme_override_constants/separation = 5
+theme_override_constants/separation = 5.0
 
 [node name="DamageOverlay" type="ColorRect" parent="."]
 layout_mode = 1

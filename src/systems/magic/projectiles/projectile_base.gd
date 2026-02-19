@@ -22,6 +22,8 @@ var caster: Node2D
 var pierce_count: int = 0
 var homing_strength: float = 0.0
 var explode_on_bounce: bool = false
+var homing_target: Node = null
+var homing_search_radius: float = 400.0
 
 # Logic
 var modifiers: Array = []
@@ -725,6 +727,23 @@ func _physics_process(delta):
 	if _fly_time >= lifetime:
 		_on_lifetime_expired()
 		return
+
+	# Homing behavior: steer toward nearest valid target
+	if homing_strength > 0.0:
+		# validate existing target
+		if not is_instance_valid(homing_target):
+			homing_target = _find_homing_target(homing_search_radius)
+		elif is_instance_valid(homing_target) and (homing_target.global_position - global_position).length() > homing_search_radius:
+			homing_target = null
+		
+		if is_instance_valid(homing_target):
+			var to_target = (homing_target.global_position - global_position).normalized()
+			var desired_angle = to_target.angle()
+			var current_angle = velocity_vector.angle()
+			var turn_alpha = clamp(homing_strength * delta, 0.0, 1.0)
+			var new_angle = lerp_angle(current_angle, desired_angle, turn_alpha)
+			velocity_vector = Vector2.RIGHT.rotated(new_angle) * speed
+			rotation = new_angle
 		
 	# Update Trail
 	if trail:
@@ -736,6 +755,31 @@ func _physics_process(delta):
 	var collision = move_and_collide(velocity_vector * delta)
 	if collision:
 		_on_hit(collision)
+
+
+func _find_homing_target(radius: float) -> Node:
+	var space = get_world_2d().direct_space_state
+	var query = PhysicsShapeQueryParameters2D.new()
+	var shape = CircleShape2D.new()
+	shape.radius = radius
+	query.shape = shape
+	query.transform = Transform2D(0, global_position)
+	# Search common layers (players/enemies/world) - broad by default
+	query.collision_mask = 0xFFFF
+	var results = space.intersect_shape(query, 64)
+	var best: Node = null
+	var best_dist = 1e9
+	for res in results:
+		var col = res.collider
+		if col == self: continue
+		if col == caster: continue
+		if not is_instance_valid(col): continue
+		if col.has_method("take_damage"):
+			var d = (col.global_position - global_position).length()
+			if d < best_dist:
+				best_dist = d
+				best = col
+	return best
 
 func _on_hit(col: KinematicCollision2D):
 	if special_behavior == "tnt":
@@ -778,9 +822,14 @@ func _on_hit(col: KinematicCollision2D):
 		hit_enemy = true
 		
 	if hit_enemy:
-		if special_behavior == "teleport":
-			_teleport_caster()
-		queue_free()
+		# Pierce handling: if we have pierce charges, consume one and continue
+		if pierce_count > 0:
+			pierce_count -= 1
+			return
+		else:
+			if special_behavior == "teleport":
+				_teleport_caster()
+			queue_free()
 	else:
 		# Wall hit -> Bounce
 		if _current_bounces < max_bounces:

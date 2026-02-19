@@ -60,7 +60,7 @@ size_flags_horizontal = 3
 
 [node name="SlotList" type="VBoxContainer" parent="HSplitContainer/WorkbenchPanel/VBoxContainer/ScrollContainer/CenterContainer"]
 layout_mode = 2
-theme_override_constants/separation = 10
+theme_override_constants/separation = 10.0
 
 [node name="PreviewPanel" type="PanelContainer" parent="HSplitContainer"]
 visible = false

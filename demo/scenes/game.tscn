@@ -56,7 +56,7 @@ grow_horizontal = 2
 
 [node name="HBoxContainer" type="HBoxContainer" parent="UI Layer/Control/Toolbar"]
 layout_mode = 2
-theme_override_constants/separation = 4
+theme_override_constants/separation = 4.0
 
 [node name="ToggleFullscreen" type="Button" parent="UI Layer/Control/Toolbar/HBoxContainer"]
 layout_mode = 2

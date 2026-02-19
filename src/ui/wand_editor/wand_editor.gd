@@ -770,7 +770,79 @@ func _apply_sci_fi_theme():
 	theme.set_color("activity", "GraphEdit", COLOR_ACCENT)
 
 	# Apply Theme to Root
+	# Apply Theme to Root
 	self.theme = theme
+
+	# Additional stronger visual polish to make changes more noticeable
+	panel_style.bg_color = Color(0.03, 0.045, 0.06, 0.95)
+	panel_style.shadow_color = COLOR_GLOW
+	panel_style.shadow_size = 12
+	panel_style.border_width_left = 3
+	panel_style.border_width_right = 3
+	panel_style.border_width_top = 3
+	panel_style.border_width_bottom = 3
+	panel_style.corner_radius_top_left = 6
+	panel_style.corner_radius_top_right = 6
+	panel_style.corner_radius_bottom_left = 6
+	panel_style.corner_radius_bottom_right = 6
+
+	# Button: larger corner radius + subtle inner glow
+	btn_normal.corner_radius_top_left = 8
+	btn_normal.corner_radius_top_right = 8
+	btn_normal.corner_radius_bottom_left = 8
+	btn_normal.corner_radius_bottom_right = 8
+	btn_normal.content_margin_left = 10
+	btn_normal.content_margin_right = 10
+	btn_normal.content_margin_top = 6
+	btn_normal.content_margin_bottom = 6
+
+	# Give hover state a pronounced neon outline
+	btn_hover.border_width_left = 2
+	btn_hover.border_width_right = 2
+	btn_hover.border_width_top = 2
+	btn_hover.border_width_bottom = 2
+
+	# Tab visuals: stronger contrast
+	tab_selected.bg_color = Color(0.12, 0.25, 0.4, 0.95)
+	tab_unselected.bg_color = Color(0.02, 0.03, 0.04, 0.6)
+
+	# LineEdit: slightly larger padding for readability
+	edit_style.content_margin_left = 8
+	edit_style.content_margin_right = 8
+	edit_style.content_margin_top = 6
+	edit_style.content_margin_bottom = 6
+
+	# GraphEdit grid contrast
+	theme.set_color("grid_major", "GraphEdit", Color(0.12, 0.6, 1.0, 0.18))
+	theme.set_color("grid_minor", "GraphEdit", Color(0.12, 0.6, 1.0, 0.06))
+
+	# Font / Label colors
+	theme.set_color("font_color", "Label", COLOR_TEXT_SEC)
+	theme.set_color("font_color", "Button", COLOR_TEXT_SEC)
+	theme.set_color("font_color_disabled", "Button", COLOR_TEXT_SEC.darkened(0.5))
+
+	# Scrollbar style (thin neon track)
+	var sb = StyleBoxFlat.new()
+	sb.bg_color = Color(0.02, 0.02, 0.03, 0.5)
+	sb.border_color = COLOR_ACCENT_DIM
+	sb.border_width_left = 1
+	sb.border_width_right = 1
+	sb.corner_radius_top_left = 4
+	sb.corner_radius_bottom_right = 4
+	theme.set_stylebox("vertical", "ScrollBar", sb)
+	theme.set_stylebox("horizontal", "ScrollBar", sb)
+
+	# RichTextLabel default size for better legibility
+	theme.set_constant("normal_font_size", "RichTextLabel", 15)
+
+	# Re-apply theme to root and key subcomponents so changes are visible immediately
+	self.theme = theme
+	if header: header.theme = theme
+	if tab_container: tab_container.theme = theme
+	if logic_board: logic_board.theme = theme
+	if visual_grid: visual_grid.theme = theme
+	if module_palette: module_palette.theme = theme
+	if palette_grid: palette_grid.theme = theme
 
 func _animate_open():
 	# Origin at center

@@ -31,7 +31,7 @@ grow_vertical = 2
 
 [node name="Header" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
-theme_override_constants/separation = 20
+theme_override_constants/separation = 20.0
 
 [node name="WandNameLabel" type="Label" parent="VBoxContainer/Header"]
 layout_mode = 2

@@ -66,7 +66,7 @@ func _show_custom_tooltip(text: String):
 	label.custom_minimum_size = Vector2(240, 0)
 	label.fit_content = true
 	
-	label.add_theme_constant_override("outline_size", 2)
+	label.add_theme_constant_override("outline_size", 2.0)
 	label.add_theme_color_override("outline_color", Color.BLACK)
 	
 	container.add_child(label)

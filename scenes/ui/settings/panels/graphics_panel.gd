@@ -17,6 +17,11 @@ func refresh_ui() -> void:
 	_add_slider("粒子质量 (Particles)", "Graphics", "particles_quality", 0.0, 2.0, 0.1)
 	_add_slider("亮度 (Brightness)", "Graphics", "brightness", 0.5, 1.5, 0.05)
 
+	# Menu visuals quality preset
+	_add_option("主菜单视觉质量 (Menu Visuals)", "Graphics", "menu_visuals_quality", ["低 (Low)", "中 (Medium)", "高 (High)"])
+
+
+
 func _add_checkbox(label_text: String, section: String, key: String, val_converter = null, check_converter = null) -> void:
 	var hbox = HBoxContainer.new()
 	var label = Label.new()
@@ -39,6 +44,30 @@ func _add_checkbox(label_text: String, section: String, key: String, val_convert
 	
 	hbox.add_child(label)
 	hbox.add_child(check)
+	add_child(hbox)
+
+func _add_option(label_text: String, section: String, key: String, options: Array) -> void:
+	var hbox = HBoxContainer.new()
+	var label = Label.new()
+	label.text = label_text
+	label.size_flags_horizontal = SIZE_EXPAND_FILL
+	var opt = OptionButton.new()
+	opt.custom_minimum_size = Vector2(200, 30)
+
+	for i in range(options.size()):
+		opt.add_item(str(options[i]), i)
+
+	var current = SettingsManager.get_value(section, key)
+	if current == null:
+		current = 1
+	opt.select(int(current))
+
+	opt.item_selected.connect(func(index):
+		SettingsManager.set_value(section, key, int(index))
+	)
+
+	hbox.add_child(label)
+	hbox.add_child(opt)
 	add_child(hbox)
 
 func _add_slider(label_text: String, section: String, key: String, min_v: float, max_v: float, step: float) -> void:

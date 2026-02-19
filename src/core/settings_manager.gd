@@ -22,6 +22,7 @@ var _defaults = {
 		"vsync": true,
 		"max_fps": 60,
 		"particles_quality": 1.0,
+		"menu_visuals_quality": 1,
 		"brightness": 1.0,
 		"contrast": 1.0,
 		"gamma": 1.0

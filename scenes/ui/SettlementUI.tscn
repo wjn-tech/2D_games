@@ -36,7 +36,7 @@ offset_right = -20.0
 offset_bottom = -20.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/separation = 20
+theme_override_constants/separation = 20.0
 
 [node name="Title" type="Label" parent="Panel/VBoxContainer"]
 layout_mode = 2

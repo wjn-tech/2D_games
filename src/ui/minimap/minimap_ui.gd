@@ -24,6 +24,10 @@ func _process(_delta: float) -> void:
 	_update_minimap_shader()
 
 func _input(event: InputEvent) -> void:
+	# If any UI window has input focus (e.g. WandEditor open), do not capture minimap clicks
+	if UIManager and UIManager.is_ui_focused:
+		return
+
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		# Calculate if the mouse is within our boundaries
 		var global_rect = get_global_rect()

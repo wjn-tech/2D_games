@@ -57,7 +57,7 @@ size_flags_vertical = 3
 [node name="ChildList" type="VBoxContainer" parent="Panel/VBoxContainer/ScrollContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 10
+theme_override_constants/separation = 10.0
 
 [node name="GameOverButton" type="Button" parent="Panel/VBoxContainer"]
 visible = false

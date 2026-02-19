@@ -13,3 +13,17 @@ build/
 # Project specific 
 *.tmp
 *.log
+
+# Ignore startmenu art/assets and generated imports
+startmenu/
+startmenu/**
+
+# Ignore imported asset metadata (Godot import files) inside startmenu
+startmenu/*.import
+startmenu/**/*.import
+
+# Allow tracking a specific startmenu folder used by the UI art pipeline
+!assets/ui/startmenu/
+!assets/ui/startmenu/**
+!assets/ui/startmenu/*.import
+!assets/ui/startmenu/**/*.import

@@ -1,0 +1,14 @@
+[gd_resource type="Resource" load_steps=2 format=2]
+
+[resource]
+colors = {
+"bg_deep": Color(0.00784314,0.0392157,0.0784314,1),
+"bg_mid": Color(0.0313725,0.121569,0.203922,1),
+"grad_top": Color(0.14902,0.423529,0.745098,1),
+"grad_bottom": Color(0.027451,0.0941176,0.160784,1),
+"accent": Color(0.462745,0.807843,1,1),
+"accent_dark": Color(0.176471,0.545098,0.815686,1),
+"glow": Color(0.588235,0.854902,1,1),
+"ui_panel": Color(0.027451,0.0862745,0.14902,0.96),
+"subtle": Color(0.494118,0.741176,0.945098,1)
+}

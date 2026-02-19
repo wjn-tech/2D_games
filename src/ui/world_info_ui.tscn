@@ -5,26 +5,26 @@
 [node name="WorldInfoUI" type="VBoxContainer"]
 offset_right = 230.0
 offset_bottom = 50.0
-theme_override_constants/separation = 2
+theme_override_constants/separation = 2.0
 script = ExtResource("1_script")
 
 [node name="TimeLabel" type="Label" parent="."]
 layout_mode = 2
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
-theme_override_constants/outline_size = 4
+theme_override_constants/outline_size = 4.0
 text = "Year 1, Day 1 - 08:00"
 
 [node name="WeatherLabel" type="Label" parent="."]
 layout_mode = 2
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
-theme_override_constants/outline_size = 4
+theme_override_constants/outline_size = 4.0
 theme_override_font_sizes/font_size = 14
 text = "Weather: Sunny"
 
 [node name="BiomeLabel" type="Label" parent="."]
 layout_mode = 2
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
-theme_override_constants/outline_size = 4
+theme_override_constants/outline_size = 4.0
 theme_override_font_sizes/font_size = 14
 text = "Biome: Forest"
 
@@ -32,6 +32,6 @@ text = "Biome: Forest"
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 0.901961, 0.4, 1)
 theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
-theme_override_constants/outline_size = 4
+theme_override_constants/outline_size = 4.0
 theme_override_font_sizes/font_size = 14
 text = "Tile: None"

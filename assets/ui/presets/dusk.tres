@@ -1,0 +1,13 @@
+[gd_resource type="Resource" load_steps=2 format=2]
+
+[resource]
+params = {
+"star_density": 0.28,
+"star_brightness": 0.55,
+"nebula_strength": 0.6,
+"sun_intensity": 0.55,
+"cloud_opacity": 0.28,
+"grad_top": Color(0.168627,0.435294,0.658824,1),
+"grad_bottom": Color(0.0352941,0.141176,0.2,1),
+"glow_color": Color(0.52549,0.780392,1,1)
+}

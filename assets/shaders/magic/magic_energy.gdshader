@@ -27,11 +27,9 @@ void fragment() {
     float edge = 1.0 - abs(UV.y - 0.5) * 2.0;
     final_color.a *= smoothstep(0.0, 0.2, edge);
     
-    COLOR = final_color;
-}
-    // Circle mask
+    // Optional circular mask to keep effect within a round area
     float dist = distance(UV, vec2(0.5));
-    if (dist > 0.4) discard;
-    
-    COLOR = final_color * flicker;
+    if (dist > 0.5) discard;
+
+    COLOR = final_color;
 }

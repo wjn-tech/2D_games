@@ -146,6 +146,8 @@ func _rebuild_grid():
 			btn.mouse_entered.connect(func(): _on_cell_mouse_entered(coords, style))
 			btn.mouse_exited.connect(func(): _update_cell_style(coords, style))
 			
+			# Ensure button captures clicks for painting
+			btn.mouse_filter = Control.MOUSE_FILTER_STOP
 			cell.add_child(btn)
 			grid_container.add_child(cell)
 	
@@ -164,7 +166,7 @@ func _on_cell_clicked(coords: Vector2i, button_index: int):
 
 func _on_cell_mouse_entered(coords: Vector2i, style: StyleBoxFlat):
 	# Highlight
-	style.border_color = Color.CYAN
+	style.border_color = Color(0.25, 0.8, 1.0, 0.9)
 	style.border_width_bottom = 1
 	style.border_width_top = 1
 	style.border_width_left = 1
@@ -210,17 +212,13 @@ func _update_cell_style(coords: Vector2i, style: StyleBoxFlat, item = null):
 		style.corner_radius_bottom_right = 0
 	else:
 		# "Empty Grid" Look - Sci-Fi
-		style.bg_color = Color(0.05, 0.07, 0.1, 0.4) 
-		style.border_color = Color(0.2, 0.8, 1.0, 0.15)
+		style.bg_color = Color(0.03, 0.05, 0.07, 0.6)
+		style.border_color = Color(0.14, 0.6, 1.0, 0.18)
 		style.border_width_top = 1
 		style.border_width_bottom = 1
 		style.border_width_left = 1
 		style.border_width_right = 1
-		style.border_width_bottom = 1
-		style.border_width_top = 1
-		style.border_width_left = 1
-		style.border_width_right = 1
-		style.corner_radius_top_left = 0
-		style.corner_radius_top_right = 0
-		style.corner_radius_bottom_left = 0
-		style.corner_radius_bottom_right = 0
+		style.corner_radius_top_left = 4
+		style.corner_radius_top_right = 4
+		style.corner_radius_bottom_left = 4
+		style.corner_radius_bottom_right = 4

@@ -20,7 +20,7 @@ anchors_preset = -1
 anchor_right = 1.0
 anchor_bottom = 1.028
 offset_bottom = -18.143982
-mouse_filter = 2
+mouse_filter = 0
 color = Color(0, 0, 0, 0.12)
 
 [node name="CenterContainer" type="CenterContainer" parent="."]

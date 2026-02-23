@@ -4,11 +4,13 @@ extends Control
 @onready var load_button: Control = $CenterContainer/VBoxContainer/LoadButton
 @onready var settings_button: Control = $CenterContainer/VBoxContainer/SettingsButton
 @onready var exit_button: Control = $CenterContainer/VBoxContainer/ExitButton
-@onready var title_label: Label = $CenterContainer/VBoxContainer/Title
+@onready var title_label: Control = $CenterContainer/VBoxContainer/Title
 
 var welcome_label: Label
 var _hidden_backgrounds: Array = []
 var ui_palette: Dictionary = {}
+var _debug_title_compare: bool = false
+var _use_viewport_title: bool = false
 
 func _ready() -> void:
 	# 确保菜单全屏并置于最顶层
@@ -27,6 +29,9 @@ func _ready() -> void:
 	# Replace built-in Buttons with RoundedTextureButton instances to avoid rectangular artifacts
 	_replace_buttons_with_rounded()
 
+	# Ensure an enhanced starfield + nebula background is present
+	_ensure_starfield_background()
+
 	_setup_smart_ui()
 
 	# create decorative magic circle behind title
@@ -41,16 +46,23 @@ func _ready() -> void:
 	# 递归修复背景遮挡导致按钮失效的问题
 	_fix_mouse_filter(self)
 	
-	start_button.pressed.connect(_on_start_pressed)
-	load_button.pressed.connect(_on_load_pressed)
-	settings_button.pressed.connect(_on_settings_pressed)
-	exit_button.pressed.connect(_on_exit_pressed)
+	if not start_button.is_connected("pressed", Callable(self, "_on_start_pressed")):
+		start_button.pressed.connect(Callable(self, "_on_start_pressed"))
+	if not load_button.is_connected("pressed", Callable(self, "_on_load_pressed")):
+		load_button.pressed.connect(Callable(self, "_on_load_pressed"))
+	if not settings_button.is_connected("pressed", Callable(self, "_on_settings_pressed")):
+		settings_button.pressed.connect(Callable(self, "_on_settings_pressed"))
+	if not exit_button.is_connected("pressed", Callable(self, "_on_exit_pressed")):
+		exit_button.pressed.connect(Callable(self, "_on_exit_pressed"))
 	
 	# 监听可见性变化，确保从游戏返回时恢复颜色
 	visibility_changed.connect(_on_visibility_changed)
 	
 	# 初始状态
 	_on_visibility_changed()
+
+	# 强制应用简单标题渲染（直接在 title_label 上），确保能立刻看到效果
+	_force_simple_title()
 	
 	# 按钮悬停动画
 	for btn in [start_button, load_button, settings_button, exit_button]:
@@ -93,7 +105,7 @@ func _ready() -> void:
 	var ov = get_node_or_null("Overlay")
 	if ov and ov is ColorRect and dbg and dbg.has_method("get"):
 		var dbg_hide = false
-		if dbg.has_meta("enable_debug_prints"):
+		if dbg :
 			dbg_hide = dbg.get("enable_debug_prints")
 		if dbg_hide:
 			ov.color = Color(0,0,0,0)
@@ -122,6 +134,16 @@ func _process(delta: float) -> void:
 	for node in [welcome_label, start_button, load_button, settings_button, exit_button]:
 		if node and node.material and node.material is ShaderMaterial:
 			node.material.set_shader_parameter("time", t)
+
+	# update starfield shader time
+	var sf = get_node_or_null("Starfield")
+	if sf and sf.material and sf.material is ShaderMaterial:
+		sf.material.set_shader_parameter("time", t)
+
+	# update viewport-rendered title if present
+	var tr = get_node_or_null("TitleRender")
+	if tr and tr.material and tr.material is ShaderMaterial:
+		tr.material.set_shader_parameter("time", t)
 
 func _create_magic_circle() -> void:
 	# Try to load an external magic circle texture (SVG/PNG). If missing, fall back to procedural Control.
@@ -159,6 +181,443 @@ func _create_magic_circle() -> void:
 	mc.size = Vector2(900, 600)
 	add_child(mc)
 	move_child(mc, 0)
+
+
+func _ensure_starfield_background() -> void:
+	# Create a full-screen ColorRect using the starfield shader behind everything
+	if get_node_or_null("Starfield"):
+		return
+	var shader_path = "res://ui/shaders/starfield.shader"
+	var rect = ColorRect.new()
+	rect.name = "Starfield"
+	rect.anchor_left = 0
+	rect.anchor_top = 0
+	rect.anchor_right = 1
+	rect.anchor_bottom = 1
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rect.z_index = -100
+	rect.custom_minimum_size = Vector2(1024, 768)
+	if ResourceLoader.exists(shader_path):
+		var sh = load(shader_path)
+		if sh:
+			var mat = ShaderMaterial.new()
+			mat.shader = sh
+			rect.material = mat
+			add_child(rect)
+			move_child(rect, 0)
+			# animate shader time via process
+			set_process(true)
+		else:
+			add_child(rect)
+			move_child(rect, 0)
+	else:
+		add_child(rect)
+		move_child(rect, 0)
+
+
+func _replace_title_with_viewport() -> void:
+	# if already replaced, skip
+	# If viewport-based title is disabled, remove any existing viewport artifacts and keep original label
+	if not _use_viewport_title:
+		# remove any previous viewport/render nodes
+		var tr_old = get_node_or_null("TitleRender")
+		if tr_old:
+			tr_old.queue_free()
+		var vp_old = get_node_or_null("TitleViewport")
+		if vp_old:
+			vp_old.queue_free()
+		var raw_old = get_node_or_null("TitleRaw")
+		if raw_old:
+			raw_old.queue_free()
+		if title_label:
+			title_label.visible = true
+		return
+	if get_node_or_null("TitleRender"):
+		return
+	if not title_label:
+		return
+	var parent = title_label.get_parent()
+	var idx = parent.get_children().find(title_label)
+
+	# determine viewport size from title label or fallback; prefer a wide viewport based on screen width
+	var vp_size = Vector2(900, 160)
+	var screen_w = 0
+	if get_viewport():
+		var vs = get_viewport().size
+		screen_w = int(vs.x)
+	if title_label and title_label.custom_minimum_size and title_label.custom_minimum_size.x > 0:
+		vp_size = title_label.custom_minimum_size
+	else:
+		if screen_w > 0:
+			vp_size.x = max(vp_size.x, int(screen_w * 0.6))
+
+	# create sub-viewport (Viewport is abstract in this runtime)
+	var vp = SubViewport.new()
+	vp.name = "TitleViewport"
+	vp.size = vp_size
+	# use numeric update mode (matches other SubViewport usages in project)
+	vp.render_target_update_mode = 4
+	vp.transparent_bg = true
+
+	# root control inside viewport
+	var root = Control.new()
+	root.anchor_left = 0
+	root.anchor_top = 0
+	root.anchor_right = 1
+	root.anchor_bottom = 1
+	root.custom_minimum_size = vp_size
+
+	# create label inside viewport
+	var vlabel = Label.new()
+	vlabel.name = "VP_Title"
+	vlabel.text = title_label.text
+	vlabel.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vlabel.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	vlabel.anchor_left = 0
+	vlabel.anchor_top = 0
+	vlabel.anchor_right = 1
+	vlabel.anchor_bottom = 1
+	vlabel.custom_minimum_size = vp_size
+	# ensure label renders visibly inside the SubViewport
+	vlabel.add_theme_color_override("font_color", Color(1,1,1,1))
+	vlabel.modulate = Color(1,1,1,1)
+	vlabel.visible = true
+
+	# ensure viewport root is transparent and label renders only glyphs
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.modulate = Color(0,0,0,0)
+
+	# attempt to assign a known project font directly so VP label actually renders
+	var pf = "res://assets/fonts/Poppins-Bold.ttf"
+	if ResourceLoader.exists(pf):
+		var fd = ResourceLoader.load(pf)
+		if fd:
+			# Try to build a Font resource by duplicating a template DynamicFont from the theme
+			var template_font = null
+			var theme_candidates = ["res://ui/theme/theme_default.tres", "res://ui/theme/theme_startmenu.tres"]
+			for tp in theme_candidates:
+				if ResourceLoader.exists(tp):
+					var tref = ResourceLoader.load(tp)
+					if tref :
+						template_font = tref.get("default_font")
+						break
+			if template_font:
+				var newf = template_font.duplicate()
+				# set font data if supported
+				if newf.has_method("set"):
+					newf.set("font_data", fd)
+					newf.set("size", 112)
+				else:
+					# best-effort fallbacks
+					if newf.has("font_data"):
+						newf.set("font_data", fd)
+					if newf.has("size"):
+						newf.set("size", 112)
+				vlabel.set("custom_fonts/font", newf)
+				vlabel.add_theme_font_override("font", newf)
+			else:
+				# fallback: assign the raw FontFile (may be acceptable on some runtimes)
+				vlabel.set("custom_fonts/font", fd)
+				vlabel.add_theme_font_override("font", fd)
+		else:
+			print("MainMenu: Poppins font resource failed to load for VP_Title")
+	else:
+		print("MainMenu: Poppins font not found for VP_Title; VP label may be blank")
+	# attempt to copy font from original title_label so rendered glyphs match
+	var copied_font = null
+	# try copying any explicit custom font applied to the original label
+	if title_label :
+		copied_font = title_label.get("custom_fonts/font")
+	# fallback: try theme override
+	if not copied_font and title_label and title_label.has_method("get_theme_font"):
+		copied_font = title_label.get_theme_font("font")
+	if copied_font:
+		var df = copied_font.duplicate()
+		# ensure a large display size for the viewport label
+		if df :
+			df.set("size", 112)
+		vlabel.set("custom_fonts/font", df)
+	vlabel.add_theme_color_override("font_color", Color(1,1,1,1))
+
+	root.add_child(vlabel)
+	vp.add_child(root)
+
+	# create a small raw preview for debugging so we can see the viewport texture before post-process
+	if not get_node_or_null("TitleRawDebug"):
+		var raw_dbg = TextureRect.new()
+		raw_dbg.name = "TitleRawDebug"
+		raw_dbg.anchor_left = 0.02
+		raw_dbg.anchor_top = 0.02
+		raw_dbg.anchor_right = 0.22
+		raw_dbg.anchor_bottom = 0.12
+		raw_dbg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		raw_dbg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		raw_dbg.z_index = 999
+		raw_dbg.modulate = Color(1,1,1,0.95)
+		add_child(raw_dbg)
+		# assign texture deferred (after viewport renders)
+		call_deferred("_assign_raw_debug_texture", vp, raw_dbg)
+
+	# create TextureRect to display processed title (we will use the viewport texture as a mask)
+	var tr = TextureRect.new()
+	tr.name = "TitleRender"
+	# do not assign texture directly; shader will sample the viewport texture as a mask
+	tr.texture = null
+	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	tr.anchor_left = title_label.anchor_left
+	tr.anchor_top = title_label.anchor_top
+	tr.anchor_right = title_label.anchor_right
+	tr.anchor_bottom = title_label.anchor_bottom
+	# ensure the displayed texture rect uses the viewport's intended size
+	tr.custom_minimum_size = vp_size
+	# request the TextureRect expand to available parent space so the texture isn't shrunk
+	tr.size_flags_horizontal = 3
+	tr.size_flags_vertical = 0
+	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tr.z_index = title_label.z_index
+
+	# add viewport as child of this scene (not visible node tree)
+	add_child(vp)
+
+	# If debug comparison enabled, create a raw TextureRect showing the viewport texture
+	if _debug_title_compare:
+		var raw = TextureRect.new()
+		raw.name = "TitleRaw"
+		raw.texture = vp.get_texture()
+		raw.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		raw.anchor_left = title_label.anchor_left
+		raw.anchor_top = title_label.anchor_top
+		raw.anchor_right = title_label.anchor_right
+		raw.anchor_bottom = title_label.anchor_bottom
+		raw.custom_minimum_size = vp_size
+		raw.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		raw.z_index = title_label.z_index
+		raw.size_flags_horizontal = 1
+		parent.add_child(raw)
+		parent.move_child(raw, idx)
+		# then add processed tr to the right (next index)
+		parent.add_child(tr)
+		parent.move_child(tr, idx + 1)
+	else:
+		parent.add_child(tr)
+		parent.move_child(tr, idx)
+
+	# hide original label so editor still keeps it but not rendered
+	title_label.visible = false
+
+	# apply mask-based shader that uses the viewport texture as a mask
+	var mask_shader_path = "res://ui/shaders/text_gradient_mask.shader"
+	if ResourceLoader.exists(mask_shader_path):
+		var msh = load(mask_shader_path)
+		if msh:
+			var mmat = ShaderMaterial.new()
+			mmat.shader = msh
+			mmat.set_shader_parameter("top_color", Color(0.98,0.86,1.0,1.0))
+			mmat.set_shader_parameter("mid_color", Color(0.68,0.52,1.0,1.0))
+			mmat.set_shader_parameter("bottom_color", Color(0.35,0.20,0.80,1.0))
+			mmat.set_shader_parameter("noise_strength", 0.03)
+			mmat.set_shader_parameter("glow_strength", 0.9)
+			mmat.set_shader_parameter("bloom_strength", 0.9)
+			mmat.set_shader_parameter("outline_color", Color(0.02,0.01,0.04))
+			mmat.set_shader_parameter("outline_thickness", 0.012)
+			mmat.set_shader_parameter("outline_strength", 1.4)
+			# assign the viewport texture as the mask
+			var vp_tex = vp.get_texture()
+			if vp_tex:
+				mmat.set_shader_parameter("mask_tex", vp_tex)
+			tr.material = mmat
+			# keep the original label hidden but also apply the material as a fallback preview
+			if title_label:
+				title_label.material = mmat
+			# diagnostic tint so we can visually notice the processed surface during debug
+			tr.modulate = Color(1.0,1.0,1.0,1.0)
+
+	# debug prints to help diagnose why shader might not be visible at runtime
+	print("MainMenu: TitleRender created -> texture_rect:", tr, " vp_size:", vp_size, " title_label size:", title_label.custom_minimum_size)
+	if tr.material:
+		print("MainMenu: TitleRender material assigned ->", tr.material.shader)
+	else:
+		print("MainMenu: TitleRender has no material assigned - applying fallback material to ensure texture is visible")
+		# fallback to a simple material so the viewport texture is at least visible
+		var fb = CanvasItemMaterial.new()
+		tr.material = fb
+
+	# if viewport texture missing, restore original label immediately
+	var check_tex = vp.get_texture()
+	if not check_tex:
+		print("MainMenu: vp.get_texture() returned null - restoring original title")
+		_restore_title_label()
+		return
+	# print actual viewport texture size if available
+	var tex = vp.get_texture()
+	if tex:
+		# some texture implementations support get_width/get_height
+		var tw = 0
+		var th = 0
+		if tex.has_method("get_width"):
+			tw = tex.get_width()
+		if tex.has_method("get_height"):
+			th = tex.get_height()
+		print("MainMenu: vp texture size ->", tw, th)
+	else:
+		print("MainMenu: vp.get_texture() returned null")
+
+	print("MainMenu: replaced title with viewport-rendered TextureRect", tr, "vp:", vp)
+
+func _restore_title_label() -> void:
+	# Remove TitleRender and TitleViewport if present, restore original label visibility and material
+	var tr = get_node_or_null("TitleRender")
+	if tr:
+		var p = tr.get_parent()
+		tr.queue_free()
+	var vp_node = get_node_or_null("TitleViewport")
+	if vp_node:
+		vp_node.queue_free()
+	if title_label:
+		title_label.visible = true
+		# clear any experimental material so default theme/font shows
+		title_label.material = null
+	print("MainMenu: Restored original title label and removed viewport render")
+
+
+func _apply_mask_after_frame(vp: SubViewport, tr: TextureRect, mat: ShaderMaterial, parent: Node, idx: int) -> void:
+	# wait an idle frame to allow SubViewport to render
+	# wait one frame, then another if necessary to ensure the SubViewport has rendered
+	await get_tree().process_frame
+	# sometimes the first frame isn't enough (editor/dev machines); wait one more frame before sampling
+	await get_tree().process_frame
+	if not vp or not is_instance_valid(vp):
+		print("MainMenu: _apply_mask_after_frame - vp invalid")
+		return
+	var vp_tex = vp.get_texture()
+	# If texture still null, attempt one last time and emit detailed diagnostic before bailing
+	if not vp_tex:
+		# try forcing a render update where supported
+		if vp.has_method("update"):
+			vp.update()
+		await get_tree().process_frame
+		vp_tex = vp.get_texture()
+		if not vp_tex:
+			print("MainMenu: _apply_mask_after_frame - vp.get_texture() still null after extra wait")
+			# detailed diagnostic
+			print("MainMenu: Diagnostic -> vp valid:", is_instance_valid(vp), " vp.size:", vp.size)
+			print("MainMenu: Diagnostic -> title_label exists:", title_label != null, " title_label.visible:", title_label.visible)
+			# cleanup and restore original label to avoid disappearing title
+			if tr and is_instance_valid(tr):
+				tr.queue_free()
+			if vp and is_instance_valid(vp):
+				vp.queue_free()
+			if title_label:
+				title_label.visible = true
+			return
+	# Robust approach: assign viewport texture to TextureRect.texture and use the TEXTURE-sampling shader
+	# ensure the TextureRect is visible and receives the texture
+	tr.texture = vp_tex
+	tr.visible = true
+	# attempt to load the simpler TEXTURE-sampling shader; if load fails, fall back to a plain material
+	var simple_shader_path = "res://ui/shaders/text_gradient.shader"
+	var ssh = load(simple_shader_path)
+	var applied_shader = null
+	if ssh:
+		applied_shader = ssh
+	else:
+		# no runtime fallback here; fall back to plain texture display below
+		print("MainMenu: text_gradient.shader not found on disk; will use plain texture display")
+	
+	if applied_shader:
+		var smat = ShaderMaterial.new()
+		smat.shader = applied_shader
+		smat.set_shader_parameter("top_color", Color(0.98,0.86,1.0,1.0))
+		smat.set_shader_parameter("mid_color", Color(0.68,0.52,1.0,1.0))
+		smat.set_shader_parameter("bottom_color", Color(0.35,0.20,0.80,1.0))
+		smat.set_shader_parameter("noise_strength", 0.04)
+		smat.set_shader_parameter("glow_strength", 0.9)
+		smat.set_shader_parameter("outline_color", Color(0.02,0.01,0.04))
+		smat.set_shader_parameter("outline_thickness", 0.012)
+		smat.set_shader_parameter("outline_strength", 1.6)
+		tr.material = smat
+		# initialize time param so animated shaders start in a known state
+		if tr.material and tr.material is ShaderMaterial:
+			tr.material.set_shader_parameter("time", 0.0)
+		print("MainMenu: applied shader material to TitleRender")
+	else:
+		var cmap = CanvasItemMaterial.new()
+		tr.material = cmap
+		tr.modulate = Color(1,1,1,1)
+
+	parent.add_child(tr)
+	parent.move_child(tr, idx)
+	title_label.visible = false
+	if vp_tex and vp_tex.has_method("get_width"):
+		print("MainMenu: applied texture to TitleRender; vp texture size:", vp_tex.get_width(), vp_tex.get_height())
+	else:
+		print("MainMenu: applied texture to TitleRender; vp texture present")
+
+	# schedule a quick diagnostic to run after frame so developer can see final states
+	call_deferred("_diagnose_title_path")
+
+
+func _force_simple_title() -> void:
+	if not title_label:
+		return
+	# ensure visible
+	title_label.visible = true
+	# force assign Poppins (fallback to raw FontFile if necessary)
+	var p = "res://assets/fonts/Poppins-Bold.ttf"
+	if ResourceLoader.exists(p):
+		var fd = ResourceLoader.load(p)
+		if fd:
+			var templ = null
+			var tp = "res://ui/theme/theme_default.tres"
+			if ResourceLoader.exists(tp):
+				var tref = ResourceLoader.load(tp)
+				if tref :
+					templ = tref.get("default_font")
+			if templ:
+				var newf = templ.duplicate()
+				if newf.has_method("set"):
+					newf.set("font_data", fd)
+					newf.set("size", 112)
+				else:
+					if newf.has("font_data"):
+						newf.set("font_data", fd)
+					if newf.has("size"):
+						newf.set("size", 112)
+				title_label.set("custom_fonts/font", newf)
+			else:
+				title_label.set("custom_fonts/font", fd)
+	else:
+		print("MainMenu: Poppins not found for force-apply")
+
+	# apply simple shader directly to the label (no viewport)
+	var shp = "res://ui/shaders/text_gradient.shader"
+	if ResourceLoader.exists(shp):
+		var sh = ResourceLoader.load(shp)
+		if sh:
+			var mat = ShaderMaterial.new()
+			mat.shader = sh
+			mat.set_shader_parameter("top_color", Color(0.98,0.86,1.0,1.0))
+			mat.set_shader_parameter("mid_color", Color(0.68,0.52,1.0,1.0))
+			mat.set_shader_parameter("bottom_color", Color(0.35,0.20,0.80,1.0))
+			mat.set_shader_parameter("noise_strength", 0.04)
+			mat.set_shader_parameter("glow_strength", 0.9)
+			mat.set_shader_parameter("bloom_strength", 0.9)
+			mat.set_shader_parameter("outline_color", Color(0.02,0.01,0.04))
+			mat.set_shader_parameter("outline_thickness", 0.012)
+			mat.set_shader_parameter("outline_strength", 1.4)
+			title_label.material = mat
+			title_label.add_theme_color_override("font_color", Color(1,1,1,1))
+			print("MainMenu: applied simple shader to title_label")
+		else:
+			print("MainMenu: failed to load text_gradient.shader")
+	else:
+		print("MainMenu: text_gradient.shader not found")
+
+
+func _rebuild_viewport_title_force() -> void:
+	# No-op: SubViewport title pipeline removed. Title rendering uses direct Label/BBCode methods.
+	return
+
 
 func _ensure_button_glow(btn: Control) -> void:
 	if not btn: return
@@ -253,11 +712,64 @@ func _ensure_button_glow(btn: Control) -> void:
 func _apply_title_gradient() -> void:
 	var shader_path = "res://ui/shaders/text_gradient.shader"
 	if ResourceLoader.exists(shader_path):
-		var sh = load(shader_path)
+		var sh = ResourceLoader.load(shader_path)
 		if sh:
 			var mat = ShaderMaterial.new()
 			mat.shader = sh
+			# sensible defaults for a starry, purple-blue gradient
+			mat.set_shader_parameter("top_color", Color(0.98,0.86,1.0,1.0))
+			mat.set_shader_parameter("mid_color", Color(0.68,0.52,1.0,1.0))
+			mat.set_shader_parameter("bottom_color", Color(0.35,0.20,0.80,1.0))
+			mat.set_shader_parameter("noise_strength", 0.03)
+			mat.set_shader_parameter("glow_strength", 0.9)
+			mat.set_shader_parameter("bloom_strength", 0.9)
+			mat.set_shader_parameter("outline_color", Color(0.02,0.01,0.04))
+			mat.set_shader_parameter("outline_thickness", 0.012)
+			mat.set_shader_parameter("outline_strength", 1.4)
 			title_label.material = mat
+			print("MainMenu: applied shader material to title_label ->", title_label, " material:", title_label.material)
+			# fallback visual boosts in case shader doesn't render on this platform/editor
+			title_label.add_theme_color_override("font_color", Color(1.0, 0.98, 0.92))
+			title_label.modulate = Color(1,1,1,1)
+		else:
+			print("MainMenu: failed to load text_gradient.shader")
+	else:
+		print("MainMenu: text_gradient.shader not found")
+
+
+func _replace_title_with_gradient() -> void:
+	# If already replaced, skip
+	var existing = get_node_or_null("GradientTitle")
+	if existing:
+		title_label = existing
+		return
+	# ensure original title exists
+	if not title_label:
+		return
+	var parent = title_label.get_parent()
+	var idx = parent.get_children().find(title_label)
+	# load gradient title script
+	var gpath = "res://scenes/ui/controls/gradient_title.gd"
+	var gscript = null
+	if ResourceLoader.exists(gpath):
+		gscript = load(gpath)
+	if not gscript:
+		print("MainMenu: GradientTitle script not found:", gpath)
+		return
+	# instantiate and copy basic layout
+	var gt = gscript.new()
+	gt.name = title_label.name
+	gt.anchor_left = title_label.anchor_left
+	gt.anchor_top = title_label.anchor_top
+	gt.anchor_right = title_label.anchor_right
+	gt.anchor_bottom = title_label.anchor_bottom
+	gt.custom_minimum_size = title_label.custom_minimum_size
+	gt.set_title_text(title_label.text)
+	parent.add_child(gt)
+	parent.move_child(gt, idx)
+	title_label.queue_free()
+	title_label = gt
+	print("MainMenu: replaced title with GradientTitle ->", title_label)
 
 
 func _replace_buttons_with_rounded() -> void:
@@ -293,9 +805,17 @@ func _replace_buttons_with_rounded() -> void:
 			# Buttons don't expose get_margin/set_margin reliably in GDScript; preserve layout by
 			# keeping the same parent/child index and copying anchors + minimum size.
 			# prepare visuals using palette if available
-			var bg = ui_palette.get("panel", Color(0.15,0.4,0.78,1)) if ui_palette else ui_palette.get("ui_panel", Color(0.027451,0.101961,0.168627,1))
-			var hover = ui_palette.get("grad_top", Color(0.14902,0.423529,0.745098,1)) if ui_palette else Color(0.14902,0.423529,0.745098,1)
-			var pressed = ui_palette.get("bg_mid", Color(0.0313725,0.121569,0.203922,1)) if ui_palette else Color(0.0313725,0.121569,0.203922,1)
+			# Improve default contrast: slightly lighter button fill, stronger hover
+			var bg = ui_palette.get("panel", Color(0.08,0.12,0.18,1)) if ui_palette else ui_palette.get("ui_panel", Color(0.08,0.12,0.18,1))
+			var hover = ui_palette.get("grad_top", Color(0.18,0.34,0.60,1)) if ui_palette else Color(0.18,0.34,0.60,1)
+			var pressed = ui_palette.get("bg_mid", Color(0.04,0.07,0.12,1)) if ui_palette else Color(0.04,0.07,0.12,1)
+			# Make StartButton visually primary
+			if name == "StartButton":
+				bg = ui_palette.get("primary", Color(0.16,0.48,0.92,1)) if ui_palette else Color(0.16,0.48,0.92,1)
+				hover = ui_palette.get("primary_hover", Color(0.26,0.62,1.0,1)) if ui_palette else Color(0.26,0.62,1.0,1)
+				pressed = ui_palette.get("primary_pressed", Color(0.08,0.28,0.6,1)) if ui_palette else Color(0.08,0.28,0.6,1)
+				# increase size for primary action
+				nb.custom_minimum_size = Vector2(520, 86)
 			# find icon texture if present in original
 			var icon_tex = null
 			var icon_node = old_btn.get_node_or_null("Icon")
@@ -347,8 +867,16 @@ func _setup_smart_ui() -> void:
 	else: greeting = "晚上好"
 	
 	welcome_label.text = "%s，冒险者。" % greeting
+
+	# Update title to match starry / cosmic theme and feel more like a game title
+	if title_label:
+		# if it's a Label-like node, update text; GradientTitle is RichTextLabel subclass so this will work
+		if title_label.has_method("set_text") :
+			title_label.text = "星海之旅"
+		# replace with GradientTitle control for per-character gradient effects
+		_replace_title_with_gradient()
 	welcome_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	welcome_label.add_theme_color_override("font_color", Color(0.8, 0.8, 0.9))
+	welcome_label.add_theme_color_override("font_color", Color(1.0, 0.98, 0.95))
 	# apply text gradient shader to welcome label if available
 	var _text_sh = "res://ui/shaders/text_gradient.shader"
 	if ResourceLoader.exists(_text_sh):
@@ -361,6 +889,9 @@ func _setup_smart_ui() -> void:
 	# Insert after Title
 	$CenterContainer/VBoxContainer.add_child(welcome_label)
 	$CenterContainer/VBoxContainer.move_child(welcome_label, title_label.get_index() + 1)
+
+	# Replace title Label with a Viewport-rendered TextureRect so we can reliably apply post-process shader
+	_replace_title_with_viewport()
 
 	# Attempt to apply Poppins if present; otherwise fall back to project's theme default font
 	var base_font = null
@@ -377,7 +908,7 @@ func _setup_smart_ui() -> void:
 				var theme_path = "res://ui/theme/theme_default.tres"
 				if ResourceLoader.exists(theme_path):
 					var tref = ResourceLoader.load(theme_path)
-					if tref and tref.has("default_font"):
+					if tref :
 						base_font = tref.get("default_font")
 						# attempt to set font_data if available
 						print("MainMenu: theme default_font type:", typeof(base_font), base_font)
@@ -392,7 +923,7 @@ func _setup_smart_ui() -> void:
 		var theme_path2 = "res://ui/theme/theme_default.tres"
 		if ResourceLoader.exists(theme_path2):
 			var tref2 = ResourceLoader.load(theme_path2)
-			if tref2 and tref2.has("default_font"):
+			if tref2 :
 				base_font = tref2.get("default_font")
 
 	# apply fonts if loaded
@@ -415,7 +946,7 @@ func _setup_smart_ui() -> void:
 			if ResourceLoader.exists(tp):
 				print("MainMenu: trying theme template", tp)
 				var tref3 = ResourceLoader.load(tp)
-				if tref3 and tref3.has("default_font"):
+				if tref3 :
 					template_font = tref3.get("default_font")
 					break
 		# If we found a template DynamicFont, duplicate and swap font_data
@@ -479,7 +1010,7 @@ func _setup_smart_ui() -> void:
 		if pres:
 			var cols = null
 			# try safe property access
-			if pres.has_meta("colors"):
+			if pres:
 				cols = pres.get("colors")
 			else:
 				cols = pres.get("colors")
@@ -489,7 +1020,9 @@ func _setup_smart_ui() -> void:
 	# increase button size and spacing for better visual weight
 	var vbox = $CenterContainer/VBoxContainer
 	if vbox:
-		vbox.add_theme_constant_override("separation", 26.0)
+		vbox.add_theme_constant_override("separation", 44.0)
+		# add top padding to create breathing room
+		vbox.add_theme_constant_override("margin_top", 40.0)
 
 	# create reusable StyleBox and color overrides for a magical look
 	var sb_normal = StyleBoxFlat.new()
@@ -575,7 +1108,8 @@ func _setup_smart_ui() -> void:
 			btn.set("custom_styles/pressed", sb_pressed.duplicate())
 		# Ensure child controls are clipped to the button rect so icons don't float above other panels
 		btn.clip_contents = true
-		btn.add_theme_color_override("font_color", Color(0.95, 0.92, 1.0))
+		# increase contrast for readability
+		btn.add_theme_color_override("font_color", Color(1.0, 1.0, 0.98))
 		print("MainMenu: applied visual overrides to ", btn.name)
 		# try assign icon if available and align it left
 		var p = icon_map.get(btn, "")
@@ -617,6 +1151,13 @@ func _setup_smart_ui() -> void:
 		btn.pressed.connect(Callable(self, "_on_button_pressed_effect").bind(btn))
 		if btn.has_signal("released"):
 			btn.released.connect(Callable(self, "_on_button_released_effect").bind(btn))
+
+	# Make primary StartButton glow stronger and more obvious
+	if start_button:
+		var g = start_button.get_node_or_null("GlowRect")
+		if g and g.material and g.material is ShaderMaterial:
+			g.material.set_shader_parameter("intensity", 0.9)
+			g.modulate = Color(1,1,1,0.18)
 	# 2. Smart Buttons (Check for saves)
 	var has_save = false
 	for i in range(1, 4):
@@ -833,7 +1374,7 @@ func _force_apply_poppins() -> void:
 	for tp in theme_candidates:
 		if ResourceLoader.exists(tp):
 			var tref = ResourceLoader.load(tp)
-			if tref and tref.has("default_font"):
+			if tref :
 				template_font = tref.get("default_font")
 				break
 
@@ -856,11 +1397,18 @@ func _force_apply_poppins() -> void:
 		welcome_f = fd
 		btn_f = fd
 
-	if title_label and title_label is Label:
-		title_label.set("custom_fonts/font", title_f)
+	if title_label:
+		# Title may be a RichTextLabel (GradientTitle) or Label; assign font if possible
+		if title_label.has_method("set"):
+			title_label.set("custom_fonts/font", title_f)
+		if title_label.has_method("add_theme_font_override"):
+			title_label.add_theme_font_override("font", title_f)
 
-	if welcome_label and welcome_label is Label:
-		welcome_label.set("custom_fonts/font", welcome_f)
+	if welcome_label:
+		if welcome_label.has_method("set"):
+			welcome_label.set("custom_fonts/font", welcome_f)
+		if welcome_label.has_method("add_theme_font_override"):
+			welcome_label.add_theme_font_override("font", welcome_f)
 
 	for btn in [start_button, load_button, settings_button, exit_button]:
 		if not btn:
@@ -868,7 +1416,13 @@ func _force_apply_poppins() -> void:
 		var lbl = btn.get_node_or_null("Label")
 		if lbl and lbl is Label:
 			lbl.set("custom_fonts/font", btn_f)
+			if lbl.has_method("add_theme_font_override"):
+				lbl.add_theme_font_override("font", btn_f)
+			print("MainMenu: set font on label", lbl, "->", typeof(lbl.get("custom_fonts/font")), lbl.get("custom_fonts/font"))
 		else:
 			btn.set("custom_fonts/font", btn_f)
+			if btn.has_method("add_theme_font_override"):
+				btn.add_theme_font_override("font", btn_f)
+			print("MainMenu: set font on button", btn, "->", typeof(btn.get("custom_fonts/font")), btn.get("custom_fonts/font"))
 
 	print("MainMenu: forced Poppins font assigned from", found_path)

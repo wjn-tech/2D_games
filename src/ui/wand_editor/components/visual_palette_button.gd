@@ -51,20 +51,50 @@ func _get_drag_data(at_position):
 func setup(item):
 	item_data = item
 	mouse_filter = Control.MOUSE_FILTER_STOP 
-	custom_minimum_size = Vector2(50, 50)
+	custom_minimum_size = Vector2(56, 56)
 	tooltip_text = item.display_name
 	
 	for c in get_children(): c.queue_free()
-	
+
+	# Create rounded panel style for nicer visuals
+	var panel_style = StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.06, 0.08, 0.10, 0.6)
+	panel_style.border_color = item.wand_visual_color.lightened(0.2)
+	panel_style.border_width_left = 1
+	panel_style.border_width_top = 1
+	panel_style.border_width_right = 1
+	panel_style.border_width_bottom = 1
+	panel_style.corner_radius_top_left = 6
+	panel_style.corner_radius_top_right = 6
+	panel_style.corner_radius_bottom_left = 6
+	panel_style.corner_radius_bottom_right = 6
+	add_theme_stylebox_override("panel", panel_style)
+
 	var vbox = VBoxContainer.new()
 	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
-	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE 
+	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_theme_constant_override("separation", 4)
 	add_child(vbox)
-	
+
 	# Icon / Color Block
 	var icon = ColorRect.new()
 	icon.color = item.wand_visual_color
-	icon.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	icon.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	icon.custom_minimum_size = Vector2(40, 40)
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# icon fills the slot; rely on container spacing / custom_minimum_size for padding
 	vbox.add_child(icon)
+
+	# Hover effects
+	mouse_entered.connect(func():
+		var tw = create_tween()
+		tw.tween_property(self, "modulate", Color(1.08, 1.08, 1.08), 0.12)
+		if panel_style:
+			panel_style.shadow_size = 6
+	)
+	mouse_exited.connect(func():
+		var tw = create_tween()
+		tw.tween_property(self, "modulate", Color(1,1,1,1), 0.16)
+		if panel_style:
+			panel_style.shadow_size = 0
+	)

@@ -33,6 +33,10 @@ func setup(item: BaseItem):
 	var inner_rect = ColorRect.new()
 	inner_rect.color = item.wand_visual_color # The "Type" color
 	inner_rect.mouse_filter = Control.MOUSE_FILTER_PASS
+	# Ensure inner rect fills slot and has rounded corners
+	inner_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# inner_rect fills the margin container; MarginContainer's theme constants provide padding
+	inner_rect.mouse_filter = Control.MOUSE_FILTER_STOP
 	margin.add_child(inner_rect)
 	
 	if item.icon:
@@ -46,9 +50,24 @@ func setup(item: BaseItem):
 		# For "Blocky", maybe just center it small
 		icon_rect.modulate = Color(1,1,1,0.8)
 		margin.add_child(icon_rect)
+		icon_rect.anchor_left = 0.1
+		icon_rect.anchor_top = 0.1
+		icon_rect.anchor_right = 0.9
+		icon_rect.anchor_bottom = 0.9
+		# anchors already set; rely on anchors to inset icon rather than margins
 	
 	# Tooltip
 	tooltip_text = item.display_name
+
+	# Hover highlight
+	mouse_entered.connect(func():
+		var tw = create_tween()
+		tw.tween_property(self, "modulate", Color(1.06,1.06,1.06), 0.12)
+	)
+	mouse_exited.connect(func():
+		var tw = create_tween()
+		tw.tween_property(self, "modulate", Color(1,1,1,1), 0.14)
+	)
 
 func _get_drag_data(at_position):
 	var preview = Control.new()

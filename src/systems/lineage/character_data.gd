@@ -242,5 +242,3 @@ func change_money(amount: int) -> bool:
 # Legacy fields cleaned up
 # var spouse: CharacterData = null -> Use spouse_id
 var children_ids: Array[int] = []
-
-

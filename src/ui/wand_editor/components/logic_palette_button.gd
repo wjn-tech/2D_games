@@ -28,7 +28,7 @@ func _trigger_drag():
 func setup(item):
 	item_data = item
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	custom_minimum_size = Vector2(110, 80)
+	custom_minimum_size = Vector2(120, 88)
 
 	# --- Tooltip System (Stat Display) ---
 	var tt = "[ " + item.display_name + " ]"
@@ -105,6 +105,21 @@ func setup(item):
 	box_style.corner_radius_bottom_right = 4
 	icon_box.add_theme_stylebox_override("panel", box_style)
 	center_container.add_child(icon_box)
+
+	# Hover glow for icon box
+	icon_box.mouse_entered.connect(func():
+		var tw = create_tween()
+		if box_style:
+			box_style.shadow_color = item.wand_visual_color
+			box_style.shadow_size = 8
+			tw.tween_property(icon_box, "modulate", Color(1.1,1.1,1.05), 0.12)
+	)
+	icon_box.mouse_exited.connect(func():
+		var tw = create_tween()
+		if box_style:
+			box_style.shadow_size = 0
+			tw.tween_property(icon_box, "modulate", Color(1,1,1,1), 0.14)
+	)
 
 	var symbol = Label.new()
 	symbol.mouse_filter = Control.MOUSE_FILTER_IGNORE

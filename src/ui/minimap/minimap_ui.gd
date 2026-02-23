@@ -15,7 +15,7 @@ func _ready() -> void:
 	if MinimapManager:
 		texture_rect.texture = MinimapManager.get_map_texture()
 		var mat = texture_rect.material as ShaderMaterial
-		if mat:
+		if mat and mat.shader:
 			mat.set_shader_parameter("fog_texture", MinimapManager.get_fog_texture())
 		
 		MinimapManager.minimap_updated.connect(_on_minimap_updated)
@@ -83,7 +83,7 @@ func _update_minimap_shader() -> void:
 	
 	# Explicitly update zoom in shader before position calc
 	var mat = texture_rect.material as ShaderMaterial
-	if mat:
+	if mat and mat.shader:
 		mat.set_shader_parameter("zoom", zoom)
 		
 		# Calculate normalized offset

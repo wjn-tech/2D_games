@@ -1,12 +1,5 @@
-[gd_resource type="Theme" load_steps=2 format=2]
-
-[ext_resource path="res://assets/fonts/Poppins-Regular.ttf" type="DynamicFontData" id=1]
+[gd_resource type="Theme" load_steps=1 format=2]
 
 [resource]
-default_font = SubResource( 2 )
 colors/font_color = Color(0.78, 0.66, 1.0, 1.0)
-
-[sub_resource type="DynamicFont" id=2]
-font_data = ExtResource( 1 )
-size = 22
 

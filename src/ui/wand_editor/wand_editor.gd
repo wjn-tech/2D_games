@@ -4,12 +4,15 @@ class_name WandEditor
 const SimulationBoxScene = preload("res://src/ui/wand_editor/components/simulation_box.tscn")
 const WandSelectorScene = preload("res://src/ui/wand_editor/components/wand_selector.tscn")
 
-@onready var visual_grid: WandVisualGrid = $VBoxContainer/TabContainer/Visual/MainLayout/WorkspaceSplit/GridArea/VisualGrid
-@onready var module_palette: GridContainer = $VBoxContainer/TabContainer/Visual/MainLayout/LibraryPanel/ModuleScroll/ModulePalette
+@onready var visual_grid: WandVisualGrid = $VBoxContainer/MainSplit/RightSplit/CenterWorkspace/VisualGrid
+@onready var module_palette: GridContainer = $VBoxContainer/MainSplit/LeftSidebar/LibraryPanel/ModuleScroll/ModulePalette
 
-@onready var logic_board: WandLogicBoard = $VBoxContainer/TabContainer/Logic/HSplitContainer/LogicBoard
-@onready var palette_grid: GridContainer = $VBoxContainer/TabContainer/Logic/HSplitContainer/LibraryContainer/ScrollContainer/PaletteGrid
-@onready var tab_container = $VBoxContainer/TabContainer
+@onready var logic_board: WandLogicBoard = $VBoxContainer/MainSplit/RightSplit/CenterWorkspace/LogicBoard
+@onready var palette_grid: GridContainer = $VBoxContainer/MainSplit/LeftSidebar/LibraryContainer/ScrollContainer/PaletteGrid
+
+@onready var library_panel: VBoxContainer = $VBoxContainer/MainSplit/LeftSidebar/LibraryPanel
+@onready var library_container: VBoxContainer = $VBoxContainer/MainSplit/LeftSidebar/LibraryContainer
+@onready var stats_container: VBoxContainer = $VBoxContainer/MainSplit/RightSplit/RightSidebar/StatsPanel/StatsContainer
 
 @onready var header: HBoxContainer = find_child("Header", true, false)
 @onready var wand_name_label: Label = find_child("WandNameLabel", true, false)
@@ -83,7 +86,7 @@ func _ready():
 
 func _setup_preview_ui():
 	# Add Preview to Visual Library Panel
-	var visual_lib_panel = $VBoxContainer/TabContainer/Visual/MainLayout/LibraryPanel
+	var visual_lib_panel = library_panel
 	
 	var preview_container = VBoxContainer.new()
 	preview_container.name = "PreviewContainer"
@@ -251,22 +254,55 @@ func _process(_delta):
 		_update_mana_display()
 
 func _update_mana_display():
-	var side_panel = find_child("StatsPanel", true, false)
-	if side_panel:
-		# We need to find the specific mana line or just refresh all?
-		# Refreshing all stats every frame is heavy. 
-		# Let's just update the mana label if it exists.
-		var label = side_panel.get_node_or_null("ManaTicker")
-		if not label:
-			label = RichTextLabel.new()
-			label.name = "ManaTicker"
-			label.bbcode_enabled = true
-			label.fit_content = true
-			side_panel.add_child(label)
-			side_panel.move_child(label, 0)
-		
-		var m_color = "cyan" if current_wand.current_mana > current_wand.embryo.mana_capacity * 0.2 else "red"
-		label.text = "[center][b]Mana: [color=%s]%.0f[/color] / %d[/b][/center]" % [m_color, current_wand.current_mana, int(current_wand.embryo.mana_capacity)]
+	if not stats_container: return
+	var label = stats_container.get_node_or_null("ManaTicker")
+	if not label:
+		label = RichTextLabel.new()
+		label.name = "ManaTicker"
+		label.bbcode_enabled = true
+		label.fit_content = true
+		stats_container.add_child(label)
+		stats_container.move_child(label, 0)
+	
+	var m_color = "cyan" if current_wand.current_mana > current_wand.embryo.mana_capacity * 0.2 else "red"
+	label.text = "[center][b]Mana: [color=%s]%.0f[/color] / %d[/b][/center]" % [m_color, current_wand.current_mana, int(current_wand.embryo.mana_capacity)]
+
+func _create_stat_row(icon_path: String, label_text: String, value_text: String, value_color: Color = Color.WHITE) -> HBoxContainer:
+	var hbox = HBoxContainer.new()
+	
+	if icon_path != "":
+		var icon = TextureRect.new()
+		if ResourceLoader.exists(icon_path):
+			icon.texture = load(icon_path)
+		icon.custom_minimum_size = Vector2(16, 16)
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		hbox.add_child(icon)
+	
+	var label = Label.new()
+	label.text = label_text
+	label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hbox.add_child(label)
+	
+	var value = Label.new()
+	value.text = value_text
+	value.add_theme_color_override("font_color", value_color)
+	hbox.add_child(value)
+	
+	return hbox
+
+func _create_stat_header(text: String) -> MarginContainer:
+	var margin = MarginContainer.new()
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_bottom", 5)
+	var label = Label.new()
+	label.text = text
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_color_override("font_color", COLOR_ACCENT)
+	# label.add_theme_font_size_override("font_size", 14)
+	margin.add_child(label)
+	return margin
 
 func _update_stats_display():
 	if not current_wand: return
@@ -305,47 +341,40 @@ func _update_stats_display():
 		stats_label.text = top_text
 	
 	# Sidebar
-	var side_panel = find_child("StatsPanel", true, false)
+	if stats_container:
+		# Clear existing stats except ManaTicker
+		for child in stats_container.get_children():
+			if child.name != "ManaTicker":
+				child.queue_free()
 		
-	if side_panel:
-		var side_display = side_panel.get_node_or_null("StatsDisplay")
-		if side_display and side_display is RichTextLabel:
-			# Get Simulated Stats (Request 2)
-			var sim_stats = SpellProcessor.get_wand_stats(current_wand)
-			var sim_duration = sim_stats.get("duration", 0.0) if sim_stats is Dictionary else 0.0
-			var sim_dmg = sim_stats.get("total_damage", 0.0) if sim_stats is Dictionary else 0.0
-			var sim_projs = sim_stats.get("projectile_count", 0) if sim_stats is Dictionary else 0
-			var sim_mana = sim_stats.get("simulated_mana_usage", 0.0) if sim_stats is Dictionary else 0.0
-			
-			var stats_text = "[center][b][color=#20CCFF]法杖详细属性[/color][/b][/center]\n\n"
-			stats_text += "%s [color=#aaaaaa]等级:[/color] %s\n" % [i_level, embryo.level]
-			stats_text += "%s [color=#aaaaaa]施法延迟:[/color] [color=#66ff66]%.2fs[/color]\n" % [i_time, embryo.cast_delay]
-			stats_text += "%s [color=#aaaaaa]充能时间:[/color] [color=#66ff66]%.2fs[/color]\n" % [i_time, embryo.recharge_time]
-			stats_text += "%s [color=#aaaaaa]法力容量:[/color] [color=#66aaff]%d[/color]\n" % [i_mana, int(embryo.mana_capacity)]
-			stats_text += "• [color=#aaaaaa]法力回复:[/color] [color=#66ffff]%d[/color]/s\n" % int(embryo.mana_recharge_speed)
-			stats_text += "• [color=#aaaaaa]充能回复:[/color] [color=#66ffff]+%d[/color]\n" % int(embryo.mana_recharge_burst)
-			stats_text += "%s [color=#aaaaaa]逻辑容量:[/color] [color=#ffffff]%d[/color] 节点\n" % [i_node, embryo.logic_capacity]
-			
-			stats_text += "\n[center][b][color=#20CCFF]法术预览[/color][/b][/center]\n"
-			stats_text += "• [color=#aaaaaa]单次爆发耗时:[/color] [color=#ffff44]%.2fs[/color]\n" % sim_duration
-			stats_text += "• [color=#aaaaaa]单次爆发法力:[/color] [color=#66aaff]%.0f[/color]\n" % sim_mana
-			stats_text += "• [color=#aaaaaa]理论全额伤害:[/color] [color=#ff4444]%.1f[/color]\n" % sim_dmg
-			stats_text += "• [color=#aaaaaa]投射物数量:[/color] [color=#ccccff]%d[/color]\n" % sim_projs
-			
-			stats_text += "\n[center][b][color=#20CCFF]实时状态[/color][/b][/center]\n"
-			var block_count = current_wand.visual_grid.size()
-			stats_text += "• [color=#aaaaaa]外观模块:[/color] %d\n" % block_count
-			
-			var logic_count = current_wand.logic_nodes.size()
-			var logic_color = "#ffffff" if logic_count <= embryo.logic_capacity else "#ff4444"
-			stats_text += "• [color=#aaaaaa]已用节点:[/color] [color=%s]%d / %d[/color]\n" % [logic_color, logic_count, embryo.logic_capacity]
-			
-			side_display.bbcode_enabled = true
-			side_display.text = stats_text
-			
-		var side_title = side_panel.get_node_or_null("StatsTitle")
-		if side_title:
-			side_title.text = "构造详情"
+		var sim_stats = SpellProcessor.get_wand_stats(current_wand)
+		var sim_duration = sim_stats.get("duration", 0.0) if sim_stats is Dictionary else 0.0
+		var sim_dmg = sim_stats.get("total_damage", 0.0) if sim_stats is Dictionary else 0.0
+		var sim_projs = sim_stats.get("projectile_count", 0) if sim_stats is Dictionary else 0
+		var sim_mana = sim_stats.get("simulated_mana_usage", 0.0) if sim_stats is Dictionary else 0.0
+		
+		stats_container.add_child(_create_stat_header("法杖详细属性"))
+		stats_container.add_child(_create_stat_row("res://assets/ui/icons/icon_level.svg", "等级:", str(embryo.level)))
+		stats_container.add_child(_create_stat_row("res://assets/ui/icons/icon_time.svg", "施法延迟:", "%.2fs" % embryo.cast_delay, Color("#66ff66")))
+		stats_container.add_child(_create_stat_row("res://assets/ui/icons/icon_time.svg", "充能时间:", "%.2fs" % embryo.recharge_time, Color("#66ff66")))
+		stats_container.add_child(_create_stat_row("res://assets/ui/icons/icon_mana.svg", "法力容量:", str(int(embryo.mana_capacity)), Color("#66aaff")))
+		stats_container.add_child(_create_stat_row("", "  法力回复:", "%d/s" % int(embryo.mana_recharge_speed), Color("#66ffff")))
+		stats_container.add_child(_create_stat_row("", "  充能回复:", "+%d" % int(embryo.mana_recharge_burst), Color("#66ffff")))
+		stats_container.add_child(_create_stat_row("res://assets/ui/icons/icon_node.svg", "逻辑容量:", "%d 节点" % embryo.logic_capacity, Color.WHITE))
+		
+		stats_container.add_child(_create_stat_header("法术预览"))
+		stats_container.add_child(_create_stat_row("", "单次爆发耗时:", "%.2fs" % sim_duration, Color("#ffff44")))
+		stats_container.add_child(_create_stat_row("", "单次爆发法力:", "%.0f" % sim_mana, Color("#66aaff")))
+		stats_container.add_child(_create_stat_row("", "理论全额伤害:", "%.1f" % sim_dmg, Color("#ff4444")))
+		stats_container.add_child(_create_stat_row("", "投射物数量:", str(sim_projs), Color("#ccccff")))
+		
+		stats_container.add_child(_create_stat_header("实时状态"))
+		var block_count = current_wand.visual_grid.size()
+		stats_container.add_child(_create_stat_row("", "外观模块:", str(block_count)))
+		
+		var logic_count = current_wand.logic_nodes.size()
+		var logic_color = Color.WHITE if logic_count <= embryo.logic_capacity else Color("#ff4444")
+		stats_container.add_child(_create_stat_row("", "已用节点:", "%d / %d" % [logic_count, embryo.logic_capacity], logic_color))
 
 func edit_wand(wand: WandData):
 	current_wand = wand
@@ -721,6 +750,21 @@ func _apply_sci_fi_theme():
 	btn_pressed.shadow_color = COLOR_GLOW
 	btn_pressed.shadow_size = 2
 	
+	# --- ButtonGroup (Mode Switcher) ---
+	var btn_group_normal = StyleBoxFlat.new()
+	btn_group_normal.bg_color = Color(0.05, 0.07, 0.1, 0.8)
+	btn_group_normal.border_width_bottom = 2
+	btn_group_normal.border_color = Color(0.1, 0.2, 0.3)
+	btn_group_normal.content_margin_top = 8
+	btn_group_normal.content_margin_bottom = 8
+	
+	var btn_group_pressed = StyleBoxFlat.new()
+	btn_group_pressed.bg_color = Color(0.1, 0.2, 0.3, 0.9)
+	btn_group_pressed.border_width_bottom = 2
+	btn_group_pressed.border_color = COLOR_ACCENT
+	btn_group_pressed.content_margin_top = 8
+	btn_group_pressed.content_margin_bottom = 8
+	
 	theme.set_stylebox("normal", "Button", btn_normal)
 	theme.set_stylebox("hover", "Button", btn_hover)
 	theme.set_stylebox("pressed", "Button", btn_pressed)
@@ -838,7 +882,6 @@ func _apply_sci_fi_theme():
 	# Re-apply theme to root and key subcomponents so changes are visible immediately
 	self.theme = theme
 	if header: header.theme = theme
-	if tab_container: tab_container.theme = theme
 	if logic_board: logic_board.theme = theme
 	if visual_grid: visual_grid.theme = theme
 	if module_palette: module_palette.theme = theme
@@ -895,10 +938,47 @@ func _apply_layout_polish():
 		vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	# 2. Sidebar Min Sizes
-	var lib_panel = find_child("LibraryPanel", true, false)
-	if lib_panel:
-		lib_panel.custom_minimum_size.x = 220
+	var left_sidebar = find_child("LeftSidebar", true, false)
+	if left_sidebar:
+		left_sidebar.custom_minimum_size.x = 220
 		
-	var stats_panel = find_child("StatsPanel", true, false)
-	if stats_panel:
-		stats_panel.custom_minimum_size.x = 260 # Slightly wider for BBCode
+	var right_sidebar = find_child("RightSidebar", true, false)
+	if right_sidebar:
+		right_sidebar.custom_minimum_size.x = 260 # Slightly wider for BBCode
+
+	# 3. Apply ButtonGroup styles
+	var mode_switcher = find_child("ModeSwitcher", true, false)
+	if mode_switcher:
+		for btn in mode_switcher.get_children():
+			if btn is Button:
+				btn.add_theme_stylebox_override("normal", theme.get_stylebox("normal", "Button"))
+				btn.add_theme_stylebox_override("pressed", theme.get_stylebox("pressed", "Button"))
+				btn.add_theme_stylebox_override("hover", theme.get_stylebox("hover", "Button"))
+				btn.add_theme_stylebox_override("focus", theme.get_stylebox("focus", "Button"))
+				
+				# Custom toggle logic for visual feedback
+				btn.toggled.connect(func(is_pressed):
+					if is_pressed:
+						btn.add_theme_color_override("font_color", COLOR_ACCENT)
+					else:
+						btn.add_theme_color_override("font_color", COLOR_TEXT_SEC)
+				)
+				# Initialize color
+				if btn.button_pressed:
+					btn.add_theme_color_override("font_color", COLOR_ACCENT)
+				else:
+					btn.add_theme_color_override("font_color", COLOR_TEXT_SEC)
+
+func _on_visual_mode_toggled(toggled_on: bool):
+	if toggled_on:
+		if library_panel: library_panel.visible = true
+		if library_container: library_container.visible = false
+		if visual_grid: visual_grid.visible = true
+		if logic_board: logic_board.visible = false
+
+func _on_logic_mode_toggled(toggled_on: bool):
+	if toggled_on:
+		if library_panel: library_panel.visible = false
+		if library_container: library_container.visible = true
+		if visual_grid: visual_grid.visible = false
+		if logic_board: logic_board.visible = true

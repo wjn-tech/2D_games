@@ -1,0 +1,30 @@
+[gd_scene load_steps=3 format=3 uid="uid://magic_particles_001"]
+
+[sub_resource type="Gradient" id="Gradient_p"]
+interpolation_mode = 2
+offsets = PackedFloat32Array(0, 0.68, 1)
+colors = PackedColorArray(1, 1, 1, 1, 1, 1, 1, 0.47, 1, 1, 1, 0)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_glow"]
+gradient = SubResource("Gradient_p")
+width = 16
+height = 16
+fill = 1
+fill_from = Vector2(0.5, 0.5)
+fill_to = Vector2(0.5, 0)
+
+[node name="MagicParticles" type="CPUParticles2D"]
+amount = 32
+lifetime = 3.0
+preprocess = 1.0
+texture = SubResource("GradientTexture2D_glow")
+emission_shape = 3
+emission_rect_extents = Vector2(400, 250)
+gravity = Vector2(0, -15)
+initial_velocity_min = 5.0
+initial_velocity_max = 20.0
+angular_velocity_min = -20.0
+angular_velocity_max = 20.0
+scale_amount_min = 0.5
+scale_amount_max = 2.0
+color = Color(0.7, 0.5, 1, 0.6)

@@ -27,7 +27,8 @@ func _get_building_name(): return display_name
 
 # Crafting & Quality
 @export_group("Quality")
-@export var quality_grade: String = "Common" # Common, Rare, Epic, Legendary, Masterwork
+# Supported rarities: Common, Uncommon, Rare, Epic, Legendary
+@export var quality_grade: String = "Common" # Maps to ItemRarity constants
 @export var quality_score: float = 0.0 # 0.0 - 100.0
 @export var crafted_by: String = ""
 @export var crafted_properties: Dictionary = {} # Dynamic stats added during crafting

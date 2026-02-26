@@ -1,0 +1,8 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3 uid="uid://magic_glass_material_001"]
+
+[ext_resource type="Shader" path="res://ui/shaders/inventory/magic_glass.gdshader" id="1_shader"]
+
+[resource]
+shader = ExtResource("1_shader")
+shader_parameter/distortion_strength = 0.005
+shader_parameter/tint_color = Color(0.094, 0.094, 0.145, 0.85)

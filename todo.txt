@@ -1,0 +1,7 @@
+[x] 1. Create a 	odo.txt file listing the user's critique points and assigned solutions.
+[x] 2. Update inventory_theme.tres with advanced Magitech styles (Shadows, Glows, Glassmorphism).
+[x] 3. Rewrite item_slot_ui.gd to use Tweens for scaling, particles, and proper state management.
+[x] 4. Update inventory_manager.gd to include use_slot logic for item consumption/equipping.
+[x] 5. Modify inventory_ui.gd to connect double-click signals to the Manager's use_slot.
+[ ] 6. (Optional) Reorganize InventoryWindow.tscn layout if visual structure is still lacking.
+[ ] 7. (Optional) Implement Sound Feedback for inventory interactions.

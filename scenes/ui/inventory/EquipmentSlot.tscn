@@ -1,0 +1,42 @@
+[gd_scene load_steps=2 format=3 uid="uid://equipment_slot_001"]
+
+[ext_resource type="Script" path="res://scenes/ui/inventory/equipment_slot_ui.gd" id="1_script"]
+
+[node name="EquipmentSlot" type="PanelContainer"]
+custom_minimum_size = Vector2(64, 64)
+offset_right = 64.0
+offset_bottom = 64.0
+theme_type_variation = &"EquipSlot"
+script = ExtResource("1_script")
+icon_rect_path = NodePath("TextureRect")
+count_label_path = NodePath("Label")
+
+[node name="RarityGlow" type="ColorRect" parent="."]
+visible = false
+layout_mode = 2
+mouse_filter = 2
+color = Color(1, 1, 1, 0.1)
+
+[node name="TextureRect" type="TextureRect" parent="."]
+layout_mode = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Label" type="Label" parent="."]
+layout_mode = 2
+size_flags_vertical = 8
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.8)
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 1
+theme_override_font_sizes/font_size = 14
+horizontal_alignment = 2
+
+[node name="Border" type="ReferenceRect" parent="."]
+visible = false
+layout_mode = 2
+mouse_filter = 2
+border_color = Color(1, 0.8, 0, 1)
+border_width = 2.0
+editor_only = false
+

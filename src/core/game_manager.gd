@@ -273,7 +273,7 @@ func _input(event: InputEvent) -> void:
 		if building_mgr and building_mgr.has_method("is_building") and building_mgr.is_building():
 			building_mgr.cancel_building()
 			
-		UIManager.toggle_window("CharacterPanel", "res://scenes/ui/CharacterPanel.tscn")
+		UIManager.toggle_window("InventoryWindow", "res://scenes/ui/InventoryWindow.tscn")
 
 	# 制作快捷键：按 I 键（同时也是背包键）启动，或单独逻辑
 	# 注意：如果 inventory 动作已经是 'I'，这里可以保持逻辑统一

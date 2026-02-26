@@ -18,5 +18,6 @@ id = "wood"
 display_name = "木材"
 icon = SubResource("AtlasTexture_icon")
 value = 2
+quality_grade = "Common"
 max_stack = 99
 stackable = true

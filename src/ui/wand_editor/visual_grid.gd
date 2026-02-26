@@ -196,24 +196,21 @@ func _update_cell_visual(coords: Vector2i):
 func _update_cell_style(coords: Vector2i, style: StyleBoxFlat, item = null):
 	if item == null:
 		item = grid_data.get(coords)
-		
+	
 	if item:
 		# Pixel Art Style
 		style.bg_color = item.wand_visual_color
-		# Use border to show selection/grid clearly?
-		style.border_color = item.wand_visual_color.lightened(0.2)
-		style.border_width_bottom = 0
-		style.border_width_top = 0
-		style.border_width_left = 0
-		style.border_width_right = 0
-		style.corner_radius_top_left = 0
-		style.corner_radius_top_right = 0
-		style.corner_radius_bottom_left = 0
-		style.corner_radius_bottom_right = 0
+		# Reset borders
+		if style.border_width_bottom > 0:
+			style.border_width_bottom = 0
+			style.border_width_top = 0
+			style.border_width_left = 0
+			style.border_width_right = 0
 	else:
 		# "Empty Grid" Look - Sci-Fi
 		style.bg_color = Color(0.03, 0.05, 0.07, 0.6)
 		style.border_color = Color(0.14, 0.6, 1.0, 0.18)
+		# Set borders
 		style.border_width_top = 1
 		style.border_width_bottom = 1
 		style.border_width_left = 1

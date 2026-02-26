@@ -19,26 +19,40 @@ func _ready() -> void:
 	offset_right = 0
 	offset_bottom = 0
 	
-	# 强制应用 startmenu 主题以确保字体和颜色覆盖被正确加载
-	var start_theme_path = "res://ui/theme/theme_startmenu.tres"
-	if ResourceLoader.exists(start_theme_path):
-		var st = ResourceLoader.load(start_theme_path)
-		if st:
-			self.theme = st
+	# DISABLED: Theme override to allow new Main Menu theme to work
+	# var start_theme_path = "res://ui/theme/theme_startmenu.tres"
+	# if ResourceLoader.exists(start_theme_path):
+	# 	var st = ResourceLoader.load(start_theme_path)
+	# 	if st:
+	# 		self.theme = st
+
+	# Update Title Size for Shader Gradient
+	if title_label:
+		# Connect to resized signal
+		if not title_label.resized.is_connected(_on_title_resized):
+			title_label.resized.connect(_on_title_resized)
+		
+		# Initial delay to ensure layout is computed
+		await get_tree().process_frame
+		await get_tree().process_frame
+		_on_title_resized()
 
 	# Replace built-in Buttons with RoundedTextureButton instances to avoid rectangular artifacts
-	_replace_buttons_with_rounded()
+	# _replace_buttons_with_rounded()
 
 	# Ensure an enhanced starfield + nebula background is present
-	_ensure_starfield_background()
+	# _ensure_starfield_background()
 
-	_setup_smart_ui()
+	# DISABLED: This function dynamically rebuilds the UI (changes title to GradientTitle custom control, changes button text based on saves).
+	# Because the user reported visual glitches ("flashing", "different gradient") and unexpected text changes ("New Start"),
+	# we disable this entire block to ensure the MainMenu matches the scene file (WYSWYG).
+	# _setup_smart_ui()
 
 	# create decorative magic circle behind title
-	_create_magic_circle()
+	# _create_magic_circle()
 
 	# apply gradient shader to title label if available
-	_apply_title_gradient()
+	# _apply_title_gradient()
 
 	# hide other scene backgrounds so our menu background is the only visible one
 	_hide_external_backgrounds()
@@ -64,14 +78,15 @@ func _ready() -> void:
 	# 强制应用简单标题渲染（直接在 title_label 上），确保能立刻看到效果
 	_force_simple_title()
 	
-	# 按钮悬停动画
-	for btn in [start_button, load_button, settings_button, exit_button]:
-		btn.mouse_entered.connect(Callable(self, "_on_button_hover").bind(btn))
-		btn.mouse_exited.connect(Callable(self, "_on_button_unhover").bind(btn))
+	# DISABLED: Legacy hover effects (interferes with new Tween script)
+	# for btn in [start_button, load_button, settings_button, exit_button]:
+	# 	btn.mouse_entered.connect(Callable(self, "_on_button_hover").bind(btn))
+	# 	btn.mouse_exited.connect(Callable(self, "_on_button_unhover").bind(btn))
 
+	# DISABLED: Legacy button glow
 	# Ensure glow backgrounds for buttons
-	for btn in [start_button, load_button, settings_button, exit_button]:
-		_ensure_button_glow(btn)
+	# for btn in [start_button, load_button, settings_button, exit_button]:
+	# 	_ensure_button_glow(btn)
 
 	# Debug: report whether DynamicBackground child is present and its script
 	var dbg = get_node_or_null("DynamicBackground")
@@ -122,6 +137,40 @@ func _ready() -> void:
 			if not sky.material:
 				if dbg and dbg.has_method("apply_day_override"):
 					dbg.call("apply_day_override")
+
+	# Play Entrance Animation
+	play_entrance_animation()
+
+func play_entrance_animation() -> void:
+	# Initial state: Hide elements
+	var elements = [title_label, start_button, load_button, settings_button, exit_button]
+	if title_label:
+		title_label.modulate.a = 0.0
+		title_label.scale = Vector2(0.9, 0.9)
+		title_label.pivot_offset = title_label.size / 2
+
+	for btn in [start_button, load_button, settings_button, exit_button]:
+		if btn:
+			btn.modulate.a = 0.0
+			btn.scale = Vector2(0.8, 0.8)
+			btn.pivot_offset = btn.size / 2
+	
+	# Create tween sequence
+	var tween = create_tween()
+	tween.set_parallel(true)
+	
+	# Animate Title
+	if title_label:
+		tween.tween_property(title_label, "modulate:a", 1.0, 0.8).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		tween.tween_property(title_label, "scale", Vector2.ONE, 0.8).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	
+	# Animate Buttons (Staggered)
+	var delay = 0.2
+	for btn in [start_button, load_button, settings_button, exit_button]:
+		if btn:
+			tween.tween_property(btn, "modulate:a", 1.0, 0.5).set_delay(delay).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+			tween.tween_property(btn, "scale", Vector2.ONE, 0.5).set_delay(delay).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+			delay += 0.1
 
 func _process(delta: float) -> void:
 	# update title shader time parameter if present
@@ -475,8 +524,8 @@ func _restore_title_label() -> void:
 		vp_node.queue_free()
 	if title_label:
 		title_label.visible = true
-		# clear any experimental material so default theme/font shows
-		title_label.material = null
+		# DISABLED: Clearing material resets our gradient shader!
+		# title_label.material = null
 	print("MainMenu: Restored original title label and removed viewport render")
 
 
@@ -590,6 +639,14 @@ func _force_simple_title() -> void:
 		print("MainMenu: Poppins not found for force-apply")
 
 	# apply simple shader directly to the label (no viewport)
+	if title_label.material:
+		print("MainMenu: title_label already has a material, skipping force-apply of text_gradient.")
+		return
+
+	# DISABLED: We use a custom shader set in the scene (gradient_vertical_shimmer.gdshader)
+	# This function was overriding it with text_gradient.shader
+	return;
+
 	var shp = "res://ui/shaders/text_gradient.shader"
 	if ResourceLoader.exists(shp):
 		var sh = ResourceLoader.load(shp)
@@ -773,6 +830,8 @@ func _replace_title_with_gradient() -> void:
 
 
 func _replace_buttons_with_rounded() -> void:
+	# 已经被新版设计取代，直接返回
+	return
 	# load class
 	var rb_path = "res://scenes/ui/controls/rounded_texture_button.gd"
 	if not ResourceLoader.exists(rb_path):
@@ -845,11 +904,12 @@ func _replace_buttons_with_rounded() -> void:
 func _on_visibility_changed() -> void:
 	if visible:
 		modulate = Color.WHITE
-		$CenterContainer.modulate.a = 1.0
+		if has_node("CenterContainer"):
+			$CenterContainer.modulate.a = 1.0
 		# 恢复按钮状态
-		start_button.disabled = false
-		load_button.disabled = false
-		exit_button.disabled = false
+		if start_button: start_button.disabled = false
+		if load_button: load_button.disabled = false
+		if exit_button: exit_button.disabled = false
 		# when showing menu, ensure external backgrounds remain hidden
 		_hide_external_backgrounds()
 	else:
@@ -871,10 +931,13 @@ func _setup_smart_ui() -> void:
 	# Update title to match starry / cosmic theme and feel more like a game title
 	if title_label:
 		# if it's a Label-like node, update text; GradientTitle is RichTextLabel subclass so this will work
-		if title_label.has_method("set_text") :
-			title_label.text = "星海之旅"
-		# replace with GradientTitle control for per-character gradient effects
-		_replace_title_with_gradient()
+		# if title_label.has_method("set_text") :
+		# 	title_label.text = "星海之旅"
+		
+		# DISABLED: This replaces our shader-enhanced Label with a different control script!
+		# We want to keep the original Title label with our verified gradient_vertical_shimmer.gdshader
+		# _replace_title_with_gradient()
+		pass
 	welcome_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	welcome_label.add_theme_color_override("font_color", Color(1.0, 0.98, 0.95))
 	# apply text gradient shader to welcome label if available
@@ -886,12 +949,16 @@ func _setup_smart_ui() -> void:
 			_mat.shader = _sh
 			_mat.set_shader_parameter("noise_strength", 0.03)
 			welcome_label.material = _mat
+	
 	# Insert after Title
-	$CenterContainer/VBoxContainer.add_child(welcome_label)
-	$CenterContainer/VBoxContainer.move_child(welcome_label, title_label.get_index() + 1)
+	if title_label:
+		var container = title_label.get_parent()
+		if container:
+			container.add_child(welcome_label)
+			container.move_child(welcome_label, title_label.get_index() + 1)
 
 	# Replace title Label with a Viewport-rendered TextureRect so we can reliably apply post-process shader
-	_replace_title_with_viewport()
+	# _replace_title_with_viewport()
 
 	# Attempt to apply Poppins if present; otherwise fall back to project's theme default font
 	var base_font = null
@@ -1018,11 +1085,12 @@ func _setup_smart_ui() -> void:
 				ui_palette = cols
 
 	# increase button size and spacing for better visual weight
-	var vbox = $CenterContainer/VBoxContainer
-	if vbox:
-		vbox.add_theme_constant_override("separation", 44.0)
-		# add top padding to create breathing room
-		vbox.add_theme_constant_override("margin_top", 40.0)
+	# New design handles this via Tscn
+	# var vbox = $CenterContainer/VBoxContainer
+	# if vbox:
+	# 	vbox.add_theme_constant_override("separation", 44.0)
+	# 	# add top padding to create breathing room
+	# 	vbox.add_theme_constant_override("margin_top", 40.0)
 
 	# create reusable StyleBox and color overrides for a magical look
 	var sb_normal = StyleBoxFlat.new()
@@ -1099,21 +1167,24 @@ func _setup_smart_ui() -> void:
 		if self.theme:
 			btn.theme = self.theme
 		# apply explicit size and stylebox overrides so editor/theme resources cannot hide changes
-		btn.custom_minimum_size = Vector2(420, 72)
+		# NEW DESIGN: Handled by Theme and Tscn
+		# btn.custom_minimum_size = Vector2(420, 72)
 		# Apply styleboxes using property path (Godot 4 compatible)
 		# Skip applying rectangular StyleBox overrides to TextureButton-derived controls
-		if not (btn is TextureButton):
-			btn.set("custom_styles/normal", sb_normal.duplicate())
-			btn.set("custom_styles/hover", sb_hover.duplicate())
-			btn.set("custom_styles/pressed", sb_pressed.duplicate())
+		# if not (btn is TextureButton):
+		#	btn.set("custom_styles/normal", sb_normal.duplicate())
+		#	btn.set("custom_styles/hover", sb_hover.duplicate())
+		#	btn.set("custom_styles/pressed", sb_pressed.duplicate())
 		# Ensure child controls are clipped to the button rect so icons don't float above other panels
 		btn.clip_contents = true
 		# increase contrast for readability
 		btn.add_theme_color_override("font_color", Color(1.0, 1.0, 0.98))
 		print("MainMenu: applied visual overrides to ", btn.name)
 		# try assign icon if available and align it left
-		var p = icon_map.get(btn, "")
+		# NEW DESIGN: Icons set in Tscn
+		var p = "" # icon_map.get(btn, "")
 		if p != "" and ResourceLoader.exists(p):
+			pass
 			var tex = load(p)
 			if tex:
 				# 使用专用 TextureRect 子节点来精确放置图标，确保左侧对齐并垂直居中
@@ -1426,3 +1497,41 @@ func _force_apply_poppins() -> void:
 			print("MainMenu: set font on button", btn, "->", typeof(btn.get("custom_fonts/font")), btn.get("custom_fonts/font"))
 
 	print("MainMenu: forced Poppins font assigned from", found_path)
+
+func _on_title_resized() -> void:
+	if not title_label:
+		return
+	var mat = title_label.material as ShaderMaterial
+	if mat:
+		# Use get_minimum_size().y as a more reliable metric for text height than size.y
+		# size.y includes extra layout space which might dilute the gradient
+		var text_height = title_label.get_minimum_size().y
+		if text_height <= 1.0:
+			text_height = title_label.size.y
+		
+		# Prevent over-dilution of gradient if label is stretched tall (e.g. by VBox Expand)
+		# A label with single line text shouldn't need more than ~1.5x font size for gradient
+		var expected_h = float(title_label.get_theme_font_size("font_size")) * 1.5
+		if text_height > expected_h:
+			text_height = expected_h
+
+		# DEBUG: Adjust offset_y if label is vertically centered and taller than text
+		# If vertical_alignment is CENTER (1) or BOTTOM (2) and label is tall, text is offset.
+		var offset_y = 0.0
+		# Standard height for font is roughly font_size * 1.2
+		var font_h = float(title_label.get_theme_font_size("font_size"))
+		if title_label.size.y > font_h * 1.5:
+			# Likely centered or expanded
+			if title_label.vertical_alignment == VERTICAL_ALIGNMENT_CENTER:
+				offset_y = (title_label.size.y - font_h) / 2.0
+				# Use font size for gradient height, not label height
+				text_height = font_h * 1.2
+			elif title_label.vertical_alignment == VERTICAL_ALIGNMENT_BOTTOM:
+				offset_y = title_label.size.y - font_h
+				text_height = font_h * 1.2
+		
+		# Debug print
+		print("DEBUG: Updating Title Shader Size: ", title_label.size, " used_height: ", text_height, " offset: ", offset_y)
+		mat.set_shader_parameter("height_pixels", text_height)
+		mat.set_shader_parameter("width_pixels", title_label.size.x)
+		mat.set_shader_parameter("offset_y", offset_y)

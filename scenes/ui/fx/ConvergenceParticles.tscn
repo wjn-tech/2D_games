@@ -1,0 +1,28 @@
+[gd_scene load_steps=4 format=3 uid="uid://convergence_particles_001"]
+
+[ext_resource type="Script" path="res://scenes/ui/fx/digital_dust.gd" id="1_script"]
+
+[sub_resource type="Curve" id="Curve_scale"]
+_data = [Vector2(0, 0), 0.0, 0.0, 0, 0, Vector2(0.5, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="Gradient" id="Gradient_color"]
+offsets = PackedFloat32Array(0, 0.2, 0.8, 1)
+colors = PackedColorArray(0, 1, 1, 0, 0, 1, 1, 1, 0.5, 0, 1, 1, 0, 0, 0.5, 0)
+
+[node name="ConvergenceParticles" type="CPUParticles2D"]
+amount = 50
+lifetime = 0.6
+explosiveness = 0.8
+emission_shape = 3
+emission_rect_extents = Vector2(300, 200)
+direction = Vector2(0, 0)
+spread = 180.0
+gravity = Vector2(0, 0)
+radial_accel_min = -500.0
+radial_accel_max = -500.0
+scale_amount_min = 4.0
+scale_amount_max = 6.0
+scale_amount_curve = SubResource("Curve_scale")
+color_ramp = SubResource("Gradient_color")
+script = ExtResource("1_script")

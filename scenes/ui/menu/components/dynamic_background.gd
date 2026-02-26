@@ -52,7 +52,7 @@ func _ready() -> void:
 	# attach shader-based background and update initial state
 	# resolve sky_rect if scene binding used (PackedScene node_paths may set a NodePath)
 	if typeof(sky_rect) == TYPE_NODE_PATH or typeof(sky_rect) == TYPE_STRING:
-		var _sr = get_node_or_null(sky_rect)
+		var _sr = get_node_or_null(NodePath(str(sky_rect)))
 		if _sr:
 			sky_rect = _sr
 			if enable_debug_prints:
@@ -91,9 +91,10 @@ func _ready() -> void:
 				if f:
 					var txt = f.get_as_text()
 					f.close()
-					var js = JSON.parse(txt)
-					if js.error == OK:
-						_palette = js.result
+					var js = JSON.new()
+					var err = js.parse(txt)
+					if err == OK:
+						_palette = js.data
 						if enable_debug_prints:
 							print("DynamicBackground: loaded scene palette JSON ->", scene_palette_path)
 					else:
@@ -172,7 +173,7 @@ func _process(delta: float) -> void:
 		# sun intensity stronger near midday, fades at dawn/dusk
 		var sun_int = clamp(1.0 - abs(normalized - 0.5) * 2.0, 0.0, 1.0)
 		# reduce intensity slightly during early/late hours
-		sun_int *= mix(0.6, 1.0, clamp((hour - 8) / 8.0, 0.0, 1.0))
+		sun_int *= lerp(0.6, 1.0, clamp((hour - 8) / 8.0, 0.0, 1.0))
 		mat.set_shader_parameter("sun_intensity", sun_int)
 		# choose sun color (warm at dawn/dusk)
 		var s_color = Color(1.0, 0.98, 0.85)

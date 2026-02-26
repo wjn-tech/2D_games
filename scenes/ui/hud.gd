@@ -50,10 +50,10 @@ func _on_housing_btn_pressed():
 
 func _on_inventory_btn_pressed():
 	if UIManager:
-		if UIManager.active_windows.has("CharacterPanel"):
-			UIManager.close_window("CharacterPanel")
+		if UIManager.active_windows.has("Inventory"):
+			UIManager.close_window("Inventory")
 		else:
-			UIManager.open_window("CharacterPanel", "res://scenes/ui/CharacterPanel.tscn")
+			UIManager.open_window("Inventory", "res://scenes/ui/InventoryWindow.tscn")
 
 func _process(_delta: float) -> void:
 	_update_hud()

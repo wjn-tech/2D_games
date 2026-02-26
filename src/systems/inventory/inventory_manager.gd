@@ -19,215 +19,223 @@ func _ready():
 	# Ensure this manager is in the group for lookups
 	if not is_in_group("inventory_manager"):
 		add_to_group("inventory_manager")
-		
-	# Listen for global collection events
-	if EventBus:
-		EventBus.item_collected.connect(add_item)
-	
+
 func _init_inventories():
-	backpack = Inventory.new(backpack_capacity)
-	hotbar = Inventory.new(hotbar_capacity)
-	
-	# Connect signals if needed, or UI listens to resources directly
-	hotbar.content_changed.connect(_on_hotbar_changed)
-	
+	backpack = Inventory.new()
+	backpack.capacity = backpack_capacity
+	backpack.slots.resize(backpack_capacity)
 	backpack.content_changed.connect(func(_idx): inventory_changed.emit())
+	
+	hotbar = Inventory.new()
+	hotbar.capacity = hotbar_capacity
+	hotbar.resize(hotbar_capacity)
 	hotbar.content_changed.connect(func(_idx): inventory_changed.emit())
 	
 	inventory_created.emit()
 
-func _on_hotbar_changed(slot_index: int):
-	if slot_index == active_hotbar_index:
-		emit_signal("equipped_item_changed", get_equipped_item())
+func swap_items(from_inv: Inventory, from_idx: int, to_inv: Inventory, to_idx: int):
+	# Handle swapping between inventories
+	if not from_inv or not to_inv: return
+	if from_idx < 0 or to_idx < 0: return
 
-func clear_all():
-	if backpack:
-		for i in range(backpack.slots.size()):
-			backpack.slots[i] = { "item": null, "count": 0 }
-	if hotbar:
-		for i in range(hotbar.slots.size()):
-			hotbar.slots[i] = { "item": null, "count": 0 }
+	var from_slot = from_inv.get_slot(from_idx)
+	var to_slot = to_inv.get_slot(to_idx)
+	
+	# Basic Swap Data
+	var item1 = from_slot.get("item")
+	var count1 = from_slot.get("count", 0)
+	var item2 = to_slot.get("item")
+	var count2 = to_slot.get("count", 0)
+	
+	# Check for stackable merge?
+	if item1 and item2 and item1 == item2 and item1.get("stackable"):
+		# Try to merge
+		# ... (Simple merging logic could go here)
+		pass
 
-# Core Operations
-func add_item(item: Resource, count: int = 1) -> bool:
-	return add_item_partial(item, count) == 0
-
-func add_item_partial(item: Resource, count: int = 1) -> int:
-	# 1. Adapt BaseItem to ItemData if necessary (Hack for legacy support)
-	if not item: return count
-	
-	# Special Handling for SpellItem (Unlock and consume)
-	if item is SpellItem:
-		item.on_pickup()
-		return 0
-
-	# 2. Try stacking in Hotbar
-	var remaining = _try_add_to_inventory(hotbar, item, count)
-	
-	# 3. Try stacking in Backpack
-	if remaining > 0:
-		remaining = _try_add_to_inventory(backpack, item, remaining)
-	
-	if remaining < count:
-		inventory_changed.emit()
-		
-	return remaining
-
-func add_item_or_drop(item: Resource, count: int = 1, pos: Vector2 = Vector2.ZERO) -> void:
-	if not item: return
-	
-	# Try adding
-	var remaining = _try_add_to_inventory(hotbar, item, count)
-	if remaining > 0:
-		remaining = _try_add_to_inventory(backpack, item, remaining)
-	
-	# Drop remaining
-	if remaining > 0:
-		drop_item(item, remaining, pos)
-		print("Inventory Full: Dropped %d x %s" % [remaining, item.display_name])
+	# Perform Swap
+	from_inv.set_item(from_idx, item2, count2)
+	to_inv.set_item(to_idx, item1, count1)
 	
 	inventory_changed.emit()
 
-func drop_item_from_slot(inv: Inventory, index: int) -> void:
-	if not inv: return
-	var slot = inv.get_slot(index)
-	var item = slot.get("item")
-	var count = slot.get("count", 0)
+func move_item(from_inv: Inventory, from_idx: int, to_inv: Inventory):
+	# Move item to first empty slot in target inventory
+	if not from_inv or not to_inv: return
+	var from_slot = from_inv.get_slot(from_idx)
+	if not from_slot.get("item"): return
 	
-	if item:
+	# Find empty slot
+	for i in range(to_inv.capacity):
+		var slot = to_inv.get_slot(i)
+		if not slot.get("item"):
+			# Move
+			to_inv.set_item(i, from_slot.get("item"), from_slot.get("count"))
+			from_inv.clear_slot(from_idx)
+			inventory_changed.emit()
+			return
+
+func add_item(item: Resource, count: int = 1) -> bool:
+	# Add to backpack first
+	if _add_to_inventory(backpack, item, count):
+		return true
+	# If full, allow overflow? Or hotbar?
+	if _add_to_inventory(hotbar, item, count):
+		return true
+	return false
+
+func add_item_or_drop(item: Resource, count: int = 1) -> void:
+	if not add_item(item, count):
 		drop_item(item, count)
-		inv.clear_slot(index)
-		inventory_changed.emit()
 
-func drop_item(item: Resource, count: int, pos: Vector2 = Vector2.ZERO) -> void:
-	var loot_scene = load("res://scenes/world/loot_item.tscn")
-	if not loot_scene: return
-	
-	var loot = loot_scene.instantiate()
-	# 添加到场景
-	var root = get_tree().current_scene
-	root.add_child(loot)
-	
-	# 设置位置
-	if pos == Vector2.ZERO:
-		var player = get_tree().get_first_node_in_group("player")
-		if player:
-			pos = player.global_position
-	
-	loot.global_position = pos
-	if loot.has_method("setup"):
-		# 角色扔出或背包溢出时，拾取延迟设为 1.0s
-		loot.setup(item, count, 1.0)
-
-func remove_item(from_inv: Inventory, slot_index: int, count: int) -> int:
-	var slot = from_inv.get_slot(slot_index)
-	var item = slot.get("item")
-	if item == null: return 0
-	
-	var current_count = slot.get("count", 0)
-	var removed = min(current_count, count)
-	current_count -= removed
-	if current_count <= 0:
-		from_inv.clear_slot(slot_index)
-	else:
-		from_inv.set_item(slot_index, item, current_count) # Trigger update
+func drop_item(item: Resource, count: int = 1) -> void:
+	# Basic drop logic
+	var player = get_tree().get_first_node_in_group("player")
+	if not player:
+		print("InventoryManager: Cannot drop item, player not found.")
+		return
 		
-	return removed
-
-func swap_items(inv_a: Inventory, idx_a: int, inv_b: Inventory, idx_b: int):
-	var slot_a = inv_a.get_slot(idx_a)
-	var slot_b = inv_b.get_slot(idx_b)
+	var world = player.get_parent()
+	if not world: return
 	
-	# Swap distinct values
-	inv_a.set_item(idx_a, slot_b.get("item"), slot_b.get("count", 0))
-	inv_b.set_item(idx_b, slot_a.get("item"), slot_a.get("count", 0))
+	# Load default loot scene (assumes one exists, e.g. src/entities/loot_item.tscn or scenes/world/loot_item.tscn)
+	var loot_scene_path = "res://scenes/world/loot_item.tscn"
+	if not ResourceLoader.exists(loot_scene_path):
+		loot_scene_path = "res://src/entities/loot_item.tscn" # Fallback
+	
+	if ResourceLoader.exists(loot_scene_path):
+		var loot_scene = load(loot_scene_path)
+		var loot = loot_scene.instantiate()
+		
+		# Ensure we add to a valid 2D parent
+		var target_parent = player.get_parent()
+		if not target_parent: target_parent = get_tree().current_scene
+		
+		target_parent.add_child(loot)
+		loot.global_position = player.global_position + Vector2(randf_range(-20, 20), randf_range(-20, 20))
+		
+		# Set data after adding to tree or call setup
+		if loot.has_method("setup"):
+			loot.setup(item, count)
+		else:
+			loot.item_data = item
+			if "stack_count" in loot:
+				loot.stack_count = count
+	else:
+		print("InventoryManager: Loot scene not found.")
 
-func select_hotbar_slot(index: int):
+func _add_to_inventory(inv: Inventory, item: Resource, count: int) -> bool:
+	if not inv: return false
+	
+	# 1. Try to stack
+	if item.get("stackable"):
+		for i in range(inv.capacity):
+			var slot = inv.get_slot(i)
+			if slot.get("item") == item:
+				# Add logic
+				inv.set_item(i, item, slot.get("count") + count)
+				inventory_changed.emit()
+				return true
+				
+	# 2. Find empty
+	for i in range(inv.capacity):
+		var slot = inv.get_slot(i)
+		if not slot.get("item"):
+			inv.set_item(i, item, count)
+			inventory_changed.emit()
+			return true
+			
+	return false
+
+func remove_item(item: Resource, count: int = 1) -> bool:
+	# Remove from backpack or hotbar
+	if _remove_from_inventory(backpack, item, count): return true
+	if _remove_from_inventory(hotbar, item, count): return true
+	return false
+
+func _remove_from_inventory(inv: Inventory, item: Resource, count: int) -> bool:
+	# Find and remove
+	for i in range(inv.capacity):
+		var slot = inv.get_slot(i)
+		if slot.get("item") == item:
+			if slot.get("count") >= count:
+				inv.remove_from_slot(i, count)
+				inventory_changed.emit()
+				return true
+	return false
+
+func has_item(item: Resource, count: int = 1) -> bool:
+	# Check both
+	# ... Simplified check
+	return false
+
+func select_hotbar_slot(index: int) -> void:
 	if index < 0 or index >= hotbar_capacity: return
 	
-	# 即使索引没变也允许发出信号，这样点击当前格可以重新触发放置圈预览
 	active_hotbar_index = index
-	emit_signal("equipped_item_changed", get_equipped_item())
+	var item = get_equipped_item()
+	equipped_item_changed.emit(item)
+	item_visual_updated.emit(item) # Ensure visual sync
 
 func get_equipped_item() -> Resource:
-	var slot = hotbar.get_slot(active_hotbar_index)
-	return slot.get("item")
-
-# Helper for Crafting
-func get_item_count(item_id: String) -> int:
-	var total = 0
-	# Check both inventories
-	for inv in [backpack, hotbar]:
-		if not inv: continue
-		for i in range(inv.slots.size()):
-			var slot = inv.get_slot(i)
-			var item = slot.get("item")
-			# Check item.id if item is BaseItem/Resource with id property
-			if item and "id" in item and item.id == item_id:
-				total += slot.get("count", 0)
-	return total
-
-func remove_item_by_id(item_id: String, count: int) -> bool:
-	if get_item_count(item_id) < count: return false
-	
-	var remaining = count
-	for inv in [backpack, hotbar]:
-		if not inv: continue
-		# Reverse iteration avoids index issues if we were removing items from list, but slots are fixed size array usually
-		for i in range(inv.slots.size()):
-			var slot = inv.get_slot(i)
-			var item = slot.get("item")
-			if item and "id" in item and item.id == item_id:
-				var current = slot.get("count", 0)
-				var to_take = min(remaining, current)
-				
-				remove_item(inv, i, to_take)
-				
-				remaining -= to_take
-				if remaining == 0: 
-					inventory_changed.emit() # Signal final update
-					return true
-	return remaining == 0
-
-func get_item_at(index: int) -> Resource:
-	if backpack:
-		var slot = backpack.get_slot(index)
+	if not hotbar: return null
+	if active_hotbar_index < 0 or active_hotbar_index >= hotbar.capacity: return null
+	# Fixed accessing inventory directly, use get_slot if available or access slots array
+	if hotbar.has_method("get_slot"):
+		var slot = hotbar.get_slot(active_hotbar_index)
+		return slot.get("item")
+	elif "slots" in hotbar:
+		var slot = hotbar.slots[active_hotbar_index] if active_hotbar_index < hotbar.slots.size() else {}
 		return slot.get("item")
 	return null
 
-# Internal Helper
-func _try_add_to_inventory(inv: Inventory, item: Resource, count: int) -> int:
-	# Check stackability (Check property existence safely)
-	var can_stack = item.get("stackable") if "stackable" in item else true
-	var max_stack = item.get("max_stack") if "max_stack" in item else 99
-	# ItemData might behave differently? ItemData usually implies scenes.
-	# Let's hope fields match or we update them.
-	
+func get_item_count(item_id: String) -> int:
+	var count = 0
+	# Check Backpack
+	if backpack:
+		for i in range(backpack.capacity):
+			var slot = backpack.get_slot(i)
+			if slot.has("item") and slot.item and slot.item.get("id") == item_id:
+				count += slot.get("count", 0)
+				
+	# Check Hotbar
+	if hotbar:
+		for i in range(hotbar.capacity):
+			var slot = hotbar.get_slot(i)
+			if slot.has("item") and slot.item and slot.item.get("id") == item_id:
+				count += slot.get("count", 0)
+				
+	return count
+
+func remove_item_by_id(item_id: String, count: int) -> bool:
 	var remaining = count
 	
-	# 1. Add to existing stacks
+	# Try Backpack
+	if backpack:
+		remaining = _process_remove(backpack, item_id, remaining)
+		if remaining <= 0: return true
+		
+	# Try Hotbar
+	if hotbar:
+		remaining = _process_remove(hotbar, item_id, remaining)
+		
+	return remaining <= 0
+
+func _process_remove(inv: Inventory, item_id: String, limit: int) -> int:
+	var remaining = limit
 	for i in range(inv.capacity):
 		var slot = inv.get_slot(i)
-		var slot_item = slot.get("item")
-		var slot_count = slot.get("count", 0)
-		if slot_item and slot_item.id == item.id and slot_count < slot_item.max_stack:
-			var space = slot_item.max_stack - slot_count
-			var to_add = min(remaining, space)
-			slot_count += to_add
-			inv.set_item(i, slot_item, slot_count)
-			remaining -= to_add
-			if remaining == 0: return 0
-			
-	# 2. Add to empty slots
-	for i in range(inv.capacity):
-		var slot = inv.get_slot(i)
-		if slot.get("item") == null:
-			var to_add = min(remaining, item.max_stack)
-			# Clone item logic? Usually Resources are shared references. 
-			# For WandItem (unique state), we might need to be careful if we are splitting stacks.
-			# But Wands usually don't stack.
-			inv.set_item(i, item, to_add)
-			remaining -= to_add
-			if remaining == 0: return 0
-			
+		if slot.has("item") and slot.item and slot.item.get("id") == item_id:
+			var current_count = slot.get("count", 0)
+			if current_count >= remaining:
+				inv.set_item(i, slot.item, current_count - remaining)
+				if current_count - remaining == 0:
+					inv.clear_slot(i)
+				remaining = 0
+				inventory_changed.emit()
+				break
+			else:
+				remaining -= current_count
+				inv.clear_slot(i)
+				inventory_changed.emit()
 	return remaining

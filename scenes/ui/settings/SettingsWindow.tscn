@@ -1,7 +1,31 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=7 format=3 uid="uid://settings_window_001"]
 
 [ext_resource type="Script" path="res://scenes/ui/settings/settings_window.gd" id="1_script"]
-[ext_resource type="StyleBox" path="res://assets/ui/styles/panel_gold_border.tres" id="2_style"]
+[ext_resource type="Theme" uid="uid://main_menu_theme_001" path="res://ui/theme/main_menu_theme.tres" id="2_theme"]
+[ext_resource type="Shader" path="res://assets/ui/shaders/gradient_vertical_shimmer.gdshader" id="3_shader"]
+[ext_resource type="Script" path="res://ui/effects/ui_button_hover.gd" id="4_hover"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_glass_border"]
+bg_color = Color(0.05, 0.05, 0.08, 0.95)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.4, 0.8, 1, 0.6)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+shadow_color = Color(0, 0.8, 1, 0.2)
+shadow_size = 12
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_title"]
+shader = ExtResource("3_shader")
+shader_parameter/color_top = Color(1, 0.8, 0.4, 1)
+shader_parameter/color_bottom = Color(1, 0.5, 0.2, 1)
+shader_parameter/shimmer_speed = 1.0
+shader_parameter/shimmer_size = 0.1
+shader_parameter/shimmer_intensity = 0.5
 
 [node name="SettingsWindow" type="Control"]
 layout_mode = 3
@@ -10,17 +34,20 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme = ExtResource("2_theme")
 script = ExtResource("1_script")
 
 [node name="BackgroundColor" type="ColorRect" parent="."]
+layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.0823529, 0.0823529, 0.12549, 0.901961)
+color = Color(0, 0, 0, 0.7)
 
-[node name="MainContainer" type="VBoxContainer" parent="."]
+[node name="MainContainer" type="PanelContainer" parent="."]
+layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
@@ -31,69 +58,86 @@ offset_top = -300.0
 offset_right = 400.0
 offset_bottom = 300.0
 grow_horizontal = 2
-grow_vertical = 2
-theme_override_constants/separation = 0.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_glass_border")
 
-[node name="TabBar" type="HBoxContainer" parent="MainContainer"]
+[node name="Layout" type="VBoxContainer" parent="MainContainer"]
 layout_mode = 2
-theme_override_constants/separation = 10.0
+theme_override_constants/separation = 16
 
-[node name="TabGeneral" type="Button" parent="MainContainer/TabBar"]
+[node name="TitleBox" type="HBoxContainer" parent="MainContainer/Layout"]
+layout_mode = 2
+alignment = 1
+
+[node name="Title" type="Label" parent="MainContainer/Layout/TitleBox"]
+material = SubResource("ShaderMaterial_title")
+layout_mode = 2
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.5)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 48
+text = "系统设置"
+
+[node name="TabBar" type="HBoxContainer" parent="MainContainer/Layout"]
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="TabGeneral" type="Button" parent="MainContainer/Layout/TabBar"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(100, 40)
+custom_minimum_size = Vector2(120, 48)
 layout_mode = 2
 toggle_mode = true
 button_pressed = true
 text = "常规"
 
-[node name="TabGraphics" type="Button" parent="MainContainer/TabBar"]
+[node name="TabGraphics" type="Button" parent="MainContainer/Layout/TabBar"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(100, 40)
+custom_minimum_size = Vector2(120, 48)
 layout_mode = 2
 toggle_mode = true
 text = "图形"
 
-[node name="TabAudio" type="Button" parent="MainContainer/TabBar"]
+[node name="TabAudio" type="Button" parent="MainContainer/Layout/TabBar"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(100, 40)
+custom_minimum_size = Vector2(120, 48)
 layout_mode = 2
 toggle_mode = true
 text = "音频"
 
-[node name="TabInput" type="Button" parent="MainContainer/TabBar"]
+[node name="TabInput" type="Button" parent="MainContainer/Layout/TabBar"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(100, 40)
+custom_minimum_size = Vector2(120, 48)
 layout_mode = 2
 toggle_mode = true
 text = "输入"
 
-[node name="ContentBorder" type="PanelContainer" parent="MainContainer"]
+[node name="ContentBorder" type="PanelContainer" parent="MainContainer/Layout"]
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_styles/panel = ExtResource("2_style")
 
-[node name="Margin" type="MarginContainer" parent="MainContainer/ContentBorder"]
+[node name="Margin" type="MarginContainer" parent="MainContainer/Layout/ContentBorder"]
 layout_mode = 2
-theme_override_constants/margin_left = 20
-theme_override_constants/margin_top = 20
-theme_override_constants/margin_right = 20
-theme_override_constants/margin_bottom = 20
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 24
 
-[node name="ContentArea" type="Control" parent="MainContainer/ContentBorder/Margin"]
+[node name="ContentArea" type="Control" parent="MainContainer/Layout/ContentBorder/Margin"]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="Footer" type="HBoxContainer" parent="MainContainer"]
+[node name="Footer" type="HBoxContainer" parent="MainContainer/Layout"]
 layout_mode = 2
-theme_override_constants/separation = 20.0
+theme_override_constants/separation = 32
 alignment = 2
 
-[node name="ResetButton" type="Button" parent="MainContainer/Footer"]
-custom_minimum_size = Vector2(120, 40)
+[node name="ResetButton" type="Button" parent="MainContainer/Layout/Footer"]
+custom_minimum_size = Vector2(160, 48)
 layout_mode = 2
 text = "重置默认"
 
-[node name="ApplyButton" type="Button" parent="MainContainer/Footer"]
-custom_minimum_size = Vector2(120, 40)
+[node name="ApplyButton" type="Button" parent="MainContainer/Layout/Footer"]
+custom_minimum_size = Vector2(160, 48)
 layout_mode = 2
 text = "应用并返回"
+

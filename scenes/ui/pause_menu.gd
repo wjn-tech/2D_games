@@ -1,7 +1,7 @@
 extends Control
 
-@onready var resume_button = $CenterContainer/VBoxContainer/ResumeButton
-@onready var quit_button = $CenterContainer/VBoxContainer/QuitButton
+@onready var resume_button = $CenterContainer/PanelContainer/MarginContainer/VBoxContainer/ResumeButton
+@onready var quit_button = $CenterContainer/PanelContainer/MarginContainer/VBoxContainer/QuitButton
 
 func _ready() -> void:
 	resume_button.pressed.connect(_on_resume_pressed)

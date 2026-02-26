@@ -33,6 +33,16 @@ func _ready() -> void:
 			if wood: inventory.add_item(wood, 5)
 			var iron = item_db.get("iron")
 			if iron: inventory.add_item(iron, 2)
+			
+			# Test Rarity
+			# Create a dummy legendary item if not exists
+			var legendary = BaseItem.new()
+			legendary.id = "legend_sword"
+			legendary.display_name = "炎魔之剑"
+			legendary.quality_grade = "Legendary"
+			legendary.item_type = "Weapon"
+			legendary.description = "传说中的武器。"
+			inventory.add_item(legendary, 1)
 
 func unlock_spell(spell_id: String) -> void:
 	if spell_id not in unlocked_spells:

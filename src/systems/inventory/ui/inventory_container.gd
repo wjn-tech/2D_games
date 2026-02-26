@@ -40,9 +40,34 @@ func _rebuild_slots():
 	for i in range(inventory.capacity):
 		var slot_ui = slot_scene.instantiate()
 		add_child(slot_ui)
-		slot_ui.setup(inventory, i)
-		slot_ui.slot_clicked.connect(_on_slot_clicked)
+		
+		# Polished ItemSlotUI uses `setup(index, data, inv)`, old uses `setup(inventory, index)`
+		if slot_ui.has_method("setup_container"):
+			slot_ui.setup_container(inventory, i)
+		elif slot_ui.has_method("setup"):
+			# Try old way
+			# Check setup signature via trial or explicit check if possible (GDScript hard)
+			# Assume if no setup_container, it expects (inv, id) OR (id, data, inv)
+			# Our ItemSlotUI has (id, data, inv). 
+			# InventorySlotUI (old) has (inv, id).
+			
+			# HACK: Detect by class_name or method arg count if possible, or just try-catch (not in GDScript)
+			# Let's rely on `setup_container` being the bridge for new UI.
+			# If it's the old slot script:
+			if slot_ui.get_script().get_global_name() == "InventorySlotUI":
+				slot_ui.setup(inventory, i)
+			else:
+				# It might be ItemSlotUI expecting 3 args
+				var data = {}
+				if inventory.slots.size() > i:
+					data = inventory.slots[i]
+				slot_ui.setup(i, data, inventory)
+
+		# Forward signals if needed
+		if slot_ui.has_signal("item_selected"):
+			pass # Usually we want to connect this up the chain
+		if slot_ui.has_signal("slot_clicked"):
+			slot_ui.slot_clicked.connect(_on_slot_clicked)
 
 func _on_slot_clicked(_inv, index):
 	item_clicked.emit(index)
-

@@ -3,11 +3,11 @@ extends Control
 var mode: String = "load" # "load" or "save"
 
 @onready var slots = [
-	$Panel/VBoxContainer/Slot1,
-	$Panel/VBoxContainer/Slot2,
-	$Panel/VBoxContainer/Slot3
+	$Panel/MarginContainer/VBoxContainer/Slot1,
+	$Panel/MarginContainer/VBoxContainer/Slot2,
+	$Panel/MarginContainer/VBoxContainer/Slot3
 ]
-@onready var back_button = $Panel/VBoxContainer/BackButton
+@onready var back_button = $Panel/MarginContainer/VBoxContainer/BackButton
 
 var confirmation_dialog: ConfirmationDialog
 var pending_slot_id: int = -1

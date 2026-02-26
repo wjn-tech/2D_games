@@ -1,0 +1,20 @@
+[gd_scene load_steps=2 format=3 uid="uid://digital_dust_001"]
+
+[ext_resource type="Script" path="res://scenes/ui/fx/digital_dust.gd" id="1_scr"]
+
+[node name="DigitalDust" type="CPUParticles2D"]
+emitting = false
+amount = 16
+lifetime = 0.6
+one_shot = true
+explosiveness = 0.9
+randomness = 0.4
+direction = Vector2(0, -1)
+spread = 45.0
+gravity = Vector2(0, -20)
+initial_velocity_min = 30.0
+initial_velocity_max = 60.0
+scale_amount_min = 2.0
+scale_amount_max = 4.0
+color = Color(0, 1, 1, 1)
+script = ExtResource("1_scr")

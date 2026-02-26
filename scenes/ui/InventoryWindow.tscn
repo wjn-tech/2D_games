@@ -1,48 +1,263 @@
-[gd_scene load_steps=5 format=3 uid="uid://cubw1pdtpah52"]
+[gd_scene load_steps=12 format=3 uid="uid://inventory_window_001"]
 
-[ext_resource type="Script" uid="uid://bl38qdyey1t8k" path="res://src/ui/inventory/inventory_ui.gd" id="1_3k82d"]
-[ext_resource type="PackedScene" uid="uid://dcoaig4fe2rea" path="res://scenes/ItemSlot.tscn" id="2_hkkof"]
-[ext_resource type="Script" path="res://src/ui/inventory/crafting_panel.gd" id="3_craft"]
+[ext_resource type="Script" path="res://src/ui/inventory/inventory_ui.gd" id="1_script"]
+[ext_resource type="Theme" uid="uid://inventory_theme_001" path="res://ui/theme/inventory_theme.tres" id="2_theme"]
+[ext_resource type="PackedScene" uid="uid://dcoaig4fe2rea" path="res://scenes/ItemSlot.tscn" id="3_slot_scene"]
+[ext_resource type="PackedScene" uid="uid://stat_block_001" path="res://scenes/ui/inventory/StatBlock.tscn" id="4_stat_block"]
+[ext_resource type="PackedScene" uid="uid://equipment_slot_001" path="res://scenes/ui/inventory/EquipmentSlot.tscn" id="5_equip_slot"]
+[ext_resource type="PackedScene" uid="uid://resource_display_001" path="res://scenes/ui/inventory/ResourceDisplay.tscn" id="6_resource_display"]
+[ext_resource type="PackedScene" uid="uid://item_detail_panel_001" path="res://scenes/ui/inventory/DetailPanel.tscn" id="7_detail_panel"]
+[ext_resource type="PackedScene" uid="uid://trash_slot_001" path="res://scenes/ui/inventory/TrashSlot.tscn" id="8_trash_slot"]
+[ext_resource type="Texture2D" uid="uid://cwyy35q02pdt7" path="res://assets/ui/icons/lucide/sword.svg" id="9_icon_sword"]
+[ext_resource type="Texture2D" uid="uid://dyfq7w6xrg28v" path="res://assets/ui/icons/lucide/scroll.svg" id="10_icon_scroll"]
+[ext_resource type="Material" uid="uid://starfield_flow_material_001" path="res://ui/shaders/inventory/starfield_flow.tres" id="11_glass_mat"]
+[ext_resource type="PackedScene" uid="uid://magic_particles_001" path="res://scenes/ui/fx/MagicParticles.tscn" id="12_fx"]
+[ext_resource type="Texture2D" path="res://assets/ui/icons/icon_pouch.svg" id="13_icon_pouch"]
+[ext_resource type="Script" uid="uid://slu5ha74qsya" path="res://src/ui/inventory/crafting_panel.gd" id="15_crafting"]
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_inv"]
-bg_color = Color(0.1, 0.1, 0.1, 0.85)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.3, 0.3, 0.3, 1)
-
-[node name="InventoryWindow" type="Control"]
+[node name="InventoryWindow" type="Control" node_paths=PackedStringArray("grid_container", "detail_panel", "crafting_view", "inventory_view", "hotbar_view", "equipment_grid", "stats_container", "trash_slot")]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-mouse_filter = 2
-script = ExtResource("1_3k82d")
-slot_scene = ExtResource("2_hkkof")
-grid_container_path = NodePath("MainSplit/InventoryPanel/GridContainer")
+theme = ExtResource("2_theme")
+script = ExtResource("1_script")
+slot_scene = ExtResource("3_slot_scene")
+grid_container = NodePath("GlassPanel/MainLayout/ContentHBox/InventoryColumn/InventoryView/InventoryScroll/GridContainer")
+detail_panel = NodePath("GlassPanel/MainLayout/ContentHBox/DetailColumn/DetailPanel")
+crafting_view = NodePath("GlassPanel/MainLayout/ContentHBox/InventoryColumn/CraftingView")
+inventory_view = NodePath("GlassPanel/MainLayout/ContentHBox/InventoryColumn/InventoryView")
+hotbar_view = NodePath("GlassPanel/MainLayout/ContentHBox/InventoryColumn/HotbarContainer")
+equipment_grid = NodePath("GlassPanel/MainLayout/ContentHBox/StatsColumn/EquipmentGrid")
+stats_container = NodePath("GlassPanel/MainLayout/ContentHBox/StatsColumn/StatsContainer")
+trash_slot = NodePath("GlassPanel/MainLayout/ContentHBox/DetailColumn/Control/TrashSlot")
 
-[node name="MainSplit" type="HSplitContainer" parent="."]
+[node name="ParticleAnchor" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="MagicParticles" parent="ParticleAnchor" instance=ExtResource("12_fx")]
+position = Vector2(20, 20)
+
+[node name="BackBufferCopy" type="BackBufferCopy" parent="."]
+copy_mode = 2
+rect = Rect2(-100, -100, 200, 200)
+
+[node name="GlassPanel" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -600.0
+offset_top = -350.0
+offset_right = 600.0
+offset_bottom = 350.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_type_variation = &"GlassPanel"
+
+[node name="GlassBackground" type="ColorRect" parent="GlassPanel"]
+material = ExtResource("11_glass_mat")
+layout_mode = 2
+mouse_filter = 2
+
+[node name="MainLayout" type="VBoxContainer" parent="GlassPanel"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="GlassPanel/MainLayout"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+alignment = 1
+
+[node name="TitleLabel" type="Label" parent="GlassPanel/MainLayout/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.9, 0.8, 1, 1)
+theme_override_font_sizes/font_size = 28
+text = "  Magic Backpack"
+vertical_alignment = 1
+
+[node name="ResourceSpacer" type="Control" parent="GlassPanel/MainLayout/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ContentHBox" type="HBoxContainer" parent="GlassPanel/MainLayout"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 16
+
+[node name="Footer" type="HBoxContainer" parent="GlassPanel/MainLayout"]
+layout_mode = 2
+alignment = 2
+
+[node name="VersionLabel" type="Label" parent="GlassPanel/MainLayout/Footer"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.5, 0.5, 0.7, 0.4)
+theme_override_font_sizes/font_size = 10
+text = "Magic Backpack v1.0  "
+horizontal_alignment = 2
+
+[node name="StatsColumn" type="VBoxContainer" parent="GlassPanel/MainLayout/ContentHBox"]
+custom_minimum_size = Vector2(280, 0)
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="LabelStats" type="Label" parent="GlassPanel/MainLayout/ContentHBox/StatsColumn"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Character Stats"
+horizontal_alignment = 1
+
+[node name="StatsContainer" type="VBoxContainer" parent="GlassPanel/MainLayout/ContentHBox/StatsColumn"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="StatBlockHealth" parent="GlassPanel/MainLayout/ContentHBox/StatsColumn/StatsContainer" instance=ExtResource("4_stat_block")]
+layout_mode = 2
+
+[node name="StatBlockMana" parent="GlassPanel/MainLayout/ContentHBox/StatsColumn/StatsContainer" instance=ExtResource("4_stat_block")]
+layout_mode = 2
+
+[node name="StatBlockAttack" parent="GlassPanel/MainLayout/ContentHBox/StatsColumn/StatsContainer" instance=ExtResource("4_stat_block")]
+layout_mode = 2
+
+[node name="HSeparator" type="HSeparator" parent="GlassPanel/MainLayout/ContentHBox/StatsColumn"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="LabelEquip" type="Label" parent="GlassPanel/MainLayout/ContentHBox/StatsColumn"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Equipment"
+horizontal_alignment = 1
+
+[node name="EquipmentGrid" type="GridContainer" parent="GlassPanel/MainLayout/ContentHBox/StatsColumn"]
+layout_mode = 2
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 8
+columns = 3
+
+[node name="SlotHead" parent="GlassPanel/MainLayout/ContentHBox/StatsColumn/EquipmentGrid" instance=ExtResource("5_equip_slot")]
+layout_mode = 2
+equip_slot_type = "Head"
+
+[node name="SlotChest" parent="GlassPanel/MainLayout/ContentHBox/StatsColumn/EquipmentGrid" instance=ExtResource("5_equip_slot")]
+layout_mode = 2
+equip_slot_type = "Chest"
+
+[node name="SlotOffhand" parent="GlassPanel/MainLayout/ContentHBox/StatsColumn/EquipmentGrid" instance=ExtResource("5_equip_slot")]
+layout_mode = 2
+equip_slot_type = "Offhand"
+
+[node name="SlotLegs" parent="GlassPanel/MainLayout/ContentHBox/StatsColumn/EquipmentGrid" instance=ExtResource("5_equip_slot")]
+layout_mode = 2
+equip_slot_type = "Legs"
+
+[node name="SlotFeet" parent="GlassPanel/MainLayout/ContentHBox/StatsColumn/EquipmentGrid" instance=ExtResource("5_equip_slot")]
+layout_mode = 2
+equip_slot_type = "Feet"
+
+[node name="SlotRing" parent="GlassPanel/MainLayout/ContentHBox/StatsColumn/EquipmentGrid" instance=ExtResource("5_equip_slot")]
+layout_mode = 2
+equip_slot_type = "Ring"
+
+[node name="InventoryColumn" type="VBoxContainer" parent="GlassPanel/MainLayout/ContentHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="TopBar" type="HBoxContainer" parent="GlassPanel/MainLayout/ContentHBox/InventoryColumn"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="TabInv" type="Button" parent="GlassPanel/MainLayout/ContentHBox/InventoryColumn/TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(100, 40)
+layout_mode = 2
+toggle_mode = true
+button_pressed = true
+text = "Inventory"
+icon = ExtResource("9_icon_sword")
+
+[node name="TabCraft" type="Button" parent="GlassPanel/MainLayout/ContentHBox/InventoryColumn/TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(100, 40)
+layout_mode = 2
+toggle_mode = true
+text = "Crafting"
+icon = ExtResource("10_icon_scroll")
+
+[node name="InventoryView" type="VBoxContainer" parent="GlassPanel/MainLayout/ContentHBox/InventoryColumn"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="InventoryScroll" type="ScrollContainer" parent="GlassPanel/MainLayout/ContentHBox/InventoryColumn/InventoryView"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="GridContainer" type="GridContainer" parent="GlassPanel/MainLayout/ContentHBox/InventoryColumn/InventoryView/InventoryScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 6
+columns = 6
+
+[node name="CraftingView" type="Control" parent="GlassPanel/MainLayout/ContentHBox/InventoryColumn"]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+script = ExtResource("15_crafting")
+
+[node name="HotbarContainer" type="HBoxContainer" parent="GlassPanel/MainLayout/ContentHBox/InventoryColumn"]
+custom_minimum_size = Vector2(0, 64)
+layout_mode = 2
+theme_override_constants/separation = 8
+alignment = 1
+
+[node name="ResourcesBar" type="HBoxContainer" parent="GlassPanel/MainLayout/ContentHBox/InventoryColumn"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="GoldDisplay" parent="GlassPanel/MainLayout/ContentHBox/InventoryColumn/ResourcesBar" instance=ExtResource("6_resource_display")]
+layout_mode = 2
+icon_texture = ExtResource("13_icon_pouch")
+
+[node name="DetailColumn" type="VBoxContainer" parent="GlassPanel/MainLayout/ContentHBox"]
+custom_minimum_size = Vector2(280, 0)
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="DetailPanel" parent="GlassPanel/MainLayout/ContentHBox/DetailColumn" instance=ExtResource("7_detail_panel")]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Control" type="Control" parent="GlassPanel/MainLayout/ContentHBox/DetailColumn"]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+
+[node name="TrashSlot" parent="GlassPanel/MainLayout/ContentHBox/DetailColumn/Control" instance=ExtResource("8_trash_slot")]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
 grow_horizontal = 2
 grow_vertical = 2
-split_offset = 100
-
-[node name="InventoryPanel" type="PanelContainer" parent="MainSplit"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_styles/panel = SubResource("StyleBoxFlat_inv")
-
-[node name="GridContainer" type="GridContainer" parent="MainSplit/InventoryPanel"]
-layout_mode = 2
-columns = 5
-
-[node name="CraftingPanel" type="PanelContainer" parent="MainSplit"]
-custom_minimum_size = Vector2(300, 0)
-layout_mode = 2
-script = ExtResource("3_craft")

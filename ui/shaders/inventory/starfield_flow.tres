@@ -1,0 +1,10 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3 uid="uid://starfield_flow_material_001"]
+
+[ext_resource type="Shader" path="res://ui/shaders/inventory/starfield_flow.gdshader" id="1_shader"]
+
+[resource]
+shader = ExtResource("1_shader")
+shader_parameter/bg_color = Color(0.02, 0.02, 0.1, 0.95)
+shader_parameter/flow_color = Color(0, 0.8, 1, 0.3)
+shader_parameter/speed = 0.2
+shader_parameter/star_density = 0.02

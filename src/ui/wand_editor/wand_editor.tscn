@@ -1,8 +1,10 @@
-[gd_scene load_steps=4 format=3 uid="uid://wandeditor"]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://src/ui/wand_editor/wand_editor.gd" id="1_main"]
 [ext_resource type="Script" path="res://src/ui/wand_editor/visual_grid.gd" id="2_visual"]
 [ext_resource type="Script" path="res://src/ui/wand_editor/logic_board.gd" id="3_logic"]
+
+[sub_resource type="ButtonGroup" id="ButtonGroup_mode"]
 
 [node name="WandEditor" type="Control"]
 layout_mode = 3
@@ -48,103 +50,94 @@ layout_mode = 2
 layout_mode = 2
 text = "保存并关闭"
 
-[node name="TabContainer" type="TabContainer" parent="VBoxContainer"]
+[node name="MainSplit" type="HSplitContainer" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+split_offset = 250
+
+[node name="LeftSidebar" type="VBoxContainer" parent="VBoxContainer/MainSplit"]
+layout_mode = 2
+
+[node name="ModeSwitcher" type="HBoxContainer" parent="VBoxContainer/MainSplit/LeftSidebar"]
+layout_mode = 2
+alignment = 1
+
+[node name="VisualModeButton" type="Button" parent="VBoxContainer/MainSplit/LeftSidebar/ModeSwitcher"]
+layout_mode = 2
+size_flags_horizontal = 3
+toggle_mode = true
+button_pressed = true
+button_group = SubResource("ButtonGroup_mode")
+text = "外观设计"
+
+[node name="LogicModeButton" type="Button" parent="VBoxContainer/MainSplit/LeftSidebar/ModeSwitcher"]
+layout_mode = 2
+size_flags_horizontal = 3
+toggle_mode = true
+button_group = SubResource("ButtonGroup_mode")
+text = "逻辑编程"
+
+[node name="LibraryPanel" type="VBoxContainer" parent="VBoxContainer/MainSplit/LeftSidebar"]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="Visual" type="Control" parent="VBoxContainer/TabContainer"]
-layout_mode = 2
-metadata/_tab_index = 0
-name = "外观设计"
-
-[node name="MainLayout" type="HSplitContainer" parent="VBoxContainer/TabContainer/Visual"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-split_offset = 200
-
-[node name="LibraryPanel" type="VBoxContainer" parent="VBoxContainer/TabContainer/Visual/MainLayout"]
-layout_mode = 2
-
-[node name="Title" type="Label" parent="VBoxContainer/TabContainer/Visual/MainLayout/LibraryPanel"]
+[node name="Title" type="Label" parent="VBoxContainer/MainSplit/LeftSidebar/LibraryPanel"]
 layout_mode = 2
 text = "外观模块库"
 horizontal_alignment = 1
 
-[node name="ModuleScroll" type="ScrollContainer" parent="VBoxContainer/TabContainer/Visual/MainLayout/LibraryPanel"]
+[node name="ModuleScroll" type="ScrollContainer" parent="VBoxContainer/MainSplit/LeftSidebar/LibraryPanel"]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="ModulePalette" type="GridContainer" parent="VBoxContainer/TabContainer/Visual/MainLayout/LibraryPanel/ModuleScroll"]
+[node name="ModulePalette" type="GridContainer" parent="VBoxContainer/MainSplit/LeftSidebar/LibraryPanel/ModuleScroll"]
 layout_mode = 2
 columns = 3
 
-[node name="WorkspaceSplit" type="HSplitContainer" parent="VBoxContainer/TabContainer/Visual/MainLayout"]
+[node name="LibraryContainer" type="VBoxContainer" parent="VBoxContainer/MainSplit/LeftSidebar"]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Label" type="Label" parent="VBoxContainer/MainSplit/LeftSidebar/LibraryContainer"]
+layout_mode = 2
+text = "逻辑节点库"
+horizontal_alignment = 1
+
+[node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer/MainSplit/LeftSidebar/LibraryContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="PaletteGrid" type="GridContainer" parent="VBoxContainer/MainSplit/LeftSidebar/LibraryContainer/ScrollContainer"]
+layout_mode = 2
+columns = 2
+
+[node name="RightSplit" type="HSplitContainer" parent="VBoxContainer/MainSplit"]
 layout_mode = 2
 size_flags_horizontal = 3
 split_offset = -250
 
-[node name="GridArea" type="Control" parent="VBoxContainer/TabContainer/Visual/MainLayout/WorkspaceSplit"]
+[node name="CenterWorkspace" type="Control" parent="VBoxContainer/MainSplit/RightSplit"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="VisualGrid" type="Control" parent="VBoxContainer/TabContainer/Visual/MainLayout/WorkspaceSplit/GridArea"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-script = ExtResource("2_visual")
-
-[node name="StatsPanel" type="VBoxContainer" parent="VBoxContainer/TabContainer/Visual/MainLayout/WorkspaceSplit"]
-layout_mode = 2
-
-[node name="StatsTitle" type="Label" parent="VBoxContainer/TabContainer/Visual/MainLayout/WorkspaceSplit/StatsPanel"]
-layout_mode = 2
-text = "构造详情"
-horizontal_alignment = 1
-
-[node name="StatsDisplay" type="RichTextLabel" parent="VBoxContainer/TabContainer/Visual/MainLayout/WorkspaceSplit/StatsPanel"]
-layout_mode = 2
-size_flags_vertical = 3
-bbcode_enabled = true
-text = "正在读取法杖数据..."
-
-[node name="Logic" type="Control" parent="VBoxContainer/TabContainer"]
-visible = false
-layout_mode = 2
-metadata/_tab_index = 1
-name = "逻辑编程"
-
-[node name="HSplitContainer" type="HSplitContainer" parent="VBoxContainer/TabContainer/Logic"]
+[node name="VisualGrid" type="Control" parent="VBoxContainer/MainSplit/RightSplit/CenterWorkspace"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-split_offset = 200
+script = ExtResource("2_visual")
 
-[node name="LibraryContainer" type="VBoxContainer" parent="VBoxContainer/TabContainer/Logic/HSplitContainer"]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="VBoxContainer/TabContainer/Logic/HSplitContainer/LibraryContainer"]
-layout_mode = 2
-text = "逻辑节点库"
-horizontal_alignment = 1
-
-[node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer/TabContainer/Logic/HSplitContainer/LibraryContainer"]
-layout_mode = 2
-size_flags_vertical = 3
-
-[node name="PaletteGrid" type="GridContainer" parent="VBoxContainer/TabContainer/Logic/HSplitContainer/LibraryContainer/ScrollContainer"]
-layout_mode = 2
-columns = 2
-
-[node name="LogicBoard" type="GraphEdit" parent="VBoxContainer/TabContainer/Logic/HSplitContainer"]
-layout_mode = 2
+[node name="LogicBoard" type="GraphEdit" parent="VBoxContainer/MainSplit/RightSplit/CenterWorkspace"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 right_disconnects = true
@@ -157,4 +150,23 @@ snapping_enabled = true
 snapping_distance = 64
 script = ExtResource("3_logic")
 
+[node name="RightSidebar" type="VBoxContainer" parent="VBoxContainer/MainSplit/RightSplit"]
+layout_mode = 2
+
+[node name="StatsPanel" type="VBoxContainer" parent="VBoxContainer/MainSplit/RightSplit/RightSidebar"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="StatsTitle" type="Label" parent="VBoxContainer/MainSplit/RightSplit/RightSidebar/StatsPanel"]
+layout_mode = 2
+text = "构造详情"
+horizontal_alignment = 1
+
+[node name="StatsContainer" type="VBoxContainer" parent="VBoxContainer/MainSplit/RightSplit/RightSidebar/StatsPanel"]
+layout_mode = 2
+size_flags_vertical = 3
+
 [connection signal="pressed" from="VBoxContainer/HBoxControls/SaveButton" to="." method="_on_save_pressed"]
+[connection signal="toggled" from="VBoxContainer/MainSplit/LeftSidebar/ModeSwitcher/VisualModeButton" to="." method="_on_visual_mode_toggled"]
+[connection signal="toggled" from="VBoxContainer/MainSplit/LeftSidebar/ModeSwitcher/LogicModeButton" to="." method="_on_logic_mode_toggled"]
+

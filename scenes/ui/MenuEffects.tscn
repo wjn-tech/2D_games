@@ -1,0 +1,85 @@
+[gd_scene load_steps=5 format=3 uid="uid://menu_effects_001"]
+
+[ext_resource type="Texture2D" path="res://assets/ui/particles/sparkle.svg" id="1_sparkle"]
+[ext_resource type="Texture2D" path="res://assets/ui/particles/rune.svg" id="2_rune"]
+[ext_resource type="Shader" path="res://assets/ui/shaders/nebula.gdshader" id="3_nebula_shader"]
+[ext_resource type="Script" path="res://scenes/ui/menu_effects.gd" id="1_script"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_nebula"]
+shader = ExtResource("3_nebula_shader")
+shader_parameter/nebula_color = Color(0.2, 0.05, 0.4, 0.4)
+shader_parameter/speed = 0.05
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_sparkles"]
+emission_shape = 3
+emission_box_extents = Vector3(960, 540, 1)
+particle_flag_disable_z = true
+spread = 180.0
+gravity = Vector3(0, -10, 0)
+initial_velocity_min = 10.0
+initial_velocity_max = 30.0
+angular_velocity_min = -20.0
+angular_velocity_max = 20.0
+scale_min = 0.5
+scale_max = 1.0
+color = Color(1, 1, 1, 0.490196)
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_runes"]
+emission_shape = 3
+emission_box_extents = Vector3(960, 540, 1)
+particle_flag_disable_z = true
+spread = 180.0
+gravity = Vector3(0, 5, 0)
+initial_velocity_min = 5.0
+initial_velocity_max = 15.0
+angular_velocity_min = -10.0
+angular_velocity_max = 10.0
+scale_min = 0.8
+scale_max = 1.2
+color = Color(0.6, 0.8, 1, 0.3)
+hue_variation_min = -0.1
+hue_variation_max = 0.1
+
+[node name="MenuEffects" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+script = ExtResource("1_script")
+grow_vertical = 2
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 12, 0.02, 0.05, 1)
+
+[node name="Nebula" type="ColorRect" parent="."]
+material = SubResource("ShaderMaterial_nebula")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.05, 0.05, 0.1, 1)
+
+[node name="Sparkles" type="GPUParticles2D" parent="."]
+position = Vector2(960, 540)
+amount = 40
+process_material = SubResource("ParticleProcessMaterial_sparkles")
+texture = ExtResource("1_sparkle")
+lifetime = 6.0
+preprocess = 2.0
+
+[node name="Runes" type="GPUParticles2D" parent="."]
+position = Vector2(960, 540)
+amount = 15
+process_material = SubResource("ParticleProcessMaterial_runes")
+texture = ExtResource("2_rune")
+lifetime = 10.0
+preprocess = 5.0

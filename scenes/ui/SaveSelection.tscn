@@ -1,6 +1,21 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=5 format=3 uid="uid://save_selection_001"]
 
 [ext_resource type="Script" path="res://scenes/ui/save_selection.gd" id="1_script"]
+[ext_resource type="Theme" uid="uid://glass_theme_001" path="res://assets/ui/theme/glass_theme.tres" id="2_theme"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_glass_panel"]
+bg_color = Color(0.05, 0.05, 0.1, 0.7)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.3, 0.3, 0.4, 0.5)
+corner_radius_top_left = 16
+corner_radius_top_right = 16
+corner_radius_bottom_right = 16
+corner_radius_bottom_left = 16
+shadow_color = Color(0, 0, 0, 0.3)
+shadow_size = 4
 
 [node name="SaveSelection" type="Control"]
 layout_mode = 3
@@ -11,7 +26,16 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_script")
 
-[node name="Panel" type="Panel" parent="."]
+[node name="BackgroundColor" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.0, 0.0, 0.0, 0.75)
+
+[node name="Panel" type="PanelContainer" parent="."]
 custom_minimum_size = Vector2(600, 400)
 layout_mode = 1
 anchors_preset = 8
@@ -25,43 +49,57 @@ offset_right = 300.0
 offset_bottom = 200.0
 grow_horizontal = 2
 grow_vertical = 2
+theme = ExtResource("2_theme")
+theme_override_styles/panel = SubResource("StyleBoxFlat_glass_panel")
 
-[node name="VBoxContainer" type="VBoxContainer" parent="Panel"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_constants/separation = 20.0
+[node name="MarginContainer" type="MarginContainer" parent="Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 32
+theme_override_constants/margin_top = 32
+theme_override_constants/margin_right = 32
+theme_override_constants/margin_bottom = 32
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Panel/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 24.0
 alignment = 1
 
-[node name="Title" type="Label" parent="Panel/VBoxContainer"]
+[node name="Title" type="Label" parent="Panel/MarginContainer/VBoxContainer"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 24
+theme = ExtResource("2_theme")
+theme_override_font_sizes/font_size = 32
 text = "选择存档"
 horizontal_alignment = 1
 
-[node name="Slot1" type="Button" parent="Panel/VBoxContainer"]
-custom_minimum_size = Vector2(400, 60)
+[node name="HSeparator" type="HSeparator" parent="Panel/MarginContainer/VBoxContainer"]
 layout_mode = 2
-size_flags_horizontal = 4
+theme_override_constants/separation = 20
+
+[node name="Slot1" type="Button" parent="Panel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+theme = ExtResource("2_theme")
 text = "存档 1 - 空"
 
-[node name="Slot2" type="Button" parent="Panel/VBoxContainer"]
-custom_minimum_size = Vector2(400, 60)
+[node name="Slot2" type="Button" parent="Panel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
-size_flags_horizontal = 4
+theme = ExtResource("2_theme")
 text = "存档 2 - 空"
 
-[node name="Slot3" type="Button" parent="Panel/VBoxContainer"]
-custom_minimum_size = Vector2(400, 60)
+[node name="Slot3" type="Button" parent="Panel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
-size_flags_horizontal = 4
+theme = ExtResource("2_theme")
 text = "存档 3 - 空"
 
-[node name="BackButton" type="Button" parent="Panel/VBoxContainer"]
-custom_minimum_size = Vector2(100, 40)
+[node name="Spacer" type="Control" parent="Panel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="BackButton" type="Button" parent="Panel/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(120, 48)
 layout_mode = 2
 size_flags_horizontal = 4
+theme = ExtResource("2_theme")
 text = "返回"

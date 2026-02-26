@@ -1,0 +1,35 @@
+[gd_scene load_steps=2 format=3 uid="uid://trash_slot_001"]
+
+[ext_resource type="Script" path="res://scenes/ui/inventory/trash_slot_ui.gd" id="1_script"]
+
+[node name="TrashSlot" type="PanelContainer"]
+custom_minimum_size = Vector2(80, 80)
+offset_right = 80.0
+offset_bottom = 80.0
+theme_type_variation = &"TrashSlot"
+script = ExtResource("1_script")
+
+[node name="CenterContainer" type="CenterContainer" parent="."]
+layout_mode = 2
+
+[node name="Icon" type="TextureRect" parent="CenterContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(32, 32)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+modulate = Color(0.8, 0.4, 0.4, 1)
+
+[node name="Label" type="Label" parent="CenterContainer/Icon"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 0.5)
+text = "Trash"
+horizontal_alignment = 1
+vertical_alignment = 1
+visible = true
+

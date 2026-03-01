@@ -1,7 +1,7 @@
 [gd_scene load_steps=12 format=3 uid="uid://inventory_window_001"]
 
 [ext_resource type="Script" path="res://src/ui/inventory/inventory_ui.gd" id="1_script"]
-[ext_resource type="Theme" uid="uid://inventory_theme_001" path="res://ui/theme/inventory_theme.tres" id="2_theme"]
+[ext_resource type="Theme" uid="uid://pixel_theme_001" path="res://ui/theme/pixel_theme.tres" id="2_theme"]
 [ext_resource type="PackedScene" uid="uid://dcoaig4fe2rea" path="res://scenes/ItemSlot.tscn" id="3_slot_scene"]
 [ext_resource type="PackedScene" uid="uid://stat_block_001" path="res://scenes/ui/inventory/StatBlock.tscn" id="4_stat_block"]
 [ext_resource type="PackedScene" uid="uid://equipment_slot_001" path="res://scenes/ui/inventory/EquipmentSlot.tscn" id="5_equip_slot"]
@@ -34,28 +34,6 @@ equipment_grid = NodePath("GlassPanel/MainLayout/ContentHBox/StatsColumn/Equipme
 stats_container = NodePath("GlassPanel/MainLayout/ContentHBox/StatsColumn/StatsContainer")
 trash_slot = NodePath("GlassPanel/MainLayout/ContentHBox/DetailColumn/Control/TrashSlot")
 
-[node name="ParticleAnchor" type="Control" parent="."]
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -20.0
-offset_top = -20.0
-offset_right = 20.0
-offset_bottom = 20.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-
-[node name="MagicParticles" parent="ParticleAnchor" instance=ExtResource("12_fx")]
-position = Vector2(20, 20)
-
-[node name="BackBufferCopy" type="BackBufferCopy" parent="."]
-copy_mode = 2
-rect = Rect2(-100, -100, 200, 200)
-
 [node name="GlassPanel" type="PanelContainer" parent="."]
 layout_mode = 1
 anchors_preset = 8
@@ -72,9 +50,9 @@ grow_vertical = 2
 theme_type_variation = &"GlassPanel"
 
 [node name="GlassBackground" type="ColorRect" parent="GlassPanel"]
-material = ExtResource("11_glass_mat")
 layout_mode = 2
 mouse_filter = 2
+color = Color(0.1, 0.1, 0.1, 0.95)
 
 [node name="MainLayout" type="VBoxContainer" parent="GlassPanel"]
 layout_mode = 2

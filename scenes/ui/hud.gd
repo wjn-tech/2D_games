@@ -3,13 +3,128 @@ extends Control
 @onready var time_label: Label = $MarginContainer/TopRight/TimeLabel
 @onready var quest_list: VBoxContainer = $MarginContainer/TopRight/QuestList
 @onready var damage_overlay: ColorRect = $DamageOverlay
+@onready var top_right_container: VBoxContainer = $MarginContainer/TopRight
 
-var wand_mana_bar: ProgressBar
+var wand_mana_bar: ProgressBar # Kept for backward compat or if needed
 var wand_mana_label: Label
+var player_status: PlayerStatusWidget
+var stats_widget: Control # V3: Reference to the toggleable stats panel
 var item_tooltip_label: Label
 
 func _ready() -> void:
+	# Load Styles
+	_apply_global_styles()
+	
+	# Instantiate Status Widget
+	var status_scene = preload("res://src/ui/hud/player_status_widget.tscn")
+	player_status = status_scene.instantiate()
+	
+	# Create Top Left Wrapper
+	var top_left_container = VBoxContainer.new()
+	top_left_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	$MarginContainer.add_child(top_left_container)
+	# Use shrunk flags for the container itself so it adheres to Top-Left of MarginContainer
+	top_left_container.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	top_left_container.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	# Force it to be minimal size
+	top_left_container.custom_minimum_size = Vector2(250, 100)
+	
+	# Add Spacer to push it down
+	# var spacer = Control.new()
+	# spacer.custom_minimum_size = Vector2(0, 80)
+	# top_left_container.add_child(spacer)
+	
+	top_left_container.add_child(player_status)
+	
+	# Ensure player status respects this
+	player_status.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	player_status.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+
+	
+	# Instantiate Hotbar (Bottom Center)
+	_create_hotbar()
+	
+	# Instantiate Secondary Stats (Toggleable Modal)
+	# Replace old AttributeDisplay
+	var old_attr = $MarginContainer/TopRight/AttributeDisplay
+	if old_attr:
+		old_attr.visible = false # Hide old one
+		old_attr.queue_free()
+		
+	var stats_scene = preload("res://src/ui/hud/character_stats_widget.tscn")
+	stats_widget = stats_scene.instantiate()
+	
+	# Add to a CenterContainer to make it a modal overlay
+	var center_cont = CenterContainer.new()
+	center_cont.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center_cont.mouse_filter = Control.MOUSE_FILTER_IGNORE # Let clicks pass through if empty
+	add_child(center_cont)
+	center_cont.add_child(stats_widget)
+
+	# V3: Start hidden
+	stats_widget.visible = false
+	
 	add_to_group("hud")
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("toggle_character_sheet"):
+		if stats_widget:
+			stats_widget.visible = not stats_widget.visible
+			if stats_widget.visible:
+				# Bring to front just in case
+				stats_widget.get_parent().move_to_front()
+
+
+func _create_hotbar() -> void:
+	print("HUD: Creating HotbarWidget...")
+	
+	# 1. Remove any existing hotbars (cleanup old instances)
+	for child in get_children():
+		if child.name == "TopLeftHotbar":
+			child.queue_free()
+
+	# 2. Instantiate New Hotbar
+	var hb_scene = load("res://src/ui/hud/hotbar_widget.tscn")
+	if not hb_scene:
+		print("HUD Error: Failed to load hotbar_widget.tscn")
+		return
+		
+	var hb = hb_scene.instantiate()
+	hb.name = "HotbarWidget"
+	
+	# 3. Create Container
+	# We use a simple Control positioned absolutely to avoid layout conflicts
+	var container = Control.new()
+	container.name = "TopLeftHotbar"
+	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	container.z_index = 10
+	add_child(container)
+	
+	# 4. Add Hotbar to Container
+	container.add_child(hb)
+	
+	# 5. Position Hotbar
+	# Absolute position: 290px from left (20px margin + 250px status width + 20px gap)
+	hb.position = Vector2(290, 20)
+	
+	# 6. Ensure visibility
+	hb.visible = true
+	hb.modulate = Color(1, 1, 1, 1) # Ensure opacity
+	
+	print("HUD: Hotbar created at ", hb.position)
+	
+	# 7. Connect Data
+	call_deferred("_setup_hotbar_data", hb)
+
+func _setup_hotbar_data(hb) -> void:
+	if GameState.inventory and GameState.inventory.hotbar:
+		hb.setup(GameState.inventory.hotbar)
+	
+	# Start selection tracking
+	if hb.has_method("_refresh_selection"):
+		hb._refresh_selection()
+
+
 	if damage_overlay:
 		damage_overlay.modulate.a = 0.0
 	# 初始更新
@@ -36,33 +151,72 @@ func _ready() -> void:
 	$Sidebar/HousingBtn.pressed.connect(_on_housing_btn_pressed)
 	$Sidebar/InventoryBtn.pressed.connect(_on_inventory_btn_pressed)
 
-func _input(event: InputEvent) -> void:
-	if event.is_action_pressed("settlement"):
-		_on_housing_btn_pressed()
-
-func _on_housing_btn_pressed():
+func _on_housing_btn_pressed() -> void:
 	if UIManager:
-		# Toggle 逻辑兼容
 		if UIManager.active_windows.has("HousingMenu"):
 			UIManager.close_window("HousingMenu")
 		else:
 			UIManager.open_window("HousingMenu", "res://src/ui/housing/housing_menu.tscn")
 
-func _on_inventory_btn_pressed():
+func _on_inventory_btn_pressed() -> void:
 	if UIManager:
 		if UIManager.active_windows.has("Inventory"):
 			UIManager.close_window("Inventory")
 		else:
 			UIManager.open_window("Inventory", "res://scenes/ui/InventoryWindow.tscn")
 
-func _process(_delta: float) -> void:
-	_update_hud()
+func _apply_global_styles() -> void:
+	# Apply pixel-art styles to existing nodes programmatically
+	
+	# 1. TopRight Background / Minimap Style
+	var minimap = $MarginContainer/TopRight/Minimap
+	if minimap:
+		var panel = minimap.get_node_or_null("Panel")
+		if panel:
+			panel.add_theme_stylebox_override("panel", HUDStyles.get_panel_style())
+			
+	# Style World Info
+	var world_info = $MarginContainer/TopRight/WorldInfoUI
+	if world_info:
+		# Add a background if possible, or just style labels
+		# Since WorldInfoUI is a VBox, we can't add stylebox directly.
+		# We can wrap it or just rely on text shadows (already present in tscn).
+		# Let's ensure text shadows are strong
+		for child in world_info.get_children():
+			if child is Label:
+				child.add_theme_color_override("font_outline_color", Color.BLACK)
+				child.add_theme_constant_override("outline_size", 4)
+	
+	# Style TimeLabel (if it's separate from WorldInfo)
+	if time_label:
+		# V3 Change: Time is now shown in WorldInfoUI. Hide this redundant label.
+		time_label.visible = false
+		
+		# time_label.add_theme_stylebox_override("normal", HUDStyles.get_panel_style())
+		# time_label.add_theme_color_override("font_shadow_color", Color.BLACK)
+		# time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		# Add padding
+		# time_label.add_theme_constant_override("margin_left", 8) 
+		# Label doesn't support margin constants seamlessly without stylebox content margins
+		# The stylebox defined in HUDStyles has content margins if we set them, let's check HUDStyles.
+
+	var sidebar = $Sidebar
+	for btn in sidebar.get_children():
+		if btn is Button:
+			btn.add_theme_stylebox_override("normal", HUDStyles.get_button_style_normal())
+			btn.add_theme_stylebox_override("hover", HUDStyles.get_button_style_hover())
+			btn.add_theme_stylebox_override("pressed", HUDStyles.get_button_style_pressed())
+	# Update Status Widget logic is internal to it
 
 func _update_hud() -> void:
 	if GameState.player_data:
-		pass # 金币显示已迁移或需重新挂载
+		pass 
 	
-	_update_wand_mana_ui()
+	# _update_wand_mana_ui() # Deprecated, using PlayerStatusWidget
+
+# Deprecated or repurposed
+# func _update_wand_mana_ui() -> void:
+# 	pass
 
 func _update_wand_mana_ui() -> void:
 	var player = get_tree().get_first_node_in_group("player")
@@ -73,6 +227,7 @@ func _update_wand_mana_ui() -> void:
 	var wand = player.current_wand
 	if not wand_mana_bar:
 		_create_wand_mana_bar()
+
 	
 	wand_mana_bar.visible = true
 	if wand.embryo:

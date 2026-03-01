@@ -4,4 +4,4 @@
 [x] 4. Update inventory_manager.gd to include use_slot logic for item consumption/equipping.
 [x] 5. Modify inventory_ui.gd to connect double-click signals to the Manager's use_slot.
 [ ] 6. (Optional) Reorganize InventoryWindow.tscn layout if visual structure is still lacking.
-[ ] 7. (Optional) Implement Sound Feedback for inventory interactions.
+[ ] 7. (Optional) Implement Sound Feedback for inventory interactions.[x] 8. Implement Spell VFX Optimization per spec (optimize-spell-vfx)

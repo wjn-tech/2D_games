@@ -28,6 +28,21 @@ func _ready() -> void:
 	# 加入信号监听，确保属性更新时立即刷新，而不是只靠 _process
 	if EventBus:
 		EventBus.player_data_refreshed.connect(_update_full_display)
+
+	# Apply Pixel Art Styles
+	_apply_styles()
+
+func _apply_styles() -> void:
+	if health_bar:
+		health_bar.add_theme_stylebox_override("fill", HUDStyles.get_bar_fg_style(HUDStyles.COLOR_HP))
+		health_bar.add_theme_stylebox_override("background", HUDStyles.get_bar_bg_style())
+	if age_bar:
+		age_bar.add_theme_stylebox_override("fill", HUDStyles.get_bar_fg_style(HUDStyles.COLOR_STAMINA)) # Age/Stamina color
+		age_bar.add_theme_stylebox_override("background", HUDStyles.get_bar_bg_style())
+		
+	if money_label:
+		money_label.add_theme_color_override("font_color", HUDStyles.COLOR_BORDER_GOLD)
+
 	
 	_update_full_display()
 

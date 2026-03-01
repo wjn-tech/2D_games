@@ -73,13 +73,17 @@ func _ready() -> void:
 	# Setup Inventory - USE GLOBAL SINGLETON
 	inventory = GameState.inventory
 	
+	# Delay selection to let UI init first? Or select now.
+	# inventory.select_hotbar_slot(0) # Don't auto-select slot 0 on start to avoid visual "always on" if user prefers
+	
 	inventory.equipped_item_changed.connect(_on_equipped_item_changed)
+	
+	current_wand = null # Default clean state
 	
 	# setup inventory ui
 	_setup_inventory_ui()
 	
-	# --- Wand System Init ---
-	_setup_test_wand()
+	# _setup_test_wand() # REMOVED: Do not override equipped item with debug wand on start
 	
 	# Weapon Attachment Setup (Wand Decoration System)
 	weapon_pivot = Marker2D.new()
@@ -134,7 +138,8 @@ func _ready() -> void:
 	projectile_spawn_point.position = Vector2(48, 0) # 3 Units (48px) forward (Length of wand)
 	weapon_pivot.add_child(projectile_spawn_point)
 	
-	_update_wand_visual()
+	# _update_wand_visual() # Removed initial wand setup which uses test_wand always
+	if wand_sprite: wand_sprite.visible = false # Default to hidden until equipped
 	# ------------------------
 
 	# --- Minimalist Visual Injection ---
@@ -154,7 +159,7 @@ func _ready() -> void:
 	inventory.add_item(ice_wand)
 	var fire_wand = _create_debug_wand("Fire Wand")
 	inventory.add_item(fire_wand)
-	inventory.select_hotbar_slot(0)
+	# inventory.select_hotbar_slot(0) # Removed auto-selection to fix "always lit" first slot
 
 	# --- 系统连接与初始化 ---
 	EventBus.player_input_enabled.connect(func(enabled): input_enabled = enabled)
@@ -246,15 +251,20 @@ func _create_debug_wand(wname: String) -> WandItem:
 	return item
 
 func _setup_inventory_ui():
-	var ui_layer = CanvasLayer.new()
-	add_child(ui_layer)
+	# Legacy hotbar creation removed to prevent duplicates with main HUD
+	# The main HUD now handles the hotbar display.
+	hotbar_ui = null 
+	pass
+
+	# var ui_layer = CanvasLayer.new()
+	# add_child(ui_layer)
 	
-	var hb = preload("res://src/systems/inventory/ui/hotbar_panel.tscn").instantiate()
-	ui_layer.add_child(hb)
-	hb.position = Vector2(20, 20) 
-	hb.setup(inventory.hotbar)
-	hb.item_clicked.connect(func(idx): inventory.select_hotbar_slot(idx))
-	hotbar_ui = hb
+	# var hb = preload("res://src/systems/inventory/ui/hotbar_panel.tscn").instantiate()
+	# ui_layer.add_child(hb)
+	# hb.position = Vector2(20, 20) 
+	# hb.setup(inventory.hotbar)
+	# hb.item_clicked.connect(func(idx): inventory.select_hotbar_slot(idx))
+	# hotbar_ui = hb
 	
 	# Backpack is now integrated into CharacterPanel (via GameManager + UIManager)
 	# No separate backpack_ui instance here.
@@ -265,7 +275,12 @@ func _on_equipped_item_changed(item: Resource):
 	# 允许重复触发，以便在右键取消后，再次点击同一格能重新唤出预览
 	var bm = get_tree().get_first_node_in_group("building_manager")
 	
-	if item is WandItem:
+	# Check if item is a Wand (either by class or duck-typing)
+	var is_wand = false
+	if item and (item is WandItem or item.get("wand_data") != null):
+		is_wand = true
+		
+	if is_wand:
 		if bm: bm.cancel_building()
 		current_wand = item.wand_data
 		if wand_sprite: wand_sprite.visible = true
@@ -275,6 +290,7 @@ func _on_equipped_item_changed(item: Resource):
 			if bm.is_building(): bm.cancel_building()
 			_try_place_held_item() # 内部已经处理了建筑启动逻辑
 		
+		# Clear wand status since we hold a building item
 		current_wand = null
 		if wand_sprite and item: 
 			wand_sprite.visible = true
@@ -289,6 +305,11 @@ func _on_equipped_item_changed(item: Resource):
 			wand_sprite.scale = Vector2(0.5, 0.5) 
 			wand_sprite.modulate = Color(1, 1, 1, 1)
 			wand_sprite.z_index = 5
+	elif item == null:
+		# Unequipped
+		current_wand = null
+		if bm and bm.is_building(): bm.cancel_building()
+		if wand_sprite: wand_sprite.visible = false
 	elif item and (item.has_meta("building_resource") or item.id == "workbench" or item.id == "workbench_item"):
 		# 建筑类物品：立即进入建造预览模式
 		current_wand = null
@@ -330,58 +351,45 @@ var action_cooldown: float = 0.0
 const ACTION_INTERVAL: float = 0.25 # 0.25秒触发一次动作
 
 # Wand System Helpers
-func _setup_test_wand():
-	var test_path = "res://scenes/test_wand.tres"
-	
-	# Try loading if exists
-	if ResourceLoader.exists(test_path):
-		var loaded = ResourceLoader.load(test_path, "", ResourceLoader.CACHE_MODE_IGNORE)
-		if loaded is WandData:
-			current_wand = loaded
-
-	if current_wand:
-		print("Loaded existing wand from ", test_path)
-		# Ensure embryo exists
-		if not current_wand.embryo:
-			current_wand.embryo = WandEmbryo.new()
-	else:
-		print("Creating new test wand...")
-		var embryo = WandEmbryo.new()
-		embryo.grid_resolution = 4
-		current_wand = WandData.new()
-		current_wand.embryo = embryo
-		current_wand.resource_path = test_path # Assign path for saving
-		current_wand.logic_nodes = [] # CLEAR TEMPLATE
-		current_wand.logic_connections = []
-		
-		var mat = BaseItem.new()
-		mat.wand_visual_color = Color.AQUA
-		mat.id = "test_block"
-		current_wand.visual_grid[Vector2i(1,1)] = mat
-		current_wand.visual_grid[Vector2i(2,2)] = mat
-		
-		# Logic Chain: Trigger -> Dmg -> Projectile
-		var trig = { "id": "1", "type": "trigger", "position": Vector2(50, 50), "title": "Click" }
-		var mod = { "id": "2", "type": "modifier_damage", "position": Vector2(250, 50), "value": {"amount": 50}, "title": "+Dmg" }
-		var act = { "id": "3", "type": "action_projectile", "position": Vector2(450, 50), "title": "Fire" }
-		
-		current_wand.logic_nodes = [trig, mod, act]
-		current_wand.logic_connections = [
-			{"from_id": "1", "from_port": 0, "to_id": "2", "to_port": 0},
-			{"from_id": "2", "from_port": 0, "to_id": "3", "to_port": 0}
-		]
-		# Save initial
-		ResourceSaver.save(current_wand, test_path)
+# func _setup_test_wand(): # REMOVED: Do not override equipped item with debug wand on start
+# 	var test_path = "res://scenes/test_wand.tres"
+# 	if ResourceLoader.exists(test_path):
+# 		var loaded = ResourceLoader.load(test_path, "", ResourceLoader.CACHE_MODE_IGNORE)
+# 		if loaded is WandData:
+# 			current_wand = loaded
 
 func _toggle_wand_editor():
 	if UIManager:
 		UIManager.toggle_window("WandEditor", "res://src/ui/wand_editor/wand_editor.tscn")
 
 func _update_wand_visual():
-	# Use new generator logic
-	var tex = WandTextureGenerator.generate_texture(current_wand)
+	if not current_wand:
+		if wand_sprite: wand_sprite.visible = false
+		return
+		
+	# Use new generator logic or fallback
+	var tex = null
+	# Try usage as static class or singleton
+	if WandTextureGenerator:
+		tex = WandTextureGenerator.generate_texture(current_wand)
+		
 	if wand_sprite:
-		wand_sprite.texture = tex
+		if tex:
+			wand_sprite.texture = tex
+		else:
+			# Fallback or clear if generation failed
+			pass
+		
+		# Ensure visual settings correct for wands
+		wand_sprite.visible = true
+		wand_sprite.centered = false
+		wand_sprite.offset = Vector2(-8, -48)
+		wand_sprite.rotation = PI / 2
+		wand_sprite.scale = Vector2.ONE 
+	
+	# Update Inventory Icon if applicable
+	if current_wand and tex:
+		_update_inventory_icon(tex)
 		# 恢复魔杖的特殊中心和旋转位移
 		wand_sprite.centered = false
 		wand_sprite.offset = Vector2(-8, -48)
@@ -399,7 +407,8 @@ func _update_inventory_icon(tex: Texture2D):
 	# If we have a reference to current item wrapper
 	if inventory:
 		var item_wrapper = inventory.get_equipped_item()
-		if item_wrapper and item_wrapper is WandItem and item_wrapper.wand_data == current_wand:
+		# Robust check
+		if item_wrapper and (item_wrapper is WandItem or item_wrapper.get("wand_data") == current_wand):
 			item_wrapper.icon = tex
 			# Signals inventory update?
 			inventory.item_visual_updated.emit(item_wrapper) 
@@ -422,7 +431,8 @@ func _setup_camera_limits() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed:
-		if event.keycode == KEY_C:
+		# Changed from KEY_C (Conflict with Character Sheet) to KEY_K (Knowledge/Magic)
+		if event.keycode == KEY_K:
 			_toggle_wand_editor()
 			get_viewport().set_input_as_handled()
 			return

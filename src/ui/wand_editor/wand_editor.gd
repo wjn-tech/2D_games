@@ -26,14 +26,17 @@ var preview_texture_rect_1x: TextureRect
 var preview_texture_rect_4x: TextureRect
 var stats_label: RichTextLabel
 
-# Sci-Fi Theme Colors
-const COLOR_BG_MAIN = Color(0.05, 0.07, 0.1, 0.85) # Dark Translucent Blue
-const COLOR_ACCENT = Color(0.2, 0.8, 1.0) # Cyan/Electric Blue
-const COLOR_ACCENT_DIM = Color(0.2, 0.8, 1.0, 0.5)
-const COLOR_TEXT_SEC = Color(0.6, 0.8, 0.9) # Light Blue-Grey
-const COLOR_GLOW = Color(0.2, 0.8, 1.0, 0.4)
+# Sci-Fi Theme Colors (Updated for Cosmic Magic)
+const COLOR_BG_MAIN = HUDStyles.COLOR_BG_PRIMARY # #1A1A2E
+const COLOR_ACCENT = HUDStyles.COLOR_BORDER_MAGIC # Cyan/Electric Blue
+const COLOR_ACCENT_DIM = Color("#16213E") # Secondary BG
+const COLOR_TEXT_SEC = HUDStyles.COLOR_TEXT_PRIMARY
+const COLOR_GLOW = HUDStyles.COLOR_BORDER_GOLD
 
 func _ready():
+	# Ensure WandEditor is always on top of other UI elements (like Hotbar which is z_index 10, Minimap potentially 100)
+	z_index = 120
+	
 	_apply_sci_fi_theme()
 	call_deferred("_apply_layout_polish") # Deferred to ensure nodes are ready for reparenting
 	_setup_libraries()
@@ -405,15 +408,30 @@ func edit_wand(wand: WandData):
 	
 	visible = true
 
+func _exit_tree():
+	# FAILSAFE: Ensure game is unpaused and input restored when this node is destroyed
+	# This handles queue_free() from UIManager which might bypass visibility signals
+	if get_tree():
+		get_tree().paused = false
+	if EventBus:
+		EventBus.player_input_enabled.emit(true)
+
 func _on_visibility_changed():
 	if visible:
-		var player = get_tree().get_first_node_in_group("player")
-		var equipped_item = null
-		if player and player.inventory:
-			equipped_item = player.inventory.get_equipped_item()
+		get_tree().paused = true # Diegetic UI Pause
+		_apply_sci_fi_theme() # Refresh theme
 		
-		if equipped_item and equipped_item is WandItem:
-			# 如果当前没在编辑或者装备的法杖变了，自动切换到新装备的法杖
+		# Auto-select equipped wand logic...
+		var player = get_tree().get_first_node_in_group("player")
+		
+		# Try to get equipped item
+		var equipped_item = null
+		# Basic player detection
+		if player and player.has_method("get_equipped_wand"):
+			equipped_item = player.get_equipped_wand()
+		
+		# If we have a wand, open it, else open selector
+		if equipped_item:
 			if current_wand_item != equipped_item:
 				_on_wand_selected(equipped_item)
 			else:
@@ -424,6 +442,14 @@ func _on_visibility_changed():
 			_open_wand_selector(true)
 			
 		_animate_open()
+	else:
+		# This branch might not run if queue_free happens immediately, 
+		# so we rely on _exit_tree for critical cleanup too.
+		get_tree().paused = false 
+		EventBus.player_input_enabled.emit(true)
+		
+		if UIManager:
+			UIManager.close_window("WandEditor")
 
 func _time_str(val):
 	return "%.2fs" % val

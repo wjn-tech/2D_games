@@ -9,6 +9,7 @@
 [ext_resource type="Script" uid="uid://baeqlnrufvkb7" path="res://src/systems/building/building_manager.gd" id="7_building_mgr"]
 [ext_resource type="PackedScene" uid="uid://cn6vk33wkl5h2" path="res://scenes/world/background.tscn" id="8_bg"]
 [ext_resource type="Script" uid="uid://dsxrwvx0w78u5" path="res://src/systems/world/grass_growth_manager.gd" id="9_grass_mgr"]
+[ext_resource type="Environment" uid="uid://c8qj0y5x4b2m" path="res://default_env.tres" id="10_env"]
 
 [node name="Main" type="Node2D"]
 
@@ -16,6 +17,9 @@
 
 [node name="GlobalLight" type="CanvasModulate" parent="." groups=["global_light"]]
 color = Color(1.2, 1.2, 1.2, 1)
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = ExtResource("10_env")
 
 [node name="Systems" type="Node" parent="."]
 
@@ -55,3 +59,4 @@ visible = false
 
 [node name="HUD" parent="UI" instance=ExtResource("3_hud")]
 visible = false
+

@@ -1,12 +1,15 @@
-extends VBoxContainer
+extends PanelContainer
 
-@onready var time_label: Label = $TimeLabel
-@onready var weather_label: Label = $WeatherLabel
-@onready var biome_label: Label = $BiomeLabel
-@onready var tile_label: Label = $TileLabel
+@onready var time_label: Label = $Margin/VBox/Rows/TimeRow/TimeLabel
+@onready var weather_label: Label = $Margin/VBox/Rows/InfoRow/WeatherLabel
+@onready var biome_label: Label = $Margin/VBox/Rows/InfoRow/BiomeLabel
+@onready var tile_label: Label = $Margin/VBox/TileLabel
 
 func _ready() -> void:
-	# 初始显示
+	# Apply Pixel Art Style
+	add_theme_stylebox_override("panel", HUDStyles.get_info_panel_style())
+	
+	# Initial Display
 	_update_display()
 	
 	# 绑定信号
@@ -97,11 +100,14 @@ func _update_tile_info() -> void:
 	else:
 		tile_label.visible = false
 
+
 func _update_biome_display() -> void:
+	if not biome_label: return
+	
 	var player = get_tree().get_first_node_in_group("player")
 	var world_gen = get_tree().get_first_node_in_group("world_generator")
 	
-	if player and world_gen and biome_label:
+	if player and world_gen:
 		var weights = world_gen.get_biome_weights_at_pos(player.global_position)
 		var main_biome = 0
 		var max_w = -1.0
@@ -110,12 +116,12 @@ func _update_biome_display() -> void:
 				max_w = weights[b]
 				main_biome = b
 		
-		# 映射枚举到名称
-		var names = ["Forest", "Plains", "Desert", "Tundra", "Swamp", "Underground", "Und. Desert", "Und. Tundra", "Und. Swamp"]
+		# 映射枚举到名称 (Simplified for UI)
+		var names = ["Forest", "Plains", "Desert", "Tundra", "Swamp", "Cave", "U.Desert", "U.Tundra", "U.Swamp"]
 		if main_biome < names.size():
-			biome_label.text = "Biome: " + names[main_biome]
+			biome_label.text = names[main_biome]
 		else:
-			biome_label.text = "Biome: Unknown"
+			biome_label.text = "Unknown"
 
 func _on_time_updated(_m, _h) -> void:
 	_update_display()
@@ -128,19 +134,20 @@ func _update_display() -> void:
 		var time_str = Chronometer.get_time_string()
 		var phase = Chronometer.get_time_phase()
 		var phase_icon = ""
+		# Pixel icons instead of emoji in future via TextureRect, but text for now
 		match phase:
-			"Dawn": phase_icon = "🌅 "
-			"Day": phase_icon = "☀️ "
-			"Dusk": phase_icon = "🌇 "
-			"Night": phase_icon = "🌙 "
+			"Dawn": phase_icon = "Dawn "
+			"Day": phase_icon = "Sun "
+			"Dusk": phase_icon = "Dusk "
+			"Night": phase_icon = "Moon "
 		
-		time_label.text = phase_icon + time_str
+		if time_label: time_label.text = "%s %s" % [phase_icon, time_str]
 	
-	if WeatherManager:
-		var w_name = "Sunny"
+	if WeatherManager and weather_label:
+		var w_name = "Clear"
 		match WeatherManager.current_weather:
-			0: w_name = "Sunny"
-			1: w_name = "Rainy"
-			2: w_name = "Snowy"
-			3: w_name = "Thunderstorm"
-		weather_label.text = "Weather: " + w_name
+			0: w_name = "Clear"
+			1: w_name = "Rain"
+			2: w_name = "Snow"
+			3: w_name = "Storm"
+		weather_label.text = w_name # Simplified text for column layout

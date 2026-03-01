@@ -5,13 +5,14 @@ signal equipped_item_changed(item: Resource)
 signal item_visual_updated(item: Resource) # New signal for texture updates
 signal inventory_changed # Added for UI sync
 signal inventory_created # Emitted when inventories are initialized
+signal active_hotbar_changed(index: int) # Support for Hotbar UI selection
 
 @export var backpack_capacity: int = 20
 @export var hotbar_capacity: int = 9
 
 var backpack: Inventory
 var hotbar: Inventory
-var active_hotbar_index: int = 0
+var active_hotbar_index: int = -1 # Start with no selection
 
 func _ready():
 	_init_inventories()
@@ -173,6 +174,7 @@ func select_hotbar_slot(index: int) -> void:
 	if index < 0 or index >= hotbar_capacity: return
 	
 	active_hotbar_index = index
+	active_hotbar_changed.emit(index) # Signal the UI to update selection
 	var item = get_equipped_item()
 	equipped_item_changed.emit(item)
 	item_visual_updated.emit(item) # Ensure visual sync

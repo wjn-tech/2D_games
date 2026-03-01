@@ -10,20 +10,24 @@ static func get_energy_material(color: Color = Color(0.2, 0.5, 1.0)) -> ShaderMa
 		return materials[key]
 	
 	var mat = ShaderMaterial.new()
-	mat.shader = load("res://assets/shaders/magic/magic_energy.gdshader")
-	mat.set_shader_parameter("base_color", color)
-	mat.set_shader_parameter("glow_color", color * 5.0) # Boost for bloom
-	
-	# High-frequency noise for plasma movement
-	var noise = FastNoiseLite.new()
-	noise.seed = randi()
-	noise.frequency = 0.08
-	noise.noise_type = FastNoiseLite.TYPE_PERLIN
-	
-	var tex = NoiseTexture2D.new()
-	tex.seamless = true
-	tex.noise = noise
-	mat.set_shader_parameter("noise_tex", tex)
+	var sh = load("res://assets/shaders/magic/magic_energy.gdshader")
+	if sh and sh is Shader:
+		mat.shader = sh
+		mat.set_shader_parameter("base_color", color)
+		mat.set_shader_parameter("glow_color", color * 5.0) # Boost for bloom
+
+		# High-frequency noise for plasma movement
+		var noise = FastNoiseLite.new()
+		noise.seed = randi()
+		noise.frequency = 0.08
+		noise.noise_type = FastNoiseLite.TYPE_PERLIN
+
+		var tex = NoiseTexture2D.new()
+		tex.seamless = true
+		tex.noise = noise
+		mat.set_shader_parameter("noise_tex", tex)
+	else:
+		print("MagicVisualManager: failed to load shader 'magic_energy.gdshader' or resource is not a Shader:", sh)
 	
 	materials[key] = mat
 	return mat

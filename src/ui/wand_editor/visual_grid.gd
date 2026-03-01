@@ -207,15 +207,19 @@ func _update_cell_style(coords: Vector2i, style: StyleBoxFlat, item = null):
 			style.border_width_left = 0
 			style.border_width_right = 0
 	else:
-		# "Empty Grid" Look - Sci-Fi
-		style.bg_color = Color(0.03, 0.05, 0.07, 0.6)
-		style.border_color = Color(0.14, 0.6, 1.0, 0.18)
+		# "Empty Grid" Look - Sci-Fi (Pixel Art)
+		style.bg_color = HUDStyles.COLOR_BG_PRIMARY
+		style.border_color = HUDStyles.COLOR_BORDER_MAGIC
+		style.bg_color.a = 0.5
+		style.border_color.a = 0.3
+		
 		# Set borders
 		style.border_width_top = 1
 		style.border_width_bottom = 1
 		style.border_width_left = 1
 		style.border_width_right = 1
-		style.corner_radius_top_left = 4
-		style.corner_radius_top_right = 4
-		style.corner_radius_bottom_left = 4
-		style.corner_radius_bottom_right = 4
+		style.corner_radius_top_left = 0
+		style.corner_radius_top_right = 0
+		style.corner_radius_bottom_left = 0
+		style.corner_radius_bottom_right = 0
+		style.anti_aliasing = false

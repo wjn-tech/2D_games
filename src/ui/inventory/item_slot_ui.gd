@@ -37,6 +37,9 @@ var is_hovered: bool = false
 var is_selected: bool = false
 
 func _ready() -> void:
+	# Enforce Pixel Theme Style
+	add_theme_stylebox_override("panel", HUDStyles.get_slot_style_normal())
+	
 	gui_input.connect(_on_gui_input)
 	mouse_entered.connect(_on_mouse_entered)
 	mouse_exited.connect(_on_mouse_exited)
@@ -45,10 +48,9 @@ func _ready() -> void:
 	
 	# Initialize visuals
 	if rarity_glow:
-		rarity_glow.modulate.a = 0.0 # Start invisible
+		rarity_glow.visible = false
 	if border:
-		border.border_color = BORDER_COLOR_NORMAL
-		border.editor_only = false # Ensure it shows in game
+		border.visible = false # Use StyleBox instead
 
 func setup(index: int, slot_data: Dictionary, inventory_ref: Resource) -> void:
 	slot_index = index
@@ -135,34 +137,30 @@ func _on_mouse_entered() -> void:
 	if not current_item: return
 	is_hovered = true
 	
-	# Magitech: "Lock On" effect
-	# 1. Quick scale snap
+	# Pixel Cosmic Magic Style Selection
+	add_theme_stylebox_override("panel", HUDStyles.get_slot_style_active())
+	
+	# Magitech Scale Effect
 	if _tween: _tween.kill()
 	_tween = create_tween().set_parallel(true).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	_tween.tween_property(self, "scale", HOVER_SCALE, 0.15)
 	
-	# 2. Border glow on
-	if border:
-		_tween.tween_property(border, "border_color:a", 1.0, 0.1)
-	
-	# 3. Background/Glow flare
+	# Rarity flare
 	if rarity_glow:
 		rarity_glow.visible = true
 		_tween.tween_property(rarity_glow, "modulate:a", 0.5, 0.2)
-		
-	# Audio feedback (placeholder)
-	# SoundManager.play_ui_hover()
 
 func _on_mouse_exited() -> void:
 	is_hovered = false
+	
+	# Reset Style
 	if not is_selected:
+		add_theme_stylebox_override("panel", HUDStyles.get_slot_style_normal())
+		
 		if _tween: _tween.kill()
 		_tween = create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 		_tween.tween_property(self, "scale", NORMAL_SCALE, 0.2)
 		
-		if border:
-			_tween.tween_property(border, "border_color:a", 0.3, 0.2)
-			
 		if rarity_glow:
 			_tween.tween_property(rarity_glow, "modulate:a", 0.0, 0.2)
 

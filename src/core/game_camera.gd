@@ -7,6 +7,10 @@ var default_offset: Vector2 = Vector2.ZERO
 var player: Node2D
 
 func _ready() -> void:
+	# Default zoom for 1080p resolution to maintain retro feel
+	# 3x zoom results in effective 640x360 viewport for the game world
+	zoom = Vector2(3.0, 3.0)
+	
 	default_offset = offset
 	player = get_tree().get_first_node_in_group("player")
 	if player:

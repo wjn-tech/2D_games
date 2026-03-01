@@ -5,6 +5,7 @@ signal slot_clicked(inventory: Inventory, slot_index: int)
 
 var inventory: Inventory
 var slot_index: int = -1
+var is_active: bool = false # For Hotbar
 
 @onready var icon = $MarginContainer/Icon
 @onready var count_lbl = $MarginContainer/CountLabel
@@ -13,10 +14,54 @@ var hover_timer: SceneTreeTimer = null
 var name_tooltip: Label
 
 func _ready():
+	# Apply Pixel Art Panel Style
+	add_theme_stylebox_override("panel", HUDStyles.get_panel_style())
+	
 	gui_input.connect(_on_gui_input)
-	mouse_entered.connect(_on_mouse_entered)
-	mouse_exited.connect(_on_mouse_exited)
+	mouse_entered.connect(_on_mouse_entered_slot)
+	mouse_exited.connect(_on_mouse_exited_slot)
 	_setup_internal_name_label()
+	
+	# Initial style
+	_update_style()
+
+func set_active(active: bool) -> void:
+	is_active = active
+	# If active, trigger a small bump animation
+	if is_active and is_inside_tree():
+		var tween = create_tween().set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+		tween.tween_property(self, "scale", Vector2(1.15, 1.15), 0.3)
+	else:
+		if is_inside_tree():
+			var tween = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+			tween.tween_property(self, "scale", Vector2.ONE, 0.2)
+			
+	_update_style()
+
+func _update_style() -> void:
+	if not is_inside_tree(): return
+	
+	var style: StyleBoxFlat
+	if is_active:
+		style = HUDStyles.get_slot_style_active()
+	else:
+		style = HUDStyles.get_slot_style_normal()
+		
+	add_theme_stylebox_override("panel", style)
+
+func _on_mouse_entered_slot() -> void:
+	_on_mouse_entered() # Call existing logic
+	
+	# Scale animation
+	var tween = create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.tween_property(self, "scale", Vector2(1.1, 1.1), 0.1)
+	pivot_offset = size / 2
+
+func _on_mouse_exited_slot() -> void:
+	_on_mouse_exited() # Call existing logic
+	
+	var tween = create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.tween_property(self, "scale", Vector2.ONE, 0.1)
 
 func _setup_internal_name_label():
 	name_tooltip = Label.new()

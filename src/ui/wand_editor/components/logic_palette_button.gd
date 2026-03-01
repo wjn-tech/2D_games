@@ -99,10 +99,11 @@ func setup(item):
 	box_style.border_width_top = 2
 	box_style.border_width_right = 2
 	box_style.border_width_bottom = 2
-	box_style.corner_radius_top_left = 4
-	box_style.corner_radius_top_right = 4
-	box_style.corner_radius_bottom_left = 4
-	box_style.corner_radius_bottom_right = 4
+	box_style.corner_radius_top_left = 0
+	box_style.corner_radius_top_right = 0
+	box_style.corner_radius_bottom_left = 0
+	box_style.corner_radius_bottom_right = 0
+	box_style.anti_aliasing = false
 	icon_box.add_theme_stylebox_override("panel", box_style)
 	center_container.add_child(icon_box)
 

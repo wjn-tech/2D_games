@@ -6,18 +6,19 @@ var item_data: BaseItem
 func setup(item: BaseItem):
 	item_data = item
 	
-	# Visual Setup match Figure 2 (Slot style)
+	# Visual Setup match "Star Chart" style
 	var style = StyleBoxFlat.new()
-	style.bg_color = Color(0.1, 0.1, 0.1, 1.0) # Dark gray background
+	style.bg_color = HUDStyles.COLOR_BG_SECONDARY # #16213E
 	style.border_width_left = 2
 	style.border_width_top = 2
 	style.border_width_right = 2
 	style.border_width_bottom = 2
-	style.border_color = Color(0.4, 0.4, 0.4) # Grey border
-	style.corner_radius_top_left = 4
-	style.corner_radius_top_right = 4
-	style.corner_radius_bottom_left = 4
-	style.corner_radius_bottom_right = 4
+	style.border_color = HUDStyles.COLOR_BORDER_MAGIC # Cyan
+	style.corner_radius_top_left = 0
+	style.corner_radius_top_right = 0
+	style.corner_radius_bottom_left = 0
+	style.corner_radius_bottom_right = 0
+	style.anti_aliasing = false
 	add_theme_stylebox_override("panel", style)
 	
 	custom_minimum_size = Vector2(50, 50)

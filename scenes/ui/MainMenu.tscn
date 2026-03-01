@@ -1,7 +1,7 @@
 [gd_scene load_steps=15 format=3 uid="uid://dktnn68wfxadx"]
 
 [ext_resource type="Script" uid="uid://bmew4014es7ah" path="res://scenes/ui/main_menu.gd" id="1_script"]
-[ext_resource type="Theme" uid="uid://main_menu_theme_001" path="res://ui/theme/main_menu_theme.tres" id="2_theme"]
+[ext_resource type="Theme" uid="uid://pixel_theme_001" path="res://ui/theme/pixel_theme.tres" id="2_theme"]
 [ext_resource type="PackedScene" uid="uid://menu_effects_001" path="res://scenes/ui/MenuEffects.tscn" id="3_fx"]
 [ext_resource type="Shader" path="res://assets/ui/shaders/gradient_vertical_shimmer.gdshader" id="4_shader"]
 [ext_resource type="Texture2D" path="res://assets/ui/icons/lucide/sword.svg" id="5_icon_start"]
@@ -28,8 +28,14 @@ grow_vertical = 2
 theme = ExtResource("2_theme")
 script = ExtResource("1_script")
 
-[node name="MenuEffects" parent="." instance=ExtResource("3_fx")]
+[node name="ColorRect" type="ColorRect" parent="."]
 layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.102, 0.102, 0.18, 1)
 
 [node name="CenterContainer" type="CenterContainer" parent="."]
 layout_mode = 1

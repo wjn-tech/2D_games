@@ -1,8 +1,9 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://src/ui/wand_editor/wand_editor.gd" id="1_main"]
 [ext_resource type="Script" path="res://src/ui/wand_editor/visual_grid.gd" id="2_visual"]
 [ext_resource type="Script" path="res://src/ui/wand_editor/logic_board.gd" id="3_logic"]
+[ext_resource type="Theme" uid="uid://pixel_theme_001" path="res://ui/theme/pixel_theme.tres" id="5_theme"]
 
 [sub_resource type="ButtonGroup" id="ButtonGroup_mode"]
 
@@ -13,15 +14,17 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme = ExtResource("5_theme")
 script = ExtResource("1_main")
 
-[node name="Panel" type="Panel" parent="."]
+[node name="BackgroundColor" type="ColorRect" parent="."]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+color = Color(0.1, 0.1, 0.1, 0.95)
 
 [node name="VBoxContainer" type="VBoxContainer" parent="."]
 layout_mode = 1

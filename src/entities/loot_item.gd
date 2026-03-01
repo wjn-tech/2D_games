@@ -110,8 +110,13 @@ func _collect() -> void:
 		var inv = target_player.inventory
 		if inv and inv.has_method("add_item_partial"):
 			remaining = inv.add_item_partial(item_data, amount)
+		elif inv and inv.has_method("add_item"):
+			if inv.add_item(item_data, amount):
+				remaining = 0
+				EventBus.item_collected.emit(item_data, amount)
+			else:
+				remaining = amount # Full inventory
 		else:
-			# Fallback to general event
 			EventBus.item_collected.emit(item_data, amount)
 			remaining = 0
 	else:

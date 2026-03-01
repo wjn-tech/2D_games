@@ -5,6 +5,7 @@ extends Node
 
 signal dialogue_started(npc_name: String)
 signal dialogue_finished
+signal dialogue_event(event_name: String) # Added for tutorial sequences
 
 func start_dialogue(npc_name: String, lines: Array, options: Array = []) -> void:
 	var window = UIManager.open_window("DialogueWindow", "res://scenes/ui/DialogueWindow.tscn")

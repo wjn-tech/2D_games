@@ -1,0 +1,16 @@
+﻿[gd_scene load_steps=3 format=3 uid="uid://ciyh1vn7l6x8y"]
+
+[ext_resource type="Script" path="res://scenes/tutorial/tutorial_sequence_manager.gd" id="1_5t6y7"]
+[ext_resource type="PackedScene" uid="uid://dlqh3lkqly3mk" path="res://scenes/player.tscn" id="2_8u9i0"]
+
+[node name="TutorialSpaceship" type="Node2D"]
+script = ExtResource("1_5t6y7")
+
+[node name="Player" parent="." instance=ExtResource("2_8u9i0")]
+position = Vector2(-200, -50)
+collision_mask = 1
+
+[node name="Camera2D" type="Camera2D" parent="Player"]
+process_callback = 0
+position_smoothing_enabled = true
+enabled = true

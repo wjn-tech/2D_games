@@ -118,6 +118,14 @@ func _try_spawn_cycle() -> void:
 	if spawn_pos == Vector2.ZERO:
 		return
 	
+	# --- 局部密度控制 (Localized Density Check) ---
+	# 限制同一区域内的刷怪上限密度，防止刷出一堆怪堆在一起
+	var active_mobs = get_tree().get_nodes_in_group("hostile_npcs")
+	for mob in active_mobs:
+		if spawn_pos.distance_to(mob.global_position) < 400.0:
+			# 区域内存在其他怪物，放弃本次生成
+			return
+	
 	var context = _analyze_context(spawn_pos)
 	
 	var candidates: Array[SpawnRule] = []

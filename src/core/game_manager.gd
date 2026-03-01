@@ -205,10 +205,10 @@ func start_new_game() -> void:
 	
 	# 场景切换需要时间，延时 0.2 秒通常足以避开引擎切换时的不稳定期
 	var tree = get_tree()
-	
-	var main_scene_path = ProjectSettings.get_setting("application/run/main_scene")
-	if not main_scene_path: main_scene_path = "res://scenes/main.tscn"
-		
+
+	var main_scene_path = "res://scenes/tutorial/TutorialSpaceship2.tscn"
+	# if not main_scene_path: main_scene_path = "res://scenes/main.tscn"
+
 	var error = get_tree().change_scene_to_file(main_scene_path)
 	if error == OK:
 		# 使用计时器进行一次性延迟初始化，避免在场景过渡帧内运行逻辑
@@ -224,15 +224,19 @@ func _on_reload_finished() -> void:
 	
 	# 重置小地图数据
 	if MinimapManager:
+		print("Resetting Minimap...")
 		MinimapManager.reset_map()
 	
 	# 初始化玩家数据
+	print("Initializing Player Data...")
 	GameState.player_data = CharacterData.new()
 	GameState.player_data.display_name = "冒险者"
 	if EventBus:
+		print("Emitting player_data_refreshed...")
 		EventBus.player_data_refreshed.emit()
 	
 	# 强制切换到 PLAYING 状态
+	print("Switching state to PLAYING...")
 	current_state = State.GAME_OVER # 确保 change_state 能生效
 	change_state(State.PLAYING)
 	

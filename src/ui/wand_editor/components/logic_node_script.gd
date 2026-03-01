@@ -1,6 +1,6 @@
 extends GraphNode
 
-var _tooltip_instance: PanelContainer
+var _tooltip_instance: Node
 var _custom_tooltip_content: String = ""
 
 func _ready():
@@ -32,9 +32,10 @@ func _show_custom_tooltip(text: String):
 	if _tooltip_instance and is_instance_valid(_tooltip_instance):
 		_tooltip_instance.queue_free()
 		
+	var canvas_layer = CanvasLayer.new()
+	canvas_layer.layer = 120 # 确保在所有UI面板之上
+	
 	var container = PanelContainer.new()
-	container.top_level = true
-	container.z_index = 100 # 确保最上层
 	container.mouse_filter = Control.MOUSE_FILTER_IGNORE # 不拦截鼠标
 	
 	var style = StyleBoxFlat.new()
@@ -70,14 +71,15 @@ func _show_custom_tooltip(text: String):
 	label.add_theme_color_override("outline_color", Color.BLACK)
 	
 	container.add_child(label)
-	add_child(container)
-	_tooltip_instance = container
+	canvas_layer.add_child(container)
+	add_child(canvas_layer)
+	_tooltip_instance = canvas_layer
 	
 	# 下一帧设置位置，确保尺寸已计算
 	await get_tree().process_frame
-	if is_instance_valid(container) and is_instance_valid(label):
-		# 跟随鼠标或固定在节点旁
-		var mouse_pos = get_global_mouse_position()
+	if is_instance_valid(canvas_layer) and is_instance_valid(container) and is_instance_valid(label):
+		# 获取视口相对鼠标位置
+		var mouse_pos = get_viewport().get_mouse_position()
 		container.global_position = mouse_pos + Vector2(16, 16) # 鼠标右下偏移
 
 func _hide_custom_tooltip():

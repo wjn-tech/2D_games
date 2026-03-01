@@ -55,7 +55,7 @@ func open_window(window_name: String, scene_path: String, blocks_input: bool = t
 			if parent:
 				parent.process_mode = Node.PROCESS_MODE_ALWAYS
 				if parent is CanvasLayer:
-					parent.layer = 100
+					parent.layer = 1
 
 	# 3. 如果还是没找到，则实例化新窗口
 	if not window:
@@ -81,7 +81,7 @@ func open_window(window_name: String, scene_path: String, blocks_input: bool = t
 		
 		if ui_root:
 			if ui_root is CanvasLayer:
-				ui_root.layer = 100
+				ui_root.layer = 1
 				ui_root.process_mode = Node.PROCESS_MODE_ALWAYS
 			elif ui_root is Control:
 				ui_root.process_mode = Node.PROCESS_MODE_ALWAYS

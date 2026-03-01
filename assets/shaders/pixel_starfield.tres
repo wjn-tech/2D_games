@@ -1,0 +1,10 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3 uid="uid://pixel_starfield_mat"]
+
+[ext_resource type="Shader" path="res://assets/shaders/pixel_starfield.gdshader" id="1_shader"]
+
+[resource]
+shader = ExtResource("1_shader")
+shader_parameter/bg_color = Color(0.102, 0.102, 0.18, 1)
+shader_parameter/resolution = Vector2(640, 360)
+shader_parameter/star_density = 0.005
+shader_parameter/scroll_speed = 0.05

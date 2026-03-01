@@ -77,11 +77,11 @@ func move_item(from_inv: Inventory, from_idx: int, to_inv: Inventory):
 			return
 
 func add_item(item: Resource, count: int = 1) -> bool:
-	# Add to backpack first
-	if _add_to_inventory(backpack, item, count):
-		return true
-	# If full, allow overflow? Or hotbar?
+	# Add to hotbar first for immediate access
 	if _add_to_inventory(hotbar, item, count):
+		return true
+	# If full, allow overflow to backpack
+	if _add_to_inventory(backpack, item, count):
 		return true
 	return false
 

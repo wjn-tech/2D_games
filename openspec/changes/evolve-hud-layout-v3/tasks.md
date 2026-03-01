@@ -1,0 +1,4 @@
+- [x] [Define Input Map for Attribute Panel](input-map) <!-- id: 0 -->
+- [x] [Refactor Attribute Panel to be Toggleable](toggle-attributes) <!-- id: 1 -->
+- [x] [Polish Status Bar Visuals (V3 Style)](polish-status) <!-- id: 2 -->
+- [x] [Finalize Hotbar Layout (Minecraft Style)](finalize-hotbar) <!-- id: 3 -->

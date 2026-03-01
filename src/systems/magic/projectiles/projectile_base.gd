@@ -182,6 +182,9 @@ func _process_behavior(delta: float):
 		# Heavy ordnance affected by gravity
 		velocity_vector.y += 900.0 * delta # Gravity pull 
 		velocity_vector.x = move_toward(velocity_vector.x, 0.0, 200.0 * delta)
+	elif special_behavior == "bouncing_burst":
+		# Lightweight bouncy logic
+		velocity_vector.y += 400.0 * delta # Light gravity pull
 
 func _process_blackhole(delta: float):
 	var dm = get_tree().get_first_node_in_group("digging_manager")
@@ -270,7 +273,12 @@ func _on_hit(col: KinematicCollision2D):
 	else:
 		if _current_bounces < max_bounces:
 			var n = col.get_normal()
-			velocity_vector = velocity_vector.bounce(n)
+			
+			if special_behavior == "bouncing_burst":
+				velocity_vector = velocity_vector.bounce(n) * 1.1 # Speed up slightly on bounce for chaotic feel
+			else:
+				velocity_vector = velocity_vector.bounce(n)
+			
 			rotation = velocity_vector.angle()
 			_current_bounces += 1
 		else:

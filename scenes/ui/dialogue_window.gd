@@ -22,7 +22,17 @@ func setup(npc_name: String, lines: Array, options: Array = []) -> void:
 
 func _show_line() -> void:
 	if _current_line < _lines.size():
-		if text_label: text_label.text = _lines[_current_line]
+		var line_text: String = _lines[_current_line]
+		
+		# --- Parse Embedded Action Tags <emit:event_name> ---
+		var regex = RegEx.new()
+		regex.compile("<emit:(\\w+)>")
+		for result in regex.search_all(line_text):
+			var event_name = result.get_string(1)
+			DialogueManager.dialogue_event.emit(event_name)
+		line_text = regex.sub(line_text, "", true) # Remove tags from visible text
+		
+		if text_label: text_label.text = line_text
 		if options_container: options_container.hide()
 		if next_button: 
 			next_button.show()

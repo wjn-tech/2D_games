@@ -52,7 +52,7 @@ position = Vector2(100, 100)
 
 [node name="UI" type="CanvasLayer" parent="."]
 process_mode = 3
-layer = 100
+layer = 1
 
 [node name="MainMenu" parent="UI" instance=ExtResource("4_menu")]
 visible = false

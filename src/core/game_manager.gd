@@ -206,8 +206,8 @@ func start_new_game() -> void:
 	# 场景切换需要时间，延时 0.2 秒通常足以避开引擎切换时的不稳定期
 	var tree = get_tree()
 
-	var main_scene_path = "res://scenes/tutorial/TutorialSpaceship2.tscn"
-	# if not main_scene_path: main_scene_path = "res://scenes/main.tscn"
+	var main_scene_path = ProjectSettings.get_setting("application/run/main_scene")
+	if not main_scene_path: main_scene_path = "res://scenes/main.tscn"
 
 	var error = get_tree().change_scene_to_file(main_scene_path)
 	if error == OK:

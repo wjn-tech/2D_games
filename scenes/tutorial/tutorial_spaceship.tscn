@@ -6,6 +6,40 @@
 [node name="TutorialSpaceship" type="Node2D"]
 script = ExtResource("1_5t6y7")
 
+[node name="CanvasModulate" type="CanvasModulate" parent="."]
+color = Color(1, 1, 1, 1)
+
+[node name="CenterMarker" type="Polygon2D" parent="."]
+z_index = 100
+color = Color(0, 1, 0, 1)
+polygon = PackedVector2Array(-50, -50, 50, -50, 50, 50, -50, 50)
+
+[node name="StarryBG" type="Polygon2D" parent="."]
+z_index = -10
+color = Color(0.1, 0.1, 0.2, 1)
+polygon = PackedVector2Array(-50000, -50000, 50000, -50000, 50000, 50000, -50000, 50000)
+
+[node name="ShipFloor" type="StaticBody2D" parent="."]
+position = Vector2(0, 50)
+collision_layer = 1
+
+[node name="CollisionPolygon2D" type="CollisionPolygon2D" parent="ShipFloor"]
+polygon = PackedVector2Array(-500, 0, 500, 0, 500, 50, -500, 50)
+
+[node name="Polygon2D" type="Polygon2D" parent="ShipFloor"]
+z_index = 10
+color = Color(0.8, 0.2, 0.2, 1)
+polygon = PackedVector2Array(-500, 0, 500, 0, 500, 50, -500, 50)
+
+[node name="CourtMage" type="Node2D" parent="."]
+position = Vector2(100, 0)
+
+[node name="Sprite" type="ColorRect" parent="CourtMage"]
+offset_left = -16.0
+offset_top = -64.0
+offset_right = 16.0
+color = Color(0.6, 0.3, 0.9, 1)
+
 [node name="Player" parent="." instance=ExtResource("2_8u9i0")]
 position = Vector2(-200, -50)
 collision_mask = 1
@@ -14,3 +48,6 @@ collision_mask = 1
 process_callback = 0
 position_smoothing_enabled = true
 enabled = true
+
+[node name="ShakeTimer" type="Timer" parent="."]
+wait_time = 0.05

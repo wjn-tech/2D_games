@@ -28,31 +28,94 @@ func _ready():
 	print("Tutorial Sequence Manager Ready")
 	# Lock player input and hide HUD if possible
 	await get_tree().process_frame
+	
+	print("--- DUMPING SCENE TREE ---")
+	_print_node_recursive(self)
+	print("--------------------------")
+	
 	if player:
+		# Force reset position to safe zone - Override ALL saves
+		player.global_position = Vector2(-200, -100)
 		player.velocity = Vector2.ZERO
+		print("TUTORIAL: Forced Player Position to ", player.global_position)
+		
+		print("Player found at: ", player.position)
 		player.set_physics_process(false)
+		
+		# Force camera setup
+		var cam = player.find_child("Camera2D")
+		if cam:
+			print("Camera found: Global:", cam.global_position, " Enabled:", cam.enabled)
+			cam.make_current()
+			cam.zoom = Vector2(1, 1)
+			cam.limit_left = -10000000
+			cam.limit_top = -10000000
+			cam.limit_right = 10000000
+			cam.limit_bottom = 10000000
+			cam.position_smoothing_enabled = false
+			cam.drag_horizontal_enabled = false
+			cam.drag_vertical_enabled = false
+			_original_cam_pos = cam.global_position
+		else:
+			print("ERROR: Camera not found on player!")
+		
+		# Prevent physics fall
+		player.velocity = Vector2.ZERO
+		
+		# Double check position after a tiny delay to override any GameManager interference
+		get_tree().create_timer(0.1).timeout.connect(func():
+			if player:
+				player.global_position = Vector2(-200, -50)
+				player.velocity = Vector2.ZERO
+				print("TUTORIAL: Rectified Player Position to ", player.global_position)
+		)
+
+	else:
+		print("ERROR: Player node not found!")
+
+	# --- SIGNAL CONNECTIONS AND INIT ---
 	# Player input disable
 	if EventBus and EventBus.has_signal("player_input_enabled"):
 		EventBus.player_input_enabled.emit(false)
 	
 	if camera:
-		_original_cam_pos = camera.position
+		_original_cam_pos = camera.global_position
 	
 	if shake_timer:
-		shake_timer.timeout.connect(_on_shake_timer)
+		if not shake_timer.timeout.is_connected(_on_shake_timer):
+			shake_timer.timeout.connect(_on_shake_timer)
 		shake_timer.start()
 	
-	if DialogueManager and DialogueManager.has_signal("dialogue_event"):
-		DialogueManager.dialogue_event.connect(_on_dialogue_event)
-	if DialogueManager and DialogueManager.has_signal("dialogue_finished"):
-		DialogueManager.dialogue_finished.connect(_on_dialogue_finished)
+	if DialogueManager:
+		if DialogueManager.has_signal("dialogue_event"):
+			if not DialogueManager.dialogue_event.is_connected(_on_dialogue_event):
+				DialogueManager.dialogue_event.connect(_on_dialogue_event)
+		if DialogueManager.has_signal("dialogue_finished"):
+			if not DialogueManager.dialogue_finished.is_connected(_on_dialogue_finished):
+				DialogueManager.dialogue_finished.connect(_on_dialogue_finished)
 	
 	if UIManager and UIManager.has_signal("window_closed"):
-		UIManager.window_closed.connect(_on_ui_closed)
+		if not UIManager.window_closed.is_connected(_on_ui_closed):
+			UIManager.window_closed.connect(_on_ui_closed)
 	
 	await get_tree().create_timer(1.0).timeout
 	if DialogueManager:
 		DialogueManager.start_dialogue("Court Mage", dialogue_lines)
+
+func _print_node_recursive(node: Node, indent: String = ""):
+	var info = indent + node.name + " (" + node.get_class() + ")"
+	if "visible" in node:
+		info += " Vis:" + str(node.visible)
+	if "position" in node:
+		info += " Pos:" + str(node.position)
+	if "modulate" in node:
+		info += " Mod:" + str(node.modulate)
+	if "z_index" in node:
+		info += " Z:" + str(node.z_index)
+	print(info)
+	for child in node.get_children():
+		_print_node_recursive(child, indent + "  ")
+
 
 func _process(delta):
 	if Input.is_action_just_pressed("ui_cancel") and not _waiting_for_magic and not _waiting_for_crafting and not _has_skip_started:

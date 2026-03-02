@@ -1,8 +1,8 @@
-[gd_resource type="Resource" script_class="WandData" load_steps=6 format=3]
+[gd_resource type="Resource" script_class="WandData" load_steps=6 format=3 uid="uid://km4ngtujpumn"]
 
-[ext_resource type="Script" path="res://src/systems/magic/wand_embryo.gd" id="1_1jdx5"]
-[ext_resource type="Script" path="res://src/systems/magic/wand_data.gd" id="2_7ep3c"]
-[ext_resource type="Script" path="res://src/core/resources/base_item.gd" id="3_lyvff"]
+[ext_resource type="Script" uid="uid://bhoccb4m22jg" path="res://src/systems/magic/wand_embryo.gd" id="1_1jdx5"]
+[ext_resource type="Script" uid="uid://dv2ulov3aix7q" path="res://src/systems/magic/wand_data.gd" id="2_7ep3c"]
+[ext_resource type="Script" uid="uid://bxsrq1a31j2wv" path="res://src/core/resources/base_item.gd" id="3_lyvff"]
 
 [sub_resource type="Resource" id="Resource_ybxla"]
 script = ExtResource("1_1jdx5")

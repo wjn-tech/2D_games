@@ -71,3 +71,8 @@ func _rebuild_slots():
 
 func _on_slot_clicked(_inv, index):
 	item_clicked.emit(index)
+
+func get_slot_global_position(index: int) -> Vector2:
+	if index < 0 or index >= get_child_count(): return Vector2.ZERO
+	var child = get_child(index)
+	return child.global_position + child.size / 2.0

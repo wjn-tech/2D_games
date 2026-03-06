@@ -1,0 +1,5 @@
+- [ ] Create `assets/visuals/characters/mage/` directory and add `mage_idle.png` (or sprite sheet). <!-- id: 0 -->
+- [ ] Create `src/entities/npc/court_mage.gd` script for floating logic and facing. <!-- id: 1 -->
+- [ ] Create `scenes/entities/court_mage.tscn` implementing the new design (Visuals child node). <!-- id: 2 -->
+- [ ] Replace the existing `CourtMage` node in `scenes/tutorial/spaceship2.tscn` with an instance of `scenes/entities/court_mage.tscn`. <!-- id: 3 -->
+- [ ] Verify the tutorial intro sequence plays correctly with the new mage. <!-- id: 4 -->

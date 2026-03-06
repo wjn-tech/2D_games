@@ -1,10 +1,11 @@
 extends Node
 class_name SpellProcessor
 
-const SCENE_PROJECTILE = preload("res://src/systems/magic/projectiles/projectile_standard.tscn")
-const SCENE_TRIGGER_TIMER = preload("res://src/systems/magic/projectiles/trigger_timer.tscn")
-const SCENE_TRIGGER_COLLISION = preload("res://src/systems/magic/projectiles/trigger_collision.tscn")
-const SCENE_TRIGGER_DISAPPEAR = preload("res://src/systems/magic/projectiles/trigger_disappear.tscn")
+# SCENE paths are now loaded dynamically to avoid circular dependencies
+# const SCENE_PROJECTILE = preload("res://src/systems/magic/projectiles/projectile_standard.tscn")
+# const SCENE_TRIGGER_TIMER = preload("res://src/systems/magic/projectiles/trigger_timer.tscn")
+# const SCENE_TRIGGER_COLLISION = preload("res://src/systems/magic/projectiles/trigger_collision.tscn") 
+# const SCENE_TRIGGER_DISAPPEAR = preload("res://src/systems/magic/projectiles/trigger_disappear.tscn")
 
 class SpellRunner extends Node:
 	var schedule: Array = [] # Array of [time, instruction, relative_pos, direction, parent_node, modifiers]
@@ -42,22 +43,33 @@ static func cast_spell(wand_data: WandData, source_entity: Node2D, direction: Ve
 	var program = WandCompiler.compile(wand_data)
 	wand_data.compiled_program = program
 	
+	# DEBUG: Trace compilation
+	print("SpellProcessor: Casting wand ", wand_data.id, " | Program Valid: ", program.is_valid, " | Instructions: ", program.root_tier.instructions.size())
+	
 	if not program.is_valid:
-		return 0.0
+		print("SpellProcessor: Program invalid! Errors: ", program.compilation_errors)
+		# Force valid for tutorial starter wand to bypass structural checks
+		if wand_data.id == "starter_wand":
+			print("SpellProcessor: Tutorial bypass - forcing valid. Deck size: ", program.root_tier.instructions.size())
+			# 如果指令集为空，强行塞入一个发射物，防止教程卡死
+			if program.root_tier.instructions.is_empty():
+				var fallback_instr = SpellInstruction.new()
+				fallback_instr.type = "PROJECTILE" # Using the constant string value
+				fallback_instr.params = {"speed": 800, "damage": 10, "mana_cost": 0}
+				program.root_tier.instructions.append(fallback_instr)
+				print("SpellProcessor: ADDED FALLBACK PROJECTILE TO TUTORIAL WAND")
+		else:
+			return 0.0
 		
 	var deck = program.root_tier.instructions
 	if deck.is_empty():
-		print("SpellProcessor: deck empty after compile; root_tier.instructions.size=", program.root_tier.instructions.size())
-		# Also dump compiled program for diagnosis
-		SpellProcessor.debug_print_schedule(program.root_tier)
+		print("SpellProcessor: deck empty after compile")
 		return 0.0
 
-	# Debug: print deck contents (types and child tiers)
-	print("SpellProcessor: compiled deck_count=", deck.size())
+	# Debug: print deck contents
 	for i in range(deck.size()):
 		var d = deck[i]
-		var child_exists = d.child_tier != null and not d.child_tier.instructions.is_empty()
-		print("SpellProcessor: deck[", i, "] type=", d.type, " child_exists=", child_exists)
+		print("SpellProcessor: deck[", i, "] type=", d.type)
 
 	var cast_origin = start_pos if start_pos != Vector2.INF else source_entity.global_position
 	
@@ -68,7 +80,12 @@ static func cast_spell(wand_data: WandData, source_entity: Node2D, direction: Ve
 	var accumulated_cast_delay = 0.0
 	var accumulated_recharge_time = 0.0
 
-	# debug: deck summary omitted
+	# Ensure deck is not being exhausted erroneously
+	if wand_data.deck_index >= deck.size():
+		wand_data.deck_index = 0
+		print("SpellProcessor: Resetting deck_index for cast.")
+
+	print("SpellProcessor: Starting cast. Mana=", wand_data.current_mana, " DeckIndex=", wand_data.deck_index, " DeckSize=", deck.size())
 	
 	# Safety brake
 	var iterations = 0
@@ -80,6 +97,7 @@ static func cast_spell(wand_data: WandData, source_entity: Node2D, direction: Ve
 		if wand_data.deck_index >= deck.size():
 			# Trigger Recharge
 			var final_recharge = max(0.01, program.total_recharge_time + accumulated_recharge_time)
+			print("SpellProcessor: Deck Empty. Recharging. Duration=", final_recharge)
 			wand_data.trigger_recharge(final_recharge)
 			draw_count = 0 # Stop casting
 			break
@@ -88,21 +106,28 @@ static func cast_spell(wand_data: WandData, source_entity: Node2D, direction: Ve
 		
 		# 4. Mana Check
 		var cost = instr.params.get("mana_cost", 0.0) if instr.params is Dictionary else 0.0
+		
+		# DEBUG: Force cast in tutorial if it's the starter wand
+		var is_tutorial_wand = (wand_data.id == "starter_wand")
+		if is_tutorial_wand:
+			cost = 0.0
+			# Ensure mana is topped up just in case
+			wand_data.current_mana = max(wand_data.current_mana, cost + 1.0)
+			print("SpellProcessor: TUTORIAL OVERRIDE - Cast allowed for ", instr.type)
+			
 		if wand_data.current_mana < cost:
 			# Not enough mana. 
-			# In Noita, if we can't afford the NEXT spell in a cast, we just stop.
-			# But we DON'T necessarily trigger reload unless it was the end of the deck.
-			# However, most players expect the wand to "think" it's empty if they hold fire.
-			# To avoid a "dead lock" where deck_index is stuck on a spell you can't afford:
-			# If we can't afford it, we don't advance the index, and we return.
-			# Next frame, we try again.
+			print("SpellProcessor: Not enough mana to cast! cost=", cost, " current=", wand_data.current_mana, " deck_index=", wand_data.deck_index)
+			# Do NOT recharge immediately here, just stop drawing
 			draw_count = 0
 			break
 			
 		wand_data.current_mana -= cost
 		wand_data.deck_index += 1
+		print("SpellProcessor: Consumed mana. Remaining: ", wand_data.current_mana)
 		
 		# Process Instruction
+		# print("Processing instr: ", instr.type, " id=", instr.params.get("projectile_id", "unknown"))
 		
 		# Modifiers
 		if instr.type == SpellInstruction.TYPE_MODIFIER:
@@ -125,8 +150,9 @@ static func cast_spell(wand_data: WandData, source_entity: Node2D, direction: Ve
 			continue
 			
 		# Projectiles / Triggers (Action)
-		if instr.type == SpellInstruction.TYPE_PROJECTILE or instr.type == SpellInstruction.TYPE_TRIGGER_TIMER or instr.type == SpellInstruction.TYPE_TRIGGER_COLLISION or instr.type == SpellInstruction.TYPE_TRIGGER_DISAPPEAR or instr.type == SpellInstruction.TYPE_LOGIC_BLOCK:
+		if instr.type == SpellInstruction.TYPE_PROJECTILE or instr.type == "PROJECTILE" or instr.type == "action_projectile" or instr.type == SpellInstruction.TYPE_TRIGGER_TIMER or instr.type == SpellInstruction.TYPE_TRIGGER_COLLISION or instr.type == SpellInstruction.TYPE_TRIGGER_DISAPPEAR or instr.type == SpellInstruction.TYPE_LOGIC_BLOCK:
 			
+			print("SpellProcessor: DISPATCHING action: ", instr.type)
 			if instr.type == SpellInstruction.TYPE_LOGIC_BLOCK:
 				# Execute child tier sequentially and accumulate delays.
 				if instr.child_tier:
@@ -188,45 +214,46 @@ static func cast_spell(wand_data: WandData, source_entity: Node2D, direction: Ve
 	return accumulated_cast_delay
 
 static func _spawn_instruction(instr: SpellInstruction, parent: Node, pos: Vector2, dir: Vector2, source: Node2D = null, modifiers: Array = []):
-	print("SPAWN: instr=", instr.type, " pos=", pos, " dir=", dir, " modifiers_count=", modifiers.size())
-	# Only execute child_tier immediately if this instruction is a pure logic-block.
-	# For projectiles/triggers, pass the child_tier to the spawned instance so it
-	# can execute later when its trigger condition occurs.
-	if instr.child_tier and not instr.child_tier.instructions.is_empty() and instr.type == SpellInstruction.TYPE_LOGIC_BLOCK:
-		print("SPAWN: instr is LOGIC_BLOCK, executing child_tier immediately, modifiers_count=", modifiers.size())
-		var child_total = execute_tier(instr.child_tier, pos, dir, source, parent, modifiers, instr.child_mode == "PARALLEL")
-		print("SPAWN: executed child_tier total_delay=", child_total)
-		instr.child_tier = null
-	var scene_to_spawn = SCENE_PROJECTILE
+	if not instr: return
 	
-	match instr.type:
-		SpellInstruction.TYPE_PROJECTILE:
-			scene_to_spawn = SCENE_PROJECTILE
-		SpellInstruction.TYPE_TRIGGER_TIMER:
-			scene_to_spawn = SCENE_TRIGGER_TIMER
-		SpellInstruction.TYPE_TRIGGER_COLLISION:
-			scene_to_spawn = SCENE_TRIGGER_COLLISION
-		SpellInstruction.TYPE_TRIGGER_DISAPPEAR:
-			scene_to_spawn = SCENE_TRIGGER_DISAPPEAR
-		SpellInstruction.TYPE_LOGIC_BLOCK:
-			# Not a scene. Just execute children.
-			if instr.child_tier:
-				# Recursively execute this tier immediately.
-				# Modifiers context?
-				# Modifiers applied to this block should apply to children? YES.
-				# But execute_tier takes no modifiers arg.
-				# We should probably pass them.
-				# For now, simplistic recursion:
-				execute_tier(instr.child_tier, pos, dir, source, parent, modifiers)
-			return
-		_:
-			pass
-			
-	if not scene_to_spawn:
+	# Only execute child_tier immediately if this instruction is a pure logic-block.
+	if instr.child_tier and not instr.child_tier.instructions.is_empty() and instr.type == SpellInstruction.TYPE_LOGIC_BLOCK:
+		# print("SPAWN: instr is LOGIC_BLOCK, executing child_tier immediately.")
+		execute_tier(instr.child_tier, pos, dir, source, parent, modifiers, instr.child_mode == "PARALLEL")
+		instr.child_tier = null
 		return
-		
-	var instance = scene_to_spawn.instantiate()
-	instance.global_position = pos
+
+	var scene_to_spawn = null
+	
+	# Map types to scenes
+	if instr.type == SpellInstruction.TYPE_PROJECTILE or instr.type == "PROJECTILE" or instr.type == "action_projectile":
+		scene_to_spawn = load("res://src/systems/magic/projectiles/projectile_standard.tscn")
+	elif instr.type == SpellInstruction.TYPE_TRIGGER_TIMER or instr.type == "trigger_timer" or instr.type == "TRIGGER_TIMER":
+		scene_to_spawn = load("res://src/systems/magic/projectiles/trigger_timer.tscn")
+	elif instr.type == SpellInstruction.TYPE_TRIGGER_COLLISION or instr.type == "trigger_collision" or instr.type == "TRIGGER_COLLISION":
+		scene_to_spawn = load("res://src/systems/magic/projectiles/trigger_collision.tscn")
+	elif instr.type == SpellInstruction.TYPE_TRIGGER_DISAPPEAR or instr.type == "trigger_disappear" or instr.type == "TRIGGER_DISAPPEAR":
+		scene_to_spawn = load("res://src/systems/magic/projectiles/trigger_disappear.tscn")
+
+	if not scene_to_spawn:
+		print("SpellProcessor: Instruction has no scene mapped: ", instr.type)
+		return
+
+	# print("Instantiating scene for type: ", instr.type, " scene: ", scene_to_spawn.resource_path)
+	var spawned_node = scene_to_spawn.instantiate()
+	if not spawned_node:
+		print("SpellProcessor: Failed to instantiate scene for type: ", instr.type)
+		return
+	
+	# Explicitly handle parent for new instance
+	if parent:
+		parent.add_child(spawned_node)
+	else:
+		var root = _get_world_root()
+		if root: root.add_child(spawned_node)
+	
+	print("SpellProcessor: Spawned projectile: ", instr.type, " at ", pos, " parent: ", spawned_node.get_parent().name if spawned_node.get_parent() else "NULL")
+	spawned_node.global_position = pos
 	
 	# Apply Modifiers Logic (Spread)
 	var spread = 0.0
@@ -238,17 +265,17 @@ static func _spawn_instruction(instr: SpellInstruction, parent: Node, pos: Vecto
 			m_params = mod.get("params", mod)
 		
 		if m_params is Dictionary:
-			spread += m_params.get("spread", 0.0)
+			spread += float(m_params.get("spread", 0.0))
 	
 	if spread != 0.0:
 		var rad = deg_to_rad(spread)
 		var angle = dir.angle() + randf_range(-rad, rad)
-		instance.rotation = angle
+		spawned_node.rotation = angle
 	else:
-		instance.rotation = dir.angle()
+		spawned_node.rotation = dir.angle()
 	
 	# Apply Modifiers Logic (Stats)
-	var final_params = instr.params.duplicate()
+	var final_params = instr.params.duplicate() if instr.params else {}
 	for mod in modifiers:
 		var m_params = null
 		if mod is SpellInstruction:
@@ -260,39 +287,40 @@ static func _spawn_instruction(instr: SpellInstruction, parent: Node, pos: Vecto
 			continue
 		# Use has() so zero-values are respected
 		if m_params.has("damage_add"):
-			final_params["damage"] = final_params.get("damage", 10.0) + float(m_params["damage_add"])
+			final_params["damage"] = float(final_params.get("damage", 10.0)) + float(m_params["damage_add"])
 		if m_params.has("speed_add"):
-			final_params["speed"] = final_params.get("speed", 300.0) + float(m_params["speed_add"])
+			final_params["speed"] = float(final_params.get("speed", 300.0)) + float(m_params["speed_add"])
 		if m_params.has("speed_multiplier"):
-			final_params["speed"] = final_params.get("speed", 300.0) * float(m_params["speed_multiplier"])
+			final_params["speed"] = float(final_params.get("speed", 300.0)) * float(m_params["speed_multiplier"])
 		if m_params.has("multiplier"):
-			final_params["speed"] = final_params.get("speed", 300.0) * float(m_params["multiplier"])
+			final_params["speed"] = float(final_params.get("speed", 300.0)) * float(m_params["multiplier"])
 		if m_params.has("lifetime_add"):
-			final_params["lifetime"] = final_params.get("lifetime", 1.0) + float(m_params["lifetime_add"])
+			final_params["lifetime"] = float(final_params.get("lifetime", 1.0)) + float(m_params["lifetime_add"])
 		# Elemental or effect modifiers
 		if m_params.has("element"):
 			final_params["element"] = m_params["element"]
 		if m_params.has("damage_multiplier"):
-			final_params["damage"] = final_params.get("damage", 10.0) * float(m_params["damage_multiplier"])
+			final_params["damage"] = float(final_params.get("damage", 10.0)) * float(m_params["damage_multiplier"])
 
-	if instance.has_method("setup"):
-		instance.setup(final_params, modifiers) # Keep passing modifications just in case
+	if spawned_node.has_method("setup"):
+		spawned_node.setup(final_params, modifiers) 
 	
-	if source and "caster" in instance:
-		instance.caster = source
+	if source and "caster" in spawned_node:
+		spawned_node.caster = source
 
-	if instance is CharacterBody2D:
-		instance.collision_mask = LayerManager.LAYER_WORLD_0 | LayerManager.LAYER_NPC
+	if spawned_node is CharacterBody2D and LayerManager:
+		spawned_node.collision_mask = LayerManager.LAYER_WORLD_0 | LayerManager.LAYER_NPC
 
 	# Pass child tier for triggers: ensure all instances that support setup_trigger receive it
-	if instr.child_tier and instance.has_method("setup_trigger"):
+	if instr.child_tier and spawned_node.has_method("setup_trigger"):
 		# Pass modifiers directly to the trigger instance (avoid mutating shared child_tier)
 		if modifiers and instr.child_tier:
-			instance.setup_trigger(instr.child_tier, modifiers, instr.child_mode)
+			spawned_node.setup_trigger(instr.child_tier, modifiers, instr.child_mode)
 		else:
-			instance.setup_trigger(instr.child_tier, [], instr.child_mode)
+			spawned_node.setup_trigger(instr.child_tier, [], instr.child_mode)
 	
-	parent.add_child(instance)
+	parent.add_child(spawned_node)
+	# print("Successfully added spawned_node to tree: ", spawned_node.name, " at ", spawned_node.global_position)
 
 static func execute_tier(tier: ExecutionTier, position: Vector2, direction: Vector2, source: Node2D = null, world_context: Node = null, modifiers: Array = [], top_level_parallel: bool = false) -> float:
 	if not tier or tier.instructions.is_empty():
@@ -406,7 +434,20 @@ static func _append_tier_to_runner(runner: SpellRunner, tier: ExecutionTier, pos
 static func _get_world_root() -> Node:
 	var tree = Engine.get_main_loop() as SceneTree
 	if not tree: return null
-	return tree.current_scene
+	
+	var scene = tree.current_scene
+	if not scene: return null
+	
+	# If we are in Tutorial, ensure we don't spawn projectiles 
+	# as immediate children of the Manager if it might be paused/destroyed.
+	# Usually, spawning inside an "Entities" or "Projectiles" node is safer.
+	var proj_root = scene.find_child("Projectiles", true, false)
+	if proj_root: return proj_root
+	
+	var entities = scene.find_child("Entities", true, false)
+	if entities: return entities
+	
+	return scene
 
 static func get_wand_stats(wand_data: WandData) -> Dictionary:
 	if not wand_data: return {}

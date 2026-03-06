@@ -311,9 +311,9 @@ func _spawn_mob(path: String, pos: Vector2) -> void:
 		mob.npc_data.alignment = "Hostile"		
 		# 根据NPC类型设置自定义display_name
 		if path.contains("zombie"):
-			mob.npc_data.display_name = "敌国追兵"
+			mob.npc_data.display_name = "NPC_ZOMBIE_SOLDIER"
 		elif path.contains("skeleton"):
-			mob.npc_data.display_name = "地底洞人"
+			mob.npc_data.display_name = "NPC_SKELETON_CAVEMAN"
 			mob.add_to_group("hostile_npcs")
 		
 		# 确保血条显示正确同步

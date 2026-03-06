@@ -49,6 +49,11 @@ func _update_style() -> void:
 		
 	add_theme_stylebox_override("panel", style)
 
+func get_slot_data() -> Dictionary:
+	if inventory:
+		return inventory.get_slot(slot_index)
+	return { "item": null, "count": 0 }
+
 func _on_mouse_entered_slot() -> void:
 	_on_mouse_entered() # Call existing logic
 	
@@ -157,11 +162,32 @@ func _get_drag_data(at_position):
 	var item = slot.get("item")
 	if not item: return null
 	
+	# 首先通过 UI 层级尝试强制关闭高亮 (此时槽位数据还未彻底变更)
+	# 这样在拖拽预览生成的同一帧，高亮就消失
+	if UIManager:
+		UIManager.clear_highlight()
+	
 	var preview = TextureRect.new()
 	preview.texture = item.icon
 	preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	preview.size = Vector2(40, 40)
+	preview.modulate.a = 0.8
 	set_drag_preview(preview)
+	
+	# 显式关闭教程箭头 (使用 UIManager.highlight_overlay 自动清理逻辑辅助)
+	var tutorial = get_tree().get_first_node_in_group("tutorial_manager")
+	if tutorial:
+		# 强制触发一次清除操作
+		if tutorial.has_method("_check_step"):
+			# 如果当前正在做这个步骤，我们不直接 check，而是让 UI 层清空
+			pass
+		
+		# 寻找箭头所在的 CanvasLayer 孩子并隐藏 (TutorialOverlay)
+		for child in tutorial.get_children():
+			if child is CanvasLayer and child.name == "TutorialOverlay":
+				for sub_child in child.get_children():
+					if sub_child is Control: # This is the arrow
+						sub_child.visible = false
 	
 	return { "inventory": inventory, "index": slot_index, "item": item }
 
@@ -181,3 +207,7 @@ func _drop_data(at_position, data):
 		manager = get_tree().get_first_node_in_group("inventory_manager")
 		if manager:
 			manager.swap_items(from_inv, from_idx, inventory, slot_index)
+			
+	# Notify UI Manager to clear tutorial highlights if this was the tutorial item
+	if UIManager and UIManager.has_method("clear_highlight"):
+		UIManager.clear_highlight()

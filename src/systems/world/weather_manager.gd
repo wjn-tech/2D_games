@@ -135,3 +135,19 @@ func _update_particles() -> void:
 	for node in snow_nodes:
 		if node.has_method("set_emitting"):
 			node.emitting = (current_weather == WeatherType.SNOWY)
+
+
+# --- Persistence ---
+func get_save_data() -> Dictionary:
+	return {
+		'current_weather': current_weather,
+		'weather_timer': weather_timer,
+		'thunder_cooldown': thunder_cooldown
+	}
+
+func load_save_data(data: Dictionary) -> void:
+	current_weather = data.get('current_weather', WeatherType.SUNNY)
+	weather_timer = data.get('weather_timer', 300.0)
+	thunder_cooldown = data.get('thunder_cooldown', 0.0)
+	call_deferred('_apply_weather_effects')
+	# Lighting update handled by _process

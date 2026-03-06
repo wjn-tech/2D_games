@@ -1,0 +1,43 @@
+# Design: Global Audio System Architecture
+
+## Architecture Overview
+The system centers on a singleton `AudioManager` that manages node pools for concurrent SFX playback and dedicated streams for looping Ambience and Music.
+
+## Key Components
+
+### 1. AudioManager Singleton
+- **Responsibility**: Global playback entry point for UI, Scripts, and Signals.
+- **Node Structure**:
+    - `MusicStreamPlayer` (BGM bus): Dedicated player for music. Supports cross-fading.
+    - `AmbientStreamPlayer` (Ambient bus): Dedicated player for weather/biome loops.
+    - `SFXPool` (SFX bus): A dynamic or pre-allocated pool of `AudioStreamPlayer` nodes to handle overlapping sounds without interruption.
+
+### 2. Audio Bus Layout
+- **Master**: Overall project volume.
+- **Music (L-R)**: Background melodies.
+- **SFX**: Player actions, UI clicks, small events.
+- **Ambient**: Wind, Rain, Biome loops.
+- **Voice (Optional)**: Reserved for future NPC dialogue.
+
+### 3. Integrated Playback API
+```gdscript
+# Trigger a one-shot SFX at any position or globally
+AudioManager.play_sfx("ui_click")
+AudioManager.play_sfx_at_pos(global_pos, "impact_metal")
+
+# Transitions for looping audio
+AudioManager.play_bgm("forest_theme", fade_time = 2.0)
+AudioManager.play_ambience("rain_loop", fade_time = 1.0)
+```
+
+## Data Management
+Audio assets are managed via a centralized `Dictionary` mapping string keys to `AudioStream` resources (Ogg, MP3, Wav). This avoids hardcoded paths in system scripts.
+
+## Performance Optimization
+- **Node Pooling**: Prevents excessive node creation/deletion; reuses inactive players.
+- **Volume Control**: Direct control over `AudioServer` buses for real-time responsiveness.
+- **Format Choices**: Use `Wav` for short, frequent SFX (low CPU impact). Use `Ogg` or `MP3` for long, looping Music (compressed).
+
+## Cross-System Integration
+- **EventBus Connections**: The `AudioManager` will listen for generic events like `player_jumped`, `item_crafted`, or `weather_changed` to automatically trigger corresponding sounds.
+- **UI Hooks**: Use `get_tree().node_added` or manual hookups to automatically add SFX to standard Button clicks across all menus.

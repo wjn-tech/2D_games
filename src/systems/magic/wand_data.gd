@@ -1,6 +1,14 @@
 extends Resource
 class_name WandData
 
+# Inventory/UI Compatibility
+@export var id: String = "wand"
+@export var display_name: String = "Magic Wand"
+@export var icon: Texture2D
+@export var description: String = "A magical device capable of channeling spells."
+@export var stackable: bool = false # Wands usually unique
+@export var max_stack: int = 1
+
 @export var embryo: WandEmbryo
 # Dictionary {(x,y): MaterialResource}
 @export var visual_grid: Dictionary = {}

@@ -8,8 +8,19 @@ class_name Pickup
 
 func _ready():
 	body_entered.connect(_on_body_entered)
+	mouse_entered.connect(_on_mouse_entered)
+	mouse_exited.connect(_on_mouse_exited)
+	input_pickable = true # 确保 Area2D 可检取鼠标输入
 	if item_data:
 		setup(item_data, amount)
+
+func _on_mouse_entered() -> void:
+	if is_instance_valid(CursorManager):
+		CursorManager.set_cursor(CursorManager.CursorType.PICKUP if CursorManager.CursorType.has("PICKUP") else CursorManager.CursorType.HOVER)
+
+func _on_mouse_exited() -> void:
+	if is_instance_valid(CursorManager):
+		CursorManager.set_cursor(CursorManager.CursorType.DEFAULT)
 
 func setup(data: ItemData, qty: int):
 	item_data = data

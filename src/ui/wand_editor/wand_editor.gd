@@ -37,6 +37,9 @@ func _ready():
 	# Ensure WandEditor is always on top of other UI elements (like Hotbar which is z_index 10, Minimap potentially 100)
 	z_index = 120
 	
+	# 让窗口支持在暂停时接收输入
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	
 	_apply_sci_fi_theme()
 	call_deferred("_apply_layout_polish") # Deferred to ensure nodes are ready for reparenting
 	_setup_libraries()
@@ -415,9 +418,19 @@ func _exit_tree():
 		get_tree().paused = false
 	if EventBus:
 		EventBus.player_input_enabled.emit(true)
+		# 确保即使 UIManager 没有发出信号，这里也会发出，作为双重保险
+		EventBus.wand_editor_closed.emit()
+
+func _input(event: InputEvent) -> void:
+	# 允许按 K 键关闭编辑器，即使在暂停状态下
+	if event is InputEventKey and event.pressed and event.keycode == KEY_K:
+		if UIManager:
+			UIManager.close_window("WandEditor")
+		get_viewport().set_input_as_handled()
 
 func _on_visibility_changed():
 	if visible:
+		EventBus.wand_editor_opened.emit()
 		get_tree().paused = true # Diegetic UI Pause
 		_apply_sci_fi_theme() # Refresh theme
 		
@@ -447,6 +460,7 @@ func _on_visibility_changed():
 		# so we rely on _exit_tree for critical cleanup too.
 		get_tree().paused = false 
 		EventBus.player_input_enabled.emit(true)
+		EventBus.wand_editor_closed.emit()
 		
 		if UIManager:
 			UIManager.close_window("WandEditor")
@@ -649,6 +663,11 @@ func _add_logic_palette_button(parent, item):
 		return
 	
 	btn.set_script(load("res://src/ui/wand_editor/components/logic_palette_button.gd"))
+	
+	# Add metadata for Tutorial System lookup
+	if has_method("_get_item_id"):
+		btn.set_meta("item_id", _get_item_id(item))
+	
 	btn.setup(item)
 
 func _on_palette_item_selected(item):
@@ -717,6 +736,7 @@ func _on_logic_changed():
 	current_wand.logic_nodes = logic_data["nodes"]
 	current_wand.logic_connections = logic_data["connections"]
 	_update_stats_display()
+	EventBus.spell_logic_updated.emit(current_wand)
 
 func _on_visual_grid_cell_clicked(coords, btn_index):
 	# Logic to place "Currently Selected Material"
@@ -1008,3 +1028,25 @@ func _on_logic_mode_toggled(toggled_on: bool):
 		if library_container: library_container.visible = true
 		if visual_grid: visual_grid.visible = false
 		if logic_board: logic_board.visible = true
+
+func get_palette_button_by_item_id(item_id: String) -> Control:
+	if not palette_grid: return null
+	for child in palette_grid.get_children():
+		if child.has_meta("item_id"):
+			if child.get_meta("item_id") == item_id:
+				return child
+	return null
+
+func get_logic_node_by_type(node_type: String) -> Control:
+	if not logic_board: return null
+	for child in logic_board.get_children():
+		if child is GraphNode and child.has_meta("node_type"):
+			if child.get_meta("node_type") == node_type:
+				return child
+	return null
+
+func get_grid_cell_global_position(x: int, y: int) -> Vector2:
+	if not logic_board: return Vector2.ZERO
+	if logic_board.has_method("get_grid_global_position"):
+		return logic_board.get_grid_global_position(x, y)
+	return Vector2.ZERO

@@ -28,6 +28,7 @@ func setup(data: BaseItem, qty: int = 1, delay: float = 0.8) -> void:
 
 func _ready() -> void:
 	add_to_group("loot")
+	add_to_group("pickups")
 	
 	# CharacterBody2D doesn't use body_entered directly for its main collision.
 	# We'll use a child Area2D for easier pickup detection if needed, 
@@ -142,3 +143,12 @@ func _collect() -> void:
 		var tween = create_tween()
 		tween.tween_property(self, "scale", Vector2(1.3, 1.3), 0.1)
 		tween.tween_property(self, "scale", Vector2(1.0, 1.0), 0.1)
+
+# --- Persistence
+func get_save_data() -> Dictionary:
+	return {
+		'file': scene_file_path,
+		'pos': global_position,
+		'amount': amount,
+		'item_res': item_data.resource_path if item_data else ''
+	}

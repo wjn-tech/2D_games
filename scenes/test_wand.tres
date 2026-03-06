@@ -1,66 +1,161 @@
-[gd_resource type="Resource" script_class="WandData" load_steps=6 format=3 uid="uid://km4ngtujpumn"]
+[gd_resource type="Resource" script_class="WandData" load_steps=10 format=3 uid="uid://d2u33fhwga3xg"]
 
 [ext_resource type="Script" uid="uid://bhoccb4m22jg" path="res://src/systems/magic/wand_embryo.gd" id="1_1jdx5"]
 [ext_resource type="Script" uid="uid://dv2ulov3aix7q" path="res://src/systems/magic/wand_data.gd" id="2_7ep3c"]
-[ext_resource type="Script" uid="uid://bxsrq1a31j2wv" path="res://src/core/resources/base_item.gd" id="3_lyvff"]
+[ext_resource type="Script" uid="uid://bxsrq1a31j2wv" path="res://src/core/resources/base_item.gd" id="3_1jdx5"]
 
 [sub_resource type="Resource" id="Resource_ybxla"]
 script = ExtResource("1_1jdx5")
 
+[sub_resource type="Resource" id="Resource_dr5w7"]
+script = ExtResource("3_1jdx5")
+display_name = "ITEM_BLUE_POWER_SOURCE"
+wand_visual_color = Color(0.2, 0.6, 1, 1)
+wand_logic_type = "battery"
+
+[sub_resource type="Resource" id="Resource_lyvff"]
+script = ExtResource("3_1jdx5")
+display_name = "ITEM_HULL_LIGHT"
+wand_visual_color = Color(0.7, 0.75, 0.8, 1)
+wand_logic_type = "hull"
+
+[sub_resource type="Resource" id="Resource_7ep3c"]
+script = ExtResource("3_1jdx5")
+display_name = "ITEM_CYAN_CRYSTAL"
+wand_visual_color = Color(0.2, 0.9, 1, 1)
+wand_logic_type = "battery"
+
+
+[sub_resource type="Resource" id="Resource_1jdx5"]
+script = ExtResource("3_1jdx5")
+display_name = "ITEM_BLUE_POWER_SOURCE"
+wand_visual_color = Color(0.2, 0.6, 1, 1)
+wand_logic_type = "battery"
+
 [sub_resource type="Resource" id="Resource_2loie"]
-script = ExtResource("3_lyvff")
-id = "test_block"
-wand_visual_color = Color(0, 1, 1, 1)
+script = ExtResource("3_1jdx5")
+display_name = "ITEM_DISPLAY_SCREEN"
+wand_visual_color = Color(0, 0.8, 0.8, 1)
+wand_logic_type = "screen"
 
 [resource]
 script = ExtResource("2_7ep3c")
 embryo = SubResource("Resource_ybxla")
 visual_grid = {
-Vector2i(1, 1): SubResource("Resource_2loie"),
-Vector2i(2, 2): SubResource("Resource_2loie")
+Vector2i(4, 8): SubResource("Resource_dr5w7"),
+Vector2i(4, 9): SubResource("Resource_dr5w7"),
+Vector2i(5, 2): SubResource("Resource_lyvff"),
+Vector2i(5, 3): SubResource("Resource_lyvff"),
+Vector2i(5, 8): SubResource("Resource_dr5w7"),
+Vector2i(5, 9): SubResource("Resource_dr5w7"),
+Vector2i(6, 2): SubResource("Resource_lyvff"),
+Vector2i(6, 3): SubResource("Resource_lyvff"),
+Vector2i(6, 6): SubResource("Resource_dr5w7"),
+Vector2i(6, 7): SubResource("Resource_dr5w7"),
+Vector2i(7, 0): SubResource("Resource_7ep3c"),
+Vector2i(7, 1): SubResource("Resource_7ep3c"),
+Vector2i(7, 2): SubResource("Resource_7ep3c"),
+Vector2i(7, 3): SubResource("Resource_7ep3c"),
+Vector2i(7, 4): SubResource("Resource_7ep3c"),
+Vector2i(7, 5): SubResource("Resource_7ep3c"),
+Vector2i(7, 6): SubResource("Resource_dr5w7"),
+Vector2i(7, 7): SubResource("Resource_dr5w7"),
+Vector2i(7, 8): SubResource("Resource_dr5w7"),
+Vector2i(7, 9): SubResource("Resource_dr5w7"),
+Vector2i(7, 10): SubResource("Resource_dr5w7"),
+Vector2i(7, 11): SubResource("Resource_dr5w7"),
+Vector2i(7, 12): SubResource("Resource_dr5w7"),
+Vector2i(7, 13): SubResource("Resource_dr5w7"),
+Vector2i(7, 14): SubResource("Resource_dr5w7"),
+Vector2i(7, 15): SubResource("Resource_dr5w7"),
+Vector2i(7, 16): SubResource("Resource_dr5w7"),
+Vector2i(7, 17): SubResource("Resource_dr5w7"),
+Vector2i(7, 18): SubResource("Resource_dr5w7"),
+Vector2i(7, 19): SubResource("Resource_dr5w7"),
+Vector2i(7, 20): SubResource("Resource_dr5w7"),
+Vector2i(7, 21): SubResource("Resource_dr5w7"),
+Vector2i(7, 22): SubResource("Resource_dr5w7"),
+Vector2i(7, 23): SubResource("Resource_1jdx5"),
+Vector2i(7, 24): SubResource("Resource_1jdx5"),
+Vector2i(7, 25): SubResource("Resource_1jdx5"),
+Vector2i(7, 26): SubResource("Resource_dr5w7"),
+Vector2i(7, 27): SubResource("Resource_dr5w7"),
+Vector2i(7, 28): SubResource("Resource_dr5w7"),
+Vector2i(7, 29): SubResource("Resource_dr5w7"),
+Vector2i(7, 30): SubResource("Resource_dr5w7"),
+Vector2i(7, 31): SubResource("Resource_dr5w7"),
+Vector2i(7, 32): SubResource("Resource_dr5w7"),
+Vector2i(7, 33): SubResource("Resource_dr5w7"),
+Vector2i(7, 34): SubResource("Resource_dr5w7"),
+Vector2i(7, 35): SubResource("Resource_dr5w7"),
+Vector2i(7, 36): SubResource("Resource_dr5w7"),
+Vector2i(7, 37): SubResource("Resource_dr5w7"),
+Vector2i(7, 38): SubResource("Resource_dr5w7"),
+Vector2i(7, 39): SubResource("Resource_dr5w7"),
+Vector2i(7, 40): SubResource("Resource_dr5w7"),
+Vector2i(7, 41): SubResource("Resource_dr5w7"),
+Vector2i(7, 42): SubResource("Resource_dr5w7"),
+Vector2i(7, 43): SubResource("Resource_1jdx5"),
+Vector2i(7, 44): SubResource("Resource_1jdx5"),
+Vector2i(7, 45): SubResource("Resource_1jdx5"),
+Vector2i(7, 46): SubResource("Resource_1jdx5"),
+Vector2i(7, 47): SubResource("Resource_1jdx5"),
+Vector2i(8, 0): SubResource("Resource_7ep3c"),
+Vector2i(8, 1): SubResource("Resource_7ep3c"),
+Vector2i(8, 2): SubResource("Resource_7ep3c"),
+Vector2i(8, 3): SubResource("Resource_7ep3c"),
+Vector2i(8, 4): SubResource("Resource_7ep3c"),
+Vector2i(8, 5): SubResource("Resource_7ep3c"),
+Vector2i(8, 6): SubResource("Resource_dr5w7"),
+Vector2i(8, 7): SubResource("Resource_dr5w7"),
+Vector2i(8, 8): SubResource("Resource_dr5w7"),
+Vector2i(8, 9): SubResource("Resource_dr5w7"),
+Vector2i(8, 10): SubResource("Resource_dr5w7"),
+Vector2i(8, 11): SubResource("Resource_dr5w7"),
+Vector2i(8, 12): SubResource("Resource_dr5w7"),
+Vector2i(8, 13): SubResource("Resource_dr5w7"),
+Vector2i(8, 14): SubResource("Resource_dr5w7"),
+Vector2i(8, 15): SubResource("Resource_dr5w7"),
+Vector2i(8, 16): SubResource("Resource_dr5w7"),
+Vector2i(8, 17): SubResource("Resource_dr5w7"),
+Vector2i(8, 18): SubResource("Resource_dr5w7"),
+Vector2i(8, 19): SubResource("Resource_dr5w7"),
+Vector2i(8, 20): SubResource("Resource_dr5w7"),
+Vector2i(8, 21): SubResource("Resource_dr5w7"),
+Vector2i(8, 22): SubResource("Resource_dr5w7"),
+Vector2i(8, 23): SubResource("Resource_dr5w7"),
+Vector2i(8, 24): SubResource("Resource_dr5w7"),
+Vector2i(8, 25): SubResource("Resource_dr5w7"),
+Vector2i(8, 26): SubResource("Resource_dr5w7"),
+Vector2i(8, 27): SubResource("Resource_dr5w7"),
+Vector2i(8, 28): SubResource("Resource_dr5w7"),
+Vector2i(8, 29): SubResource("Resource_dr5w7"),
+Vector2i(8, 30): SubResource("Resource_dr5w7"),
+Vector2i(8, 31): SubResource("Resource_dr5w7"),
+Vector2i(8, 32): SubResource("Resource_dr5w7"),
+Vector2i(8, 33): SubResource("Resource_dr5w7"),
+Vector2i(8, 34): SubResource("Resource_dr5w7"),
+Vector2i(8, 35): SubResource("Resource_dr5w7"),
+Vector2i(8, 36): SubResource("Resource_dr5w7"),
+Vector2i(8, 37): SubResource("Resource_dr5w7"),
+Vector2i(8, 38): SubResource("Resource_dr5w7"),
+Vector2i(8, 39): SubResource("Resource_dr5w7"),
+Vector2i(8, 40): SubResource("Resource_dr5w7"),
+Vector2i(8, 41): SubResource("Resource_dr5w7"),
+Vector2i(8, 42): SubResource("Resource_dr5w7"),
+Vector2i(8, 43): SubResource("Resource_1jdx5"),
+Vector2i(8, 44): SubResource("Resource_1jdx5"),
+Vector2i(8, 45): SubResource("Resource_1jdx5"),
+Vector2i(8, 46): SubResource("Resource_1jdx5"),
+Vector2i(8, 47): SubResource("Resource_1jdx5"),
+Vector2i(9, 2): SubResource("Resource_2loie"),
+Vector2i(9, 3): SubResource("Resource_2loie"),
+Vector2i(9, 6): SubResource("Resource_dr5w7"),
+Vector2i(9, 7): SubResource("Resource_dr5w7"),
+Vector2i(10, 2): SubResource("Resource_2loie"),
+Vector2i(10, 3): SubResource("Resource_2loie"),
+Vector2i(10, 8): SubResource("Resource_dr5w7"),
+Vector2i(10, 9): SubResource("Resource_dr5w7"),
+Vector2i(11, 8): SubResource("Resource_dr5w7"),
+Vector2i(11, 9): SubResource("Resource_dr5w7")
 }
-logic_nodes = [{
-"display_name": "Fire Core",
-"id": &"49873_165",
-"position": Vector2(1472, 512),
-"type": "modifier_element",
-"value": {
-"element": "fire"
-}
-}, {
-"display_name": "Blaster",
-"id": &"31404_425",
-"position": Vector2(1664, 512),
-"type": "action_projectile",
-"value": {}
-}, {
-"display_name": "Source",
-"id": &"13909_651",
-"position": Vector2(960, 512),
-"type": "generator",
-"value": {}
-}, {
-"display_name": "Trigger (Impact)",
-"id": &"25961_407",
-"position": Vector2(1280, 512),
-"type": "trigger",
-"value": {
-"trigger_type": "collision"
-}
-}]
-logic_connections = [{
-"from_id": &"49873_165",
-"from_port": 0,
-"to_id": &"31404_425",
-"to_port": 0
-}, {
-"from_id": &"13909_651",
-"from_port": 0,
-"to_id": &"25961_407",
-"to_port": 0
-}, {
-"from_id": &"25961_407",
-"from_port": 0,
-"to_id": &"49873_165",
-"to_port": 0
-}]

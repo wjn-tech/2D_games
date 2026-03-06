@@ -1,0 +1,48 @@
+[gd_scene load_steps=3 format=3 uid="uid://o2n8l2l1j7o2"]
+
+[ext_resource type="Script" path="res://scenes/ui/tutorial/objective_tracker.gd" id="1_obj_tr"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_objbg"]
+bg_color = Color(0, 0, 0, 0.70)
+corner_radius_top_left = 5
+corner_radius_top_right = 5
+corner_radius_bottom_right = 5
+corner_radius_bottom_left = 5
+expand_margin_left = 10.0
+expand_margin_top = 5.0
+expand_margin_right = 10.0
+expand_margin_bottom = 5.0
+
+[node name="ObjectiveTracker" type="CanvasLayer"]
+script = ExtResource("1_obj_tr")
+
+[node name="Container" type="PanelContainer" parent="."]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -150.0
+offset_top = 20.0
+offset_right = 150.0
+offset_bottom = 60.0
+grow_horizontal = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_objbg")
+
+[node name="HBox" type="HBoxContainer" parent="Container"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Check" type="TextureRect" parent="Container/HBox"]
+visible = false
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+stretch_mode = 5
+
+[node name="Label" type="Label" parent="Container/HBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+text = "CURRENT OBJECTIVE"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]

@@ -117,11 +117,11 @@ func _update_biome_display() -> void:
 				main_biome = b
 		
 		# 映射枚举到名称 (Simplified for UI)
-		var names = ["Forest", "Plains", "Desert", "Tundra", "Swamp", "Cave", "U.Desert", "U.Tundra", "U.Swamp"]
+		var names = ["BIOME_FOREST", "BIOME_PLAINS", "BIOME_DESERT", "BIOME_TUNDRA", "BIOME_SWAMP", "BIOME_CAVE", "BIOME_U_DESERT", "BIOME_U_TUNDRA", "BIOME_U_SWAMP"]
 		if main_biome < names.size():
-			biome_label.text = names[main_biome]
+			biome_label.text = tr(names[main_biome])
 		else:
-			biome_label.text = "Unknown"
+			biome_label.text = tr("BIOME_UNKNOWN")
 
 func _on_time_updated(_m, _h) -> void:
 	_update_display()
@@ -136,18 +136,18 @@ func _update_display() -> void:
 		var phase_icon = ""
 		# Pixel icons instead of emoji in future via TextureRect, but text for now
 		match phase:
-			"Dawn": phase_icon = "Dawn "
-			"Day": phase_icon = "Sun "
-			"Dusk": phase_icon = "Dusk "
-			"Night": phase_icon = "Moon "
+			"Dawn": phase_icon = tr("TIME_DAWN") + " "
+			"Day": phase_icon = tr("TIME_DAY") + " "
+			"Dusk": phase_icon = tr("TIME_DUSK") + " "
+			"Night": phase_icon = tr("TIME_NIGHT") + " "
 		
 		if time_label: time_label.text = "%s %s" % [phase_icon, time_str]
 	
 	if WeatherManager and weather_label:
-		var w_name = "Clear"
+		var w_name = "WEATHER_CLEAR"
 		match WeatherManager.current_weather:
-			0: w_name = "Clear"
-			1: w_name = "Rain"
-			2: w_name = "Snow"
-			3: w_name = "Storm"
-		weather_label.text = w_name # Simplified text for column layout
+			0: w_name = "WEATHER_CLEAR"
+			1: w_name = "WEATHER_RAIN"
+			2: w_name = "WEATHER_SNOW"
+			3: w_name = "WEATHER_STORM"
+		weather_label.text = tr(w_name) # Simplified text for column layout

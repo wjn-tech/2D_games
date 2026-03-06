@@ -41,6 +41,7 @@
 
 [sub_resource type="Resource" id="Resource_3w6te"]
 script = ExtResource("2_dn7ju")
+display_name = "NPC_MERCHANT_NAME"
 personality = "Brave"
 metadata/_custom_type_script = "uid://cufim4ppwao8c"
 

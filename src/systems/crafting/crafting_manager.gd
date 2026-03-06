@@ -250,8 +250,12 @@ func craft(recipe: CraftingRecipe) -> bool:
 	# 4. 添加产物 (如果背包满则自动掉落在地上)
 	GameState.inventory.add_item_or_drop(result_item, recipe.result_amount)
 	
+	if EventBus:
+		EventBus.item_crafted.emit(result_item)
+	
 	print("制作成功: %s (%s)" % [result_item.display_name, result_item.quality_grade])
 	return true
+
 
 func _calculate_quality_results() -> Dictionary:
 	# 简单的 MVP 品质计算

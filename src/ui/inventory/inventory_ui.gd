@@ -190,3 +190,13 @@ func _input(event: InputEvent) -> void:
 		tween.tween_property(self, "modulate:a", 0.0, 0.1)
 		tween.finished.connect(func(): UIManager.close_window("Inventory"))
 		get_viewport().set_input_as_handled()
+
+func get_slot_global_position(index: int) -> Vector2:
+	if not grid_container: return Vector2.ZERO
+	if index < 0 or index >= grid_container.get_child_count(): return Vector2.ZERO
+	
+	var child = grid_container.get_child(index)
+	if not child: return Vector2.ZERO
+	
+	# Return center of the slot
+	return child.global_position + child.size / 2.0

@@ -1,0 +1,14 @@
+[gd_scene load_steps=2 format=3 uid="uid://cx6g002iqqrju"]
+
+[ext_resource type="Script" path="res://scenes/ui/tutorial_arrow.gd" id="1_script"]
+
+[node name="TutorialArrow" type="Control"]
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("1_script")
+
+[node name="Visual" type="Node2D" parent="."]
+modulate = Color(1, 0.8, 0, 1)
+
+[node name="Polygon2D" type="Polygon2D" parent="Visual"]
+polygon = PackedVector2Array(-10, -30, 10, -30, 10, -10, 20, -10, 0, 10, -20, -10, -10, -10)

@@ -4,13 +4,38 @@ extends Node
 ## 负责管理多槽位存档、元数据读取以及这一系列复杂系统的序列化。
 
 const SAVE_ROOT = "user://saves/"
+const DATA_FILENAME = "data.dat"
+const THUMBNAIL_FILENAME = "preview.jpg"
 
 # 存档元数据结构
 var save_metadata: Dictionary = {}
+var current_slot_id: int = -1
+var auto_save_timer: Timer
 
 func _ready() -> void:
 	_ensure_root_dir()
 	_load_metadata()
+	_init_autosave()
+
+func _init_autosave() -> void:
+	auto_save_timer = Timer.new()
+	auto_save_timer.wait_time = 300.0 # 5 minutes
+	auto_save_timer.one_shot = false
+	# Don't autostart immediately, only after load/new game
+	auto_save_timer.timeout.connect(_on_autosave_timeout)
+	add_child(auto_save_timer)
+
+func _on_autosave_timeout() -> void:
+	if current_slot_id >= 0:
+		# Use a background thread or sliced logic? No, synchronous for now per spec.
+		save_game(current_slot_id)
+		print("SaveManager: Autosave executed for slot %d" % current_slot_id)
+
+func start_autosave() -> void:
+	if auto_save_timer: auto_save_timer.start()
+
+func stop_autosave() -> void:
+	if auto_save_timer: auto_save_timer.stop()
 
 func _ensure_root_dir() -> void:
 	if not DirAccess.dir_exists_absolute(SAVE_ROOT):
@@ -20,7 +45,7 @@ func _get_slot_dir(slot_id: int) -> String:
 	return SAVE_ROOT + "slot_%d/" % slot_id
 
 func _get_data_path(slot_id: int) -> String:
-	return _get_slot_dir(slot_id) + "data.tres"
+	return _get_slot_dir(slot_id) + DATA_FILENAME
 
 func _load_metadata() -> void:
 	var file = FileAccess.open(SAVE_ROOT + "metadata.json", FileAccess.READ)
@@ -44,6 +69,11 @@ func get_slot_info(slot_id: int) -> Dictionary:
 # --- 核心保存逻辑 ---
 
 func save_game(slot_id: int) -> void:
+	current_slot_id = slot_id
+	# Reset autosave timer on manual save
+	if auto_save_timer and not auto_save_timer.is_stopped():
+		auto_save_timer.start()
+		
 	var slot_dir = _get_slot_dir(slot_id)
 	if not DirAccess.dir_exists_absolute(slot_dir):
 		DirAccess.make_dir_recursive_absolute(slot_dir)
@@ -56,30 +86,69 @@ func save_game(slot_id: int) -> void:
 	
 	# 2. 收集核心游戏数据
 	var data = {
-		"version": "1.0",
+		"version": "2.0",
 		"timestamp": Time.get_unix_time_from_system(),
 		"game_time": GameState.current_time,
 		"player": _pack_player_data(),
 		"inventory": _pack_inventory(),
-		"buildings": _pack_buildings()
+		"buildings": _pack_buildings(),
+		"pickups": _pack_pickups(),
+		"weather": _pack_weather(),
+		"minimap": _pack_minimap(),
+		"persist_group": _pack_persist_group(),
+		"hostiles": _pack_hostiles(),
+		"world_seed": _get_world_seed()
 	}
 	
-	# 3. 写入数据文件
-	var file = FileAccess.open(_get_data_path(slot_id), FileAccess.WRITE)
-	if file:
-		file.store_var(data)
-		file.close()
+	# 3. 写入数据文件 (Atomic & Compressed)
+	var final_path = _get_data_path(slot_id)
+	
+	# Capture Thumbnail
+	_capture_screenshot(slot_id)
+
+	if not _write_atomic_compressed(final_path, data):
+		push_error("SaveManager: Failed to save game data atomically.")
+		return
 		
 	# 4. 更新元数据
 	var key = "slot_%d" % slot_id
+	var p_name = "Unknown"
+	var p_gen = 1
+	var p_lineage = "unknown"
+	
+	if data.player and data.player.data:
+		p_name = data.player.data.get("display_name", "Player")
+		p_gen = data.player.data.get("generation", 1)
+		p_lineage = data.player.data.get("lineage_id", "L-%d" % slot_id)
+		
 	save_metadata[key] = {
 		"timestamp": data.timestamp,
-		"player_name": data.player.data.display_name,
+		"player_name": p_name,
+		"generation": p_gen,
+		"lineage_id": p_lineage,
 		"display_time": Time.get_datetime_string_from_system()
 	}
 	_save_metadata_to_disk()
 	
-	print("SaveManager: 存档 %d 保存成功" % slot_id)
+	print("SaveManager: 存档 %d 保存成功 (Binary/Atomic)" % slot_id)
+
+func _write_atomic_compressed(path: String, data: Variant) -> bool:
+	var tmp_path = path + ".tmp"
+	var bak_path = path + ".bak"
+	
+	var file = FileAccess.open_compressed(tmp_path, FileAccess.WRITE, FileAccess.COMPRESSION_ZSTD)
+	if not file:
+		return false
+	file.store_var(data, true) # Ensure full object (Resource) serialization
+	file.close()
+	
+	if FileAccess.file_exists(path):
+		if FileAccess.file_exists(bak_path):
+			DirAccess.remove_absolute(bak_path)
+		DirAccess.rename_absolute(path, bak_path)
+	
+	var err = DirAccess.rename_absolute(tmp_path, path)
+	return err == OK
 
 func _pack_player_data() -> Dictionary:
 	var player = get_tree().get_first_node_in_group("player")
@@ -138,15 +207,42 @@ func _pack_buildings() -> Array:
 
 # --- 核心加载逻辑 ---
 
-func load_game(slot_id: int) -> bool:
-	var path = _get_data_path(slot_id)
+func _load_binary_data(path: String) -> Variant:
 	if not FileAccess.file_exists(path):
-		push_error("SaveManager: 存档文件不存在 " + path)
-		return false
-		
-	var file = FileAccess.open(path, FileAccess.READ)
-	var data = file.get_var()
+		return null
+	
+	# Try compressed first (new format)
+	var file = FileAccess.open_compressed(path, FileAccess.READ, FileAccess.COMPRESSION_ZSTD)
+	if not file:
+		# Fallback to uncompressed (legacy)
+		file = FileAccess.open(path, FileAccess.READ)
+	
+	if not file: return null
+	
+	var data = file.get_var(true) # Use allow_objects=true to support Resource serialization
 	file.close()
+	return data
+
+func load_game(slot_id: int) -> bool:
+	current_slot_id = slot_id
+	start_autosave()
+	
+	var path = _get_data_path(slot_id)
+	
+	var data = _load_binary_data(path)
+	if data == null:
+		# Try Backup
+		data = _load_binary_data(path + ".bak")
+		if data != null:
+			push_warning("SaveManager: Main save corrupted, loaded from backup.")
+
+	if data == null:
+		# Only check if path missing if backup also failed
+		if not FileAccess.file_exists(path) and not FileAccess.file_exists(path + ".bak"):
+			push_error("SaveManager: 存档文件不存在 " + path)
+		else:
+			push_error("SaveManager: 存档文件损坏且无备份 " + path)
+		return false
 	
 	# 1. 设定地图路径
 	var slot_dir = _get_slot_dir(slot_id)
@@ -158,13 +254,19 @@ func load_game(slot_id: int) -> bool:
 	# 2. 恢复全局状态
 	GameState.current_time = data.get("game_time", 0.0)
 	
+	if data.has("world_seed"):
+		# Store the seed in GameState meta so GameManager can pick it up 
+		# when initializing the WorldGenerator later.
+		GameState.set_meta("pending_new_seed", data.world_seed)
+		print("SaveManager: Loaded World Seed: ", data.world_seed)
+	
 	# 3. 恢复玩家数据 (缓存，待 GameManager 应用)
 	if data.has("player"):
 		var p_info = data.player
 		var p_data = GameState.player_data
 		var saved_stats = p_info.data
 		
-		p_data.display_name = saved_stats.get("display_name", "Player")
+		p_data.display_name = saved_stats.get("display_name", "NPC_PLAYER_DEFAULT")
 
 		# 3.1 Lineage System Data Restoration
 		if saved_stats.has("stat_levels"):
@@ -201,5 +303,149 @@ func load_game(slot_id: int) -> bool:
 	# 5. 恢复建筑列表
 	GameState.set_meta("load_buildings", data.get("buildings", []))
 	
+	# 6. Restore Extended Systems (Pickups, Weather, Minimap)
+	if data.has("pickups"): _unpack_pickups(data.pickups)
+	if data.has("weather"): _unpack_weather(data.weather)
+	if data.has("minimap"): _unpack_minimap(data.minimap)
+	
+	if data.has("persist_group"): _unpack_persist_group(data.persist_group)
+	if data.has("hostiles"): _unpack_hostiles(data.hostiles)
+	
 	print("SaveManager: 存档 %d 数据已载入内存预备" % slot_id)
 	return true
+
+func _capture_screenshot(slot_id: int) -> void:
+	var viewport = get_tree().root.get_viewport()
+	if not viewport: return
+	
+	var texture = viewport.get_texture()
+	var image = texture.get_image()
+	
+	# Resize to thumbnail size (e.g. 480x270)
+	image.resize(480, 270, Image.INTERPOLATE_BILINEAR)
+	
+	var path = _get_slot_dir(slot_id) + THUMBNAIL_FILENAME
+	image.save_jpg(path, 0.70)
+
+# --- Extended Persistence Helpers ---
+
+func _pack_pickups() -> Array:
+	var list = []
+	var nodes = get_tree().get_nodes_in_group('pickups')
+	for node in nodes:
+		if node.has_method('get_save_data'):
+			list.append(node.get_save_data())
+	return list
+
+func _unpack_pickups(list: Array) -> void:
+	get_tree().call_group('pickups', 'queue_free')
+	var root = get_tree().current_scene
+	
+	for info in list:
+		if not info.get('file'): continue
+		var scn = load(info.file)
+		if scn:
+			var node = scn.instantiate()
+			node.global_position = info.get('pos', Vector2.ZERO)
+			root.add_child(node)
+			if node.has_method('setup') and info.get('item_res'):
+				var res = load(info.item_res)
+				if res: node.setup(res, info.get('amount', 1))
+
+func _pack_weather() -> Dictionary:
+	return WeatherManager.get_save_data() if WeatherManager.has_method('get_save_data') else {}
+
+func _unpack_weather(data: Dictionary) -> void:
+	if WeatherManager.has_method('load_save_data'): WeatherManager.load_save_data(data)
+
+func _pack_minimap() -> Dictionary:
+	return MinimapManager.get_save_data() if MinimapManager.has_method('get_save_data') else {}
+
+func _unpack_minimap(data: Dictionary) -> void:
+	if MinimapManager.has_method('load_save_data'): MinimapManager.load_save_data(data)
+
+# --- Generic Persist Group ---
+func _pack_persist_group() -> Dictionary:
+	var gathered = {}
+	var nodes = get_tree().get_nodes_in_group('persist')
+	for node in nodes:
+		if node.has_method('get_save_data'):
+			gathered[str(node.get_path())] = node.get_save_data()
+	return gathered
+
+func _unpack_persist_group(data: Dictionary) -> void:
+	for node_path in data:
+		if has_node(node_path):
+			var node = get_node(node_path)
+			if node.has_method('load_save_data'):
+				node.load_save_data(data[node_path])
+
+# --- Specific Enemy Persistence ---
+
+func _get_world_seed() -> int:
+	# Try to find the active WorldGenerator
+	var world_gen = get_tree().get_first_node_in_group("world_generators")
+	if not world_gen:
+		var root = get_tree().current_scene
+		if root: world_gen = root.find_child("WorldGenerator", true, false)
+	
+	if world_gen and "seed_value" in world_gen:
+		return world_gen.seed_value
+	return 0
+
+func _pack_hostiles() -> Array:
+	var list = []
+	var mobs = get_tree().get_nodes_in_group("hostile_npcs")
+	for mob in mobs:
+		if mob.scene_file_path.is_empty(): continue
+		if mob.get("health") != null and mob.health <= 0: continue # Don't save dead
+		
+		var data = {
+			"scene_path": mob.scene_file_path,
+			"pos": mob.global_position,
+			"hp": mob.get("health") if mob.get("health") != null else 100,
+			"max_hp": mob.get("max_health") if mob.get("max_health") != null else 100
+		}
+		
+		# If using CharacterData resource system
+		if "npc_data" in mob and mob.npc_data:
+			data["hp"] = mob.npc_data.health
+			data["max_hp"] = mob.npc_data.max_health
+			data["display_name"] = mob.npc_data.display_name
+			
+		list.append(data)
+	return list
+
+func _unpack_hostiles(list: Array) -> void:
+	# Clean up existing hostiles to avoid duplicates if reloading scene
+	get_tree().call_group("hostile_npcs", "queue_free")
+	
+	var entities_layer = get_tree().current_scene.find_child("Entities", true, false)
+	if not entities_layer:
+		entities_layer = get_tree().current_scene # Fallback
+	
+	for info in list:
+		if not FileAccess.file_exists(info.scene_path): continue
+		
+		var scn = load(info.scene_path)
+		if scn:
+			var mob = scn.instantiate()
+			mob.global_position = info.pos
+			
+			# Restore Data
+			if "npc_data" in mob and mob.npc_data:
+				# Ensure data uniqueness
+				mob.npc_data = mob.npc_data.duplicate()
+				mob.npc_data.health = info.hp
+				mob.npc_data.max_health = info.max_hp
+				if info.has("display_name"):
+					mob.npc_data.display_name = info.display_name
+			elif "health" in mob:
+				mob.health = info.hp
+				if "max_health" in mob: mob.max_health = info.max_hp
+			
+			mob.add_to_group("hostile_npcs") # Ensure in group
+			entities_layer.add_child(mob)
+			
+			if mob.has_method("_update_hp_bar"):
+				mob._update_hp_bar()

@@ -16,3 +16,18 @@ func start_dialogue(npc_name: String, lines: Array, options: Array = []) -> void
 func end_dialogue() -> void:
 	UIManager.close_window("DialogueWindow")
 	dialogue_finished.emit()
+
+func pause_dialogue() -> void:
+	var window = UIManager.active_windows.get("DialogueWindow")
+	if window and window.has_method("pause"):
+		window.pause()
+
+func resume_dialogue() -> void:
+	var window = UIManager.active_windows.get("DialogueWindow")
+	if window and window.has_method("resume"):
+		window.resume()
+
+func next_line() -> void:
+	var window = UIManager.active_windows.get("DialogueWindow")
+	if window and window.has_method("_on_next_pressed"):
+		window._on_next_pressed()

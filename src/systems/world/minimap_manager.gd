@@ -164,3 +164,33 @@ func get_map_texture() -> Texture2D:
 
 func get_fog_texture() -> Texture2D:
 	return fog_texture
+
+# --- Persistence ---
+
+func get_save_data() -> Dictionary:
+	var data = {
+		"explored_rect": explored_rect
+	}
+	if fog_image:
+		data["fog_buffer"] = fog_image.save_png_to_buffer()
+	if map_image:
+		data["map_buffer"] = map_image.save_png_to_buffer()
+	return data
+
+func load_save_data(data: Dictionary) -> void:
+	if "explored_rect" in data:
+		explored_rect = data.explored_rect
+	
+	if "fog_buffer" in data:
+		var img = Image.new()
+		var err = img.load_png_from_buffer(data.fog_buffer)
+		if err == OK:
+			fog_image.copy_from(img)
+			fog_texture.update(fog_image)
+			
+	if "map_buffer" in data:
+		var img = Image.new()
+		var err = img.load_png_from_buffer(data.map_buffer)
+		if err == OK:
+			map_image.copy_from(img)
+			map_texture.update(map_image)

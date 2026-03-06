@@ -9,6 +9,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+z_index = 200
 script = ExtResource("1_script")
 
 [node name="Panel" type="Panel" parent="."]
@@ -54,9 +55,12 @@ bbcode_enabled = true
 text = "Dialogue text goes here..."
 
 [node name="NextButton" type="Button" parent="Panel/VBoxContainer"]
+focus_mode = 0
 layout_mode = 2
 size_flags_horizontal = 8
-text = " 继续 (Space) "
+text = " 继续 [F] "
+
+
 
 [node name="OptionsContainer" type="HBoxContainer" parent="Panel/VBoxContainer"]
 layout_mode = 2

@@ -1,0 +1,35 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Texture2D" uid="uid://d04btwlegf1mu" path="res://assets/visuals/spaceship/particle_spark.png" id="1_tex"]
+
+[sub_resource type="Curve" id="Curve_shield"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 0.2), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="Gradient" id="Gradient_shield"]
+colors = PackedColorArray(0.2, 0.5, 1, 0.8, 0, 0.8, 1, 0)
+
+[node name="MageShield" type="Node2D"]
+
+[node name="AuraParticles" type="CPUParticles2D" parent="."]
+amount = 40
+lifetime = 1.0
+preprocess = 0.5
+texture = ExtResource("1_tex")
+emission_shape = 1
+emission_sphere_radius = 45.0
+gravity = Vector2(0, 0)
+radial_accel_min = -30.0
+radial_accel_max = -50.0
+tangential_accel_min = 20.0
+tangential_accel_max = 50.0
+scale_amount_min = 0.8
+scale_amount_max = 1.6
+scale_amount_curve = SubResource("Curve_shield")
+color_ramp = SubResource("Gradient_shield")
+
+[node name="ShieldOutline" type="Line2D" parent="."]
+points = PackedVector2Array(40, 0, 36.9552, 15.3073, 28.2843, 28.2843, 15.3073, 36.9552, 2.44929e-15, 40, -15.3073, 36.9552, -28.2843, 28.2843, -36.9552, 15.3073, -40, 4.89859e-15, -36.9552, -15.3073, -28.2843, -28.2843, -15.3073, -36.9552, -7.34788e-15, -40, 15.3073, -36.9552, 28.2843, -28.2843, 36.9552, -15.3073, 40, 0)
+width = 2.0
+default_color = Color(0.2, 0.6, 1, 0.4)
+closed = true

@@ -1,0 +1,28 @@
+[gd_scene load_steps=3 format=3 uid="uid://tutorial_overlay_manager"]
+
+[ext_resource type="Script" path="res://scenes/ui/tutorial/overlay_manager.gd" id="1_script"]
+[ext_resource type="PackedScene" uid="uid://highlight_overlay" path="res://scenes/ui/tutorial/highlight_overlay.tscn" id="2_highlight"]
+
+[node name="OverlayManager" type="CanvasLayer"]
+layer = 100
+script = ExtResource("1_script")
+
+[node name="InputContainer" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="GhostLayer" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="HighlightOverlay" parent="." instance=ExtResource("2_highlight")]

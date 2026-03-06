@@ -1,4 +1,4 @@
-extends Node
+﻿extends Node
 
 ## GameManager (Autoload)
 ## 负责管理游戏的高层状态切换与核心流程。
@@ -12,6 +12,7 @@ enum State {
 }
 
 var current_state: State = State.GAME_OVER # 初始设为非 START_MENU 状态，确保第一次切换生效
+var is_new_game: bool = false # 标记是否为新游戏开始，用于触发新手教程
 
 signal state_changed(new_state: State)
 
@@ -101,7 +102,8 @@ func change_state(new_state: State) -> void:
 				
 				# 3. 核心位置同步逻辑
 				var player = get_tree().get_first_node_in_group("player")
-				if player:
+				# 如果是新游戏且有教程正在进行，跳过这里的传送，让教程接管位置
+				if player and not is_new_game:
 					var spawn_pos = Vector2.ZERO
 					var pos_restored = false
 					
@@ -120,17 +122,8 @@ func change_state(new_state: State) -> void:
 							pos_restored = true 
 					
 					if pos_restored:
-						player.global_position = spawn_pos
-						print("GameManager: 玩家位置已同步到: ", spawn_pos)
-						if player is CharacterBody2D:
-							player.velocity = Vector2.ZERO
-						
-						# 预加载块
-						if InfiniteChunkManager:
-							InfiniteChunkManager.update_player_vicinity(spawn_pos)
-							
-						# 延迟一帧微调，防止物理穿插或引擎归位
-						(func(): if is_instance_valid(player): player.global_position = spawn_pos).call_deferred()
+						# 使用新的安全生成逻辑，替代旧的直接赋值
+						_spawn_player_safely(player, spawn_pos)
 					
 					# 如果是转生，触发玩家节点刷新数据
 					if old_state == State.REINCARNATING and player.has_method("refresh_data"):
@@ -174,6 +167,7 @@ func start_new_game() -> void:
 	if _is_starting_new_game:
 		return
 	_is_starting_new_game = true
+	is_new_game = true # 强制标记为新游戏
 	
 	# 1. 缓冲机制：先进入黑屏，确保场景切换期间玩家看不到原始 UI 的闪烁
 	if UIManager:
@@ -240,9 +234,14 @@ func _on_reload_finished() -> void:
 	current_state = State.GAME_OVER # 确保 change_state 能生效
 	change_state(State.PLAYING)
 	
-	# 初始化完成后，平滑淡出黑屏，显示游戏世界
+	# 初始化完成后，平滑淡出黑屏，显示游戏世界，
+	# 仅当不在新手教程流程中才自动淡入（因为教程有自己的控制）
 	if UIManager:
-		UIManager.play_fade(false, 0.5)
+		if is_new_game:
+			# 如果是新游戏，确保 UI 能够接收输入以允许按 K 键
+			UIManager.set_process_input(true)
+		else:
+			UIManager.play_fade(false, 0.5)
 
 func pause_game() -> void:
 	if current_state == State.PLAYING:
@@ -286,3 +285,22 @@ func _input(event: InputEvent) -> void:
 		# 我们在打开 CharacterPanel 的同时也具备了查看配方的能力，
 		# 但如果用户在工作台旁边，我们应该确保制作逻辑可用。
 		pass
+
+func _spawn_player_safely(player: Node2D, target_pos: Vector2) -> void:
+    player.process_mode = Node.PROCESS_MODE_DISABLED
+    player.global_position = target_pos
+    if player is CharacterBody2D:
+        player.velocity = Vector2.ZERO
+    if not InfiniteChunkManager:
+        player.process_mode = Node.PROCESS_MODE_INHERIT
+        return
+    InfiniteChunkManager.update_player_vicinity(target_pos)
+    var chunk_coord = InfiniteChunkManager.get_chunk_coord(target_pos)
+    if not InfiniteChunkManager.loaded_chunks.has(chunk_coord):
+        var max_wait = 500
+        while not InfiniteChunkManager.loaded_chunks.has(chunk_coord) and max_wait > 0:
+            await get_tree().process_frame
+            max_wait -= 1
+    player.process_mode = Node.PROCESS_MODE_INHERIT
+    player.global_position = target_pos + Vector2(0, -2)
+

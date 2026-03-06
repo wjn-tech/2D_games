@@ -96,6 +96,8 @@ func set_value(section: String, key: String, value: Variant) -> void:
 ## --- Application Logic ---
 
 func apply_all_settings() -> void:
+	for key in _current_settings["General"]:
+		_apply_general_setting(key, _current_settings["General"][key])
 	for key in _current_settings["Graphics"]:
 		_apply_graphics_setting(key, _current_settings["Graphics"][key])
 	
@@ -148,7 +150,10 @@ func _apply_audio_setting(key: String, value: Variant) -> void:
 			AudioServer.set_bus_mute(bus_idx, value <= 0.01)
 
 func _apply_general_setting(key: String, value: Variant) -> void:
-	pass
+	match key:
+		"language":
+			TranslationServer.set_locale(value)
+			print("SettingsManager: Language switched to: " + str(value))
 
 ## --- Input Logic ---
 

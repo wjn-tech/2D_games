@@ -53,6 +53,10 @@ func setup(params: Dictionary, mods: Array):
 	if "element" in params: element = params.element
 	if "projectile_id" in params: special_behavior = params.projectile_id
 	
+	# Default Element for Tutorial/Unmodified Spells
+	if element == "none" or element == "":
+		element = "magic_bolt"
+	
 	modifiers = mods
 	_apply_modifiers_stat_change()
 	
@@ -258,9 +262,22 @@ func _on_hit(col: KinematicCollision2D):
 	var hit_enemy = false
 	
 	if collider.has_method("take_damage"):
-		collider.take_damage(damage, element)
-		hit_enemy = true
+		# Check method signature of receiver
+		# Some expect (amount, source_pos), others (amount, type/element)
+		# We should unify this, but for now, let's duck-type
+		# StaticBody walls expect (amount: float, source_pos: Vector2)
+		# Entities expect (amount: float, type: String) relative to previous code
+		# Let's try to detect based on group or class name
 		
+		if collider.is_in_group("destructible") or collider is StaticBody2D:
+			# Wall logic
+			collider.take_damage(damage, global_position)
+		else:
+			# Enemy/Player logic
+			collider.take_damage(damage, element)
+			
+		hit_enemy = true
+
 	if hit_enemy:
 		if pierce_count > 0:
 			pierce_count -= 1

@@ -12,7 +12,7 @@ signal active_hotbar_changed(index: int) # Support for Hotbar UI selection
 
 var backpack: Inventory
 var hotbar: Inventory
-var active_hotbar_index: int = -1 # Start with no selection
+var active_hotbar_index: int = 0 # Default to first slot
 
 func _ready():
 	_init_inventories()
@@ -30,8 +30,15 @@ func _init_inventories():
 	hotbar = Inventory.new()
 	hotbar.capacity = hotbar_capacity
 	hotbar.resize(hotbar_capacity)
-	hotbar.content_changed.connect(func(_idx): inventory_changed.emit())
+	hotbar.content_changed.connect(func(_idx): 
+		if _idx == active_hotbar_index:
+			var item = get_equipped_item()
+			equipped_item_changed.emit(item)
+			EventBus.item_equipped.emit(item) # Re-broadcast for tutorial listeners
+		inventory_changed.emit()
+	)
 	
+	active_hotbar_changed.emit(active_hotbar_index)
 	inventory_created.emit()
 
 func swap_items(from_inv: Inventory, from_idx: int, to_inv: Inventory, to_idx: int):
@@ -48,15 +55,16 @@ func swap_items(from_inv: Inventory, from_idx: int, to_inv: Inventory, to_idx: i
 	var item2 = to_slot.get("item")
 	var count2 = to_slot.get("count", 0)
 	
-	# Check for stackable merge?
-	if item1 and item2 and item1 == item2 and item1.get("stackable"):
-		# Try to merge
-		# ... (Simple merging logic could go here)
-		pass
-
 	# Perform Swap
 	from_inv.set_item(from_idx, item2, count2)
 	to_inv.set_item(to_idx, item1, count1)
+	
+	# IMPROVED: If swapping into or out of the hotbar, update equipped item
+	if from_inv == hotbar or to_inv == hotbar:
+		var current_item = get_equipped_item()
+		equipped_item_changed.emit(current_item)
+		EventBus.item_equipped.emit(current_item)
+		item_visual_updated.emit(current_item)
 	
 	inventory_changed.emit()
 
@@ -177,6 +185,7 @@ func select_hotbar_slot(index: int) -> void:
 	active_hotbar_changed.emit(index) # Signal the UI to update selection
 	var item = get_equipped_item()
 	equipped_item_changed.emit(item)
+	EventBus.item_equipped.emit(item)
 	item_visual_updated.emit(item) # Ensure visual sync
 
 func get_equipped_item() -> Resource:
@@ -241,3 +250,15 @@ func _process_remove(inv: Inventory, item_id: String, limit: int) -> int:
 				inv.clear_slot(i)
 				inventory_changed.emit()
 	return remaining
+
+func clear_all() -> void:
+	if backpack:
+		for i in range(backpack.capacity):
+			backpack.clear_slot(i)
+	if hotbar:
+		for i in range(hotbar.capacity):
+			hotbar.clear_slot(i)
+	
+	active_hotbar_index = 0
+	active_hotbar_changed.emit(0)
+	inventory_changed.emit()

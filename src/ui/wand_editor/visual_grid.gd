@@ -14,6 +14,7 @@ var is_painting = false # For mouse drag painting
 @onready var grid_container = GridContainer.new()
 @onready var background_rect = ColorRect.new()
 @onready var center_container = CenterContainer.new()
+@onready var grid_wrapper = Control.new()
 
 var current_zoom = 1.0
 var target_zoom = 1.0
@@ -32,8 +33,12 @@ func _ready():
 	center_container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(center_container)
 	
+	# Wrapper to isolate grid_container scale from CenterContainer layout logic
+	center_container.add_child(grid_wrapper)
+	grid_wrapper.mouse_filter = Control.MOUSE_FILTER_PASS
+	
 	grid_container.pivot_offset = Vector2.ZERO
-	center_container.add_child(grid_container)
+	grid_wrapper.add_child(grid_container)
 	
 	grid_container.add_theme_constant_override("h_separation", 2)
 	grid_container.add_theme_constant_override("v_separation", 2)
@@ -42,6 +47,9 @@ func _ready():
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	
 	_rebuild_grid()
+	
+	# Ensure correct initial layout
+	call_deferred("set_zoom", current_zoom)
 
 func _process(delta):
 	if abs(current_zoom - target_zoom) > 0.0001:
@@ -78,10 +86,14 @@ func setup(width: int, height: int):
 
 func set_zoom(val: float):
 	grid_container.scale = Vector2(val, val)
-	# Update collision/visual size based on scale
-	var base_w = grid_width * (cell_size + 2)
-	var base_h = grid_height * (cell_size + 2)
-	grid_container.custom_minimum_size = Vector2(base_w, base_h)
+	# Update pivot to center for better zoom experience if needed
+	# grid_container.pivot_offset = grid_container.size / 2
+	
+	# Update Wrapper size to force CenterContainer to make space for the zoomed object
+	var w = grid_width * (cell_size + 2)
+	var h = grid_height * (cell_size + 2)
+	grid_wrapper.custom_minimum_size = Vector2(w, h) * val
+	grid_wrapper.size = grid_wrapper.custom_minimum_size
 
 func set_cell(coords: Vector2i, item: BaseItem):
 	# Safety: Ignore coordinates outside the defined grid
@@ -199,27 +211,17 @@ func _update_cell_style(coords: Vector2i, style: StyleBoxFlat, item = null):
 	
 	if item:
 		# Pixel Art Style
-		style.bg_color = item.wand_visual_color
+		style.set_bg_color(item.wand_visual_color)
 		# Reset borders
-		if style.border_width_bottom > 0:
-			style.border_width_bottom = 0
-			style.border_width_top = 0
-			style.border_width_left = 0
-			style.border_width_right = 0
+		style.set_border_width_all(0)
 	else:
 		# "Empty Grid" Look - Sci-Fi (Pixel Art)
-		style.bg_color = HUDStyles.COLOR_BG_PRIMARY
-		style.border_color = HUDStyles.COLOR_BORDER_MAGIC
+		style.set_bg_color(HUDStyles.COLOR_BG_PRIMARY)
+		style.set_border_color(HUDStyles.COLOR_BORDER_MAGIC)
 		style.bg_color.a = 0.5
 		style.border_color.a = 0.3
 		
 		# Set borders
-		style.border_width_top = 1
-		style.border_width_bottom = 1
-		style.border_width_left = 1
-		style.border_width_right = 1
-		style.corner_radius_top_left = 0
-		style.corner_radius_top_right = 0
-		style.corner_radius_bottom_left = 0
-		style.corner_radius_bottom_right = 0
+		style.set_border_width_all(1)
+		style.set_corner_radius_all(0)
 		style.anti_aliasing = false

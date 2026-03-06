@@ -1,0 +1,48 @@
+[gd_scene load_steps=2 format=3 uid="uid://cinematic_overlay"]
+
+[ext_resource type="Script" path="res://scenes/ui/tutorial/cinematic_overlay.gd" id="1_script"]
+
+[node name="CinematicOverlay" type="CanvasLayer"]
+layer = 120
+script = ExtResource("1_script")
+
+[node name="BG" type="ColorRect" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 1)
+
+[node name="Image" type="TextureRect" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+expand_mode = 1
+stretch_mode = 6
+
+[node name="Content" type="MarginContainer" parent="."]
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -200.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_constants/margin_left = 50
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 50
+theme_override_constants/margin_bottom = 50
+
+[node name="TextPanel" type="PanelContainer" parent="Content"]
+layout_mode = 2
+
+[node name="Subtitle" type="RichTextLabel" parent="Content/TextPanel"]
+layout_mode = 2
+theme_override_colors/default_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/normal_font_size = 24
+bbcode_enabled = true
+text = "[center]Subtitle Text Here[/center]"
+fit_content = true

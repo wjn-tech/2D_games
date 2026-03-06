@@ -1,4 +1,4 @@
-extends CharacterBody2D
+﻿extends CharacterBody2D
 
 # Safe transform helpers
 const TransformHelper = preload("res://src/utils/transform_helper.gd")
@@ -44,8 +44,10 @@ var knockback_velocity: Vector2 = Vector2.ZERO
 var attributes: AttributeComponent
 var camera: Camera2D
 var input_enabled: bool = true
+var movement_locked: bool = false
 var invincible: bool = false
 var _gravity_enabled: bool = true
+var _debug_lock_warned: bool = false # 防止刷屏的调试变量
 
 func set_gravity_enabled(enabled: bool) -> void:
 	_gravity_enabled = enabled
@@ -163,6 +165,7 @@ func _ready() -> void:
 
 	# --- 系统连接与初始化 ---
 	EventBus.player_input_enabled.connect(func(enabled): input_enabled = enabled)
+	EventBus.player_movement_locked.connect(func(locked): movement_locked = locked)
 	EventBus.player_data_refreshed.connect(refresh_data)
 	if UIManager:
 		UIManager.window_closed.connect(func(win_name): 
@@ -272,6 +275,9 @@ func _setup_inventory_ui():
 
 
 func _on_equipped_item_changed(item: Resource):
+	# Signal EventBus for Tutorials
+	EventBus.item_equipped.emit(item)
+	
 	# 允许重复触发，以便在右键取消后，再次点击同一格能重新唤出预览
 	var bm = get_tree().get_first_node_in_group("building_manager")
 	
@@ -357,6 +363,13 @@ const ACTION_INTERVAL: float = 0.25 # 0.25秒触发一次动作
 # 		var loaded = ResourceLoader.load(test_path, "", ResourceLoader.CACHE_MODE_IGNORE)
 # 		if loaded is WandData:
 # 			current_wand = loaded
+
+func get_equipped_wand():
+	if inventory:
+		var item = inventory.get_equipped_item()
+		if item and (item is WandItem or item.get("wand_data") != null):
+			return item
+	return null
 
 func _toggle_wand_editor():
 	if UIManager:
@@ -490,28 +503,43 @@ func _physics_process(delta: float) -> void:
 		if not is_on_floor():
 			if _gravity_enabled:
 				velocity.y += GRAVITY * delta
-		velocity += knockback_velocity 
 		move_and_slide()
 		return
-
+		
 	# --- 动作处理 ---
-	_handle_input_actions()
+	if movement_locked:
+		# DEBUG: 确保日志打印以帮助定位问题，以防万一还卡住
+		if not _debug_lock_warned:
+			print("Player WARNING: Movement locked while expecting to move!")
+			_debug_lock_warned = true
 	
-	var is_mining = false
-	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-		is_mining = _handle_mouse_action()
-	
-	if not is_mining:
-		_handle_continuous_actions()
+	if not movement_locked:
+		_handle_input_actions()
+		
+		# 鼠标动作逻辑（挖矿/攻击）
+		var is_mining = false
+		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+			# If wand is equipped, skip mining logic entirely to ensure wand fires
+			if current_wand:
+				is_mining = false
+			else:
+				is_mining = _handle_mouse_action()
+		
+		if not is_mining:
+			_handle_continuous_actions()
 	
 	# --- 水平移动 ---
-	var direction := Input.get_axis("left", "right")
+	var direction := 0.0
+	if not movement_locked:
+		direction = Input.get_axis("left", "right")
+		
 	var target_speed_x = direction * SPEED
 	
 	# 平滑移动处理并叠加击退速度
+	var current_move_x = velocity.x - knockback_velocity.x
 	var movement_x = target_speed_x
 	if direction == 0:
-		movement_x = move_toward(velocity.x - knockback_velocity.x, 0, SPEED)
+		movement_x = move_toward(current_move_x, 0, SPEED * 10.0 * delta)
 	
 	velocity.x = movement_x + knockback_velocity.x
 	
@@ -522,7 +550,7 @@ func _physics_process(delta: float) -> void:
 	else:
 		coyote_timer = max(0.0, coyote_timer - delta)
 
-	if Input.is_action_just_pressed("space"):
+	if not movement_locked and Input.is_action_just_pressed("space"):
 		jump_buffer_timer = JUMP_BUFFER_TIME
 	else:
 		jump_buffer_timer = max(0.0, jump_buffer_timer - delta)
@@ -539,7 +567,8 @@ func _physics_process(delta: float) -> void:
 	if not is_on_floor():
 		if _gravity_enabled:
 			if velocity.y < 0:
-				var g_mult = GRAVITY_HOLD_MULTIPLIER if Input.is_action_pressed("space") else GRAVITY_RELEASE_MULTIPLIER
+				var is_holding_jump = (not movement_locked and Input.is_action_pressed("space"))
+				var g_mult = GRAVITY_HOLD_MULTIPLIER if is_holding_jump else GRAVITY_RELEASE_MULTIPLIER
 				velocity.y += GRAVITY * g_mult * delta
 			else:
 				fall_time += delta
@@ -603,18 +632,22 @@ func _handle_continuous_actions() -> void:
 	# 魔杖自动连发逻辑
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		# 如果装备了魔杖，优先使用魔杖，且阻止挖掘/近战？
-		if current_wand and action_cooldown <= 0.0:
-			var dir = (get_global_mouse_position() - global_position).normalized()
-			
-			var spawn_pos = global_position
-			if projectile_spawn_point:
-				spawn_pos = projectile_spawn_point.global_position
-			
-			# Call Cast Spell - returns internal duration + recharge + delay
-			var total_cooldown = SpellProcessor.cast_spell(current_wand, self, dir, spawn_pos)
-			
-			# Action cooldown prevents firing until sequence is done
-			action_cooldown = max(total_cooldown, 0.05) # Minimum speed cap
+		if current_wand:
+			if action_cooldown <= 0.0:
+				var dir = (get_global_mouse_position() - global_position).normalized()
+				
+				var spawn_pos = global_position
+				if projectile_spawn_point:
+					spawn_pos = projectile_spawn_point.global_position
+				
+				# Call Cast Spell - returns internal duration + recharge + delay
+				var total_cooldown = SpellProcessor.cast_spell(current_wand, self, dir, spawn_pos)
+				
+				# Action cooldown prevents firing until sequence is done
+				action_cooldown = max(total_cooldown, 0.05) # Minimum speed cap
+				# print("Player: Cast Spell. Cooldown set: ", action_cooldown)
+		else:
+			pass # Normal mining/melee handled in _handle_mouse_action or elsewhere
 
 func _handle_input_actions() -> void:
 	# --- Cheats (Request 6 & 7) ---

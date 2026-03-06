@@ -3,6 +3,8 @@ extends Node
 ## UIManager (Autoload)
 ## 负责管理所有 UI 窗口的打开、关闭、层级与输入拦截。
 
+const HighlightOverlayScene = preload("res://scenes/ui/tutorial/highlight_overlay.tscn")
+
 signal window_opened(window_name: String)
 signal window_closed(window_name: String)
 
@@ -11,16 +13,34 @@ signal window_closed(window_name: String)
 
 var active_windows: Dictionary = {}
 var blocking_windows: Array = [] # 存储正在拦截输入的窗口名称
+var highlight_overlay: Node = null
 
 var is_ui_focused: bool = false:
 	set(value):
 		if is_ui_focused == value: return
 		is_ui_focused = value
+		# 当 UI 聚焦时，也通过 CursorManager 重置指针
+		if value and is_instance_valid(CursorManager):
+			CursorManager.set_cursor(CursorManager.CursorType.DEFAULT)
 		# 当 UI 聚焦时，可以通过信号通知玩家脚本禁用移动
 		EventBus.player_input_enabled.emit(!value)
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+
+## 高亮指定 UI 元素 (Tutorial Only)
+func highlight_element(control: Control, message: String = "") -> void:
+	if not highlight_overlay:
+		highlight_overlay = HighlightOverlayScene.instantiate()
+		add_child(highlight_overlay)
+	
+	if highlight_overlay.has_method("highlight"):
+		highlight_overlay.highlight(control, message)
+
+## 清除高亮
+func clear_highlight() -> void:
+	if highlight_overlay and highlight_overlay.has_method("clear"):
+		highlight_overlay.clear()
 
 ## 强制清理所有 UI 引用 (用于场景重载)
 func clear_all_references() -> void:
@@ -106,8 +126,12 @@ func open_window(window_name: String, scene_path: String, blocks_input: bool = t
 			
 		_play_open_animation(window)
 		window_opened.emit(window_name)
+		if window_name == "InventoryWindow":
+			EventBus.inventory_opened.emit()
+			
 		print("UIManager: 窗口已就绪: ", window_name)
 		return window
+
 		
 	return null
 
@@ -188,6 +212,13 @@ func close_window(window_name: String) -> void:
 	var tween = _play_close_animation(window)
 	if tween:
 		await tween.finished
+	
+	if window_name == "InventoryWindow":
+		EventBus.inventory_closed.emit()
+	
+	if window_name == "WandEditor":
+		EventBus.wand_editor_closed.emit()
+
 		
 	if is_instance_valid(window):
 		# 检查在等待期间是否被重新打开了
@@ -259,7 +290,7 @@ func toggle_window(window_name: String, scene_path: String, blocks_input: bool =
 	else:
 		open_window(window_name, scene_path, blocks_input)
 
-## 显示简短通知 (如房屋合法性提示)
+## 显示简短通知 (如获得新法术提示)
 func show_notification(message: String) -> void:
 	var label = Label.new()
 	label.text = message
@@ -271,14 +302,24 @@ func show_notification(message: String) -> void:
 	label.add_theme_color_override("font_outline_color", Color.BLACK)
 	label.add_theme_constant_override("outline_size", 4)
 	
+	# 置于屏幕中央稍靠上的位置
+	label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	label.reset_size()
+	label.position.y += 100
+	
+	# 重要：防止通知文字阻挡鼠标点击输入
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
 	var canvas = CanvasLayer.new()
+	canvas.name = "NotificationLayer"
 	canvas.layer = 120
+	# 关键修复：CanvasLayer 不是 Control，没有 mouse_filter 属性，
+	# 但它会创建一个新的独立渲染层。我们需要确保它下面的子节点统统不拦截。
 	add_child(canvas)
 	canvas.add_child(label)
 	
-	# 置于屏幕中央稍靠上的位置
-	label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	label.position.y += 100
+	# 居中校准 (在添加到 tree 之后计算 size 准确)
+	label.position.x -= label.get_combined_minimum_size().x / 2
 	
 	# 动画
 	var tween = create_tween()

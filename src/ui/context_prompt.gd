@@ -16,7 +16,8 @@ func _ensure_nodes() -> void:
 func setup(npc_name: String, alignment: String) -> void:
 	_ensure_nodes()
 	if label:
-		label.text = "[ " + npc_name + " ]"
+		# Use tr() on the name to ensure localization keys are resolved
+		label.text = "[ " + tr(npc_name) + " ]"
 		if alignment == "Hostile":
 			label.add_theme_color_override("font_color", Color(1.0, 0.2, 0.2))
 		elif alignment == "Friendly":
@@ -33,7 +34,8 @@ func update_prompt(npc: Node) -> void:
 		var actions = npc.get_contextual_actions()
 		for action in actions:
 			var prompt_label = Label.new()
-			prompt_label.text = "[" + action.key + "] " + action.label
+			# Translate action label
+			prompt_label.text = "[" + action.key + "] " + tr(action.label)
 			prompt_label.add_theme_font_size_override("font_size", 10)
 			if action.key == "E":
 				prompt_label.add_theme_color_override("font_color", Color.YELLOW)

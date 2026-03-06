@@ -22,6 +22,7 @@ EventBus="*res://src/core/event_bus.gd"
 GameState="*res://src/core/game_state.gd"
 SaveManager="*res://src/core/save_manager.gd"
 UIManager="*res://src/ui/ui_manager.gd"
+CursorManager="*res://src/core/cursor_manager.gd"
 SettingsManager="*res://src/core/settings_manager.gd"
 WeatherManager="*res://src/systems/world/weather_manager.gd"
 LayerManager="*res://src/systems/world/layer_manager.gd"
@@ -45,6 +46,12 @@ LineageManager="*res://src/systems/lineage/lineage_manager.gd"
 DebugTools="*res://src/systems/debug/debug_tools.gd"
 TradeManager="*res://src/systems/trading/trade_manager.gd"
 FeedbackManager="*res://src/ui/feedback_manager.gd"
+CinematicDirector="*res://src/systems/cinematic_director.gd"
+
+[internationalization]
+
+locale/translations=PackedStringArray("res://assets/translations.en.translation", "res://assets/translations.zh.translation")
+locale/test="zh"
 
 [display]
 

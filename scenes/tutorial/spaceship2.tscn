@@ -1,0 +1,189 @@
+[gd_scene load_steps=12 format=3 uid="uid://djqiolqtg4mlj"]
+
+[ext_resource type="Script" uid="uid://q6l3oopbgqoh" path="res://scenes/tutorial/tutorial_sequence_manager.gd" id="1_manager"]
+[ext_resource type="Script" uid="uid://bowudek77crve" path="res://src/tutorial/cinematics/ship_environment_controller.gd" id="2_env_ctrl"]
+[ext_resource type="Script" uid="uid://b16ay316ocxfg" path="res://scenes/tutorial/ship_room_builder.gd" id="3_builder"]
+[ext_resource type="TileSet" uid="uid://cju87tff0ylun" path="res://assets/visuals/spaceship/industrial_tileset.tres" id="4_tileset"]
+[ext_resource type="Texture2D" uid="uid://b8jvo7mvp8g2c" path="res://assets/visuals/spaceship/bg_stars.png" id="5_bg_stars"]
+[ext_resource type="Texture2D" uid="uid://c8akbjlcjjqnv" path="res://assets/visuals/spaceship/prop_cryopod.png" id="6_cryopod"]
+[ext_resource type="Texture2D" uid="uid://ck6m3wn8213eg" path="res://assets/visuals/spaceship/prop_console.png" id="7_console"]
+[ext_resource type="Texture2D" uid="uid://br6jbdh2d1mxo" path="res://assets/visuals/spaceship/prop_pipe_broken.png" id="8_pipe"]
+[ext_resource type="PackedScene" uid="uid://court_mage_entity_001" path="res://scenes/entities/court_mage.tscn" id="10_mage_scene"]
+
+[sub_resource type="Gradient" id="Gradient_light"]
+colors = PackedColorArray(1, 1, 1, 1, 0, 0, 0, 0)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_light"]
+gradient = SubResource("Gradient_light")
+fill = 1
+fill_from = Vector2(0.5, 0.5)
+fill_to = Vector2(0.8, 0.8)
+
+[node name="Spaceship2" type="Node2D"]
+script = ExtResource("1_manager")
+
+[node name="BackgroundLayer" type="CanvasLayer" parent="."]
+layer = -100
+
+[node name="SpaceBlackness" type="ColorRect" parent="BackgroundLayer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 1)
+
+[node name="ParallaxBackground" type="ParallaxBackground" parent="."]
+layer = -90
+scroll_ignore_camera_zoom = true
+
+[node name="StarsLayer" type="ParallaxLayer" parent="ParallaxBackground"]
+motion_scale = Vector2(0.1, 0.1)
+motion_mirroring = Vector2(1024, 1024)
+
+[node name="Sprite2D" type="Sprite2D" parent="ParallaxBackground/StarsLayer"]
+texture_repeat = 2
+texture = ExtResource("5_bg_stars")
+region_enabled = true
+region_rect = Rect2(0, 0, 4096, 4096)
+
+[node name="EnvironmentController" type="Node2D" parent="."]
+script = ExtResource("2_env_ctrl")
+
+[node name="CanvasModulate" type="CanvasModulate" parent="EnvironmentController"]
+color = Color(0.5, 0.5, 0.5, 1)
+
+[node name="ShipTiles" type="TileMapLayer" parent="EnvironmentController"]
+tile_set = ExtResource("4_tileset")
+script = ExtResource("3_builder")
+
+[node name="Props" type="Node2D" parent="EnvironmentController"]
+
+[node name="CryoPod" type="Sprite2D" parent="EnvironmentController/Props"]
+position = Vector2(-200, 50)
+texture = ExtResource("6_cryopod")
+offset = Vector2(0, -64)
+
+[node name="MainConsole" type="Sprite2D" parent="EnvironmentController/Props"]
+position = Vector2(250, 50)
+texture = ExtResource("7_console")
+offset = Vector2(0, -32)
+
+[node name="Pipe1" type="Sprite2D" parent="EnvironmentController/Props"]
+position = Vector2(-400, -100)
+texture = ExtResource("8_pipe")
+
+[node name="Lights" type="Node2D" parent="EnvironmentController"]
+
+[node name="AlarmLight" type="PointLight2D" parent="EnvironmentController/Lights"]
+position = Vector2(0, -200)
+color = Color(1, 0, 0, 1)
+energy = 2.0
+texture = SubResource("GradientTexture2D_light")
+texture_scale = 3.0
+
+[node name="ConsoleLight" type="PointLight2D" parent="EnvironmentController/Lights"]
+position = Vector2(250, 40)
+color = Color(0.2, 1, 0.2, 1)
+energy = 1.0
+texture = SubResource("GradientTexture2D_light")
+texture_scale = 0.5
+
+[node name="SparkEmitters" type="Node2D" parent="EnvironmentController"]
+
+[node name="Spark1" type="CPUParticles2D" parent="EnvironmentController/SparkEmitters"]
+position = Vector2(100, -280)
+emitting = false
+amount = 10
+lifetime = 0.5
+explosiveness = 0.8
+direction = Vector2(0, 1)
+spread = 180.0
+gravity = Vector2(0, 500)
+initial_velocity_min = 100.0
+initial_velocity_max = 300.0
+color = Color(1, 0.8, 0.2, 1)
+
+[node name="Spark2" type="CPUParticles2D" parent="EnvironmentController/SparkEmitters"]
+position = Vector2(250, -50)
+emitting = false
+amount = 8
+lifetime = 0.4
+explosiveness = 0.6
+spread = 180.0
+gravity = Vector2(0, 500)
+initial_velocity_min = 150.0
+initial_velocity_max = 250.0
+color = Color(1, 0.6, 0.1, 1)
+
+[node name="SteamVents" type="Node2D" parent="EnvironmentController"]
+
+[node name="Steam1" type="CPUParticles2D" parent="EnvironmentController/SteamVents"]
+position = Vector2(-400, -100)
+emitting = false
+amount = 20
+lifetime = 1.5
+direction = Vector2(1, -0.5)
+spread = 20.0
+gravity = Vector2(0, -10)
+initial_velocity_min = 50.0
+initial_velocity_max = 100.0
+scale_amount_min = 2.0
+scale_amount_max = 5.0
+color = Color(0.8, 0.8, 0.8, 0.4)
+
+[node name="Structure" type="StaticBody2D" parent="."]
+collision_layer = 1
+
+[node name="Floor" type="CollisionPolygon2D" parent="Structure"]
+position = Vector2(0, 50)
+polygon = PackedVector2Array(-600, 0, 600, 0, 600, 50, -600, 50)
+
+[node name="Ceiling" type="CollisionPolygon2D" parent="Structure"]
+position = Vector2(0, -300)
+polygon = PackedVector2Array(-600, 0, 600, 0, 600, 50, -600, 50)
+
+[node name="LeftWall" type="CollisionPolygon2D" parent="Structure"]
+position = Vector2(-600, 0)
+polygon = PackedVector2Array(0, -300, 50, -300, 50, 100, 0, 100)
+
+[node name="RightWall" type="CollisionPolygon2D" parent="Structure"]
+position = Vector2(550, 0)
+polygon = PackedVector2Array(0, -300, 50, -300, 50, 100, 0, 100)
+
+[node name="CourtMage" parent="." instance=ExtResource("10_mage_scene")]
+position = Vector2(200, 50)
+
+[node name="BarrierEffect" type="Polygon2D" parent="CourtMage"]
+position = Vector2(0, -32)
+color = Color(0.2, 0.6, 1, 0.3)
+polygon = PackedVector2Array(-50, -50, 50, -50, 50, 50, -50, 50)
+
+[node name="Beam" type="Line2D" parent="CourtMage"]
+points = PackedVector2Array(0, -32, 400, -150)
+width = 5.0
+default_color = Color(0.4, 0.8, 1, 0.8)
+
+[node name="BarrierParticles" type="CPUParticles2D" parent="CourtMage"]
+position = Vector2(0, -32)
+amount = 20
+lifetime = 0.5
+spread = 180.0
+gravity = Vector2(0, 0)
+initial_velocity_min = 50.0
+initial_velocity_max = 100.0
+color = Color(0.2, 0.8, 1, 1)
+
+[node name="FadeOverlay" type="CanvasLayer" parent="."]
+visible = false
+
+[node name="FadeRect" type="ColorRect" parent="FadeOverlay"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 1)
+
+[node name="ShakeTimer" type="Timer" parent="."]
+one_shot = true

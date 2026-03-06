@@ -24,25 +24,25 @@ func _ready() -> void:
 	if player_data:
 		player_data.display_name = "主角"
 		if player_data.attributes.get("money", 0) == 0:
-			player_data.attributes["money"] = 200 # 初始赠送 200 金币用于测试
+			player_data.attributes["money"] = 0 # 调整为 0，不再默认赠送
 			
-		# 赠送几个初始物品测试交易
-		await get_tree().process_frame
-		if inventory and inventory.has_method("add_item"):
-			var wood = item_db.get("wood")
-			if wood: inventory.add_item(wood, 5)
-			var iron = item_db.get("iron")
-			if iron: inventory.add_item(iron, 2)
+		# [CHANGED] 移除自动赠送测试物品逻辑，避免干扰教程
+		# await get_tree().process_frame
+		# if inventory and inventory.has_method("add_item"):
+		# 	var wood = item_db.get("wood")
+		# 	if wood: inventory.add_item(wood, 5)
+		# 	var iron = item_db.get("iron")
+		# 	if iron: inventory.add_item(iron, 2)
 			
 			# Test Rarity
 			# Create a dummy legendary item if not exists
-			var legendary = BaseItem.new()
-			legendary.id = "legend_sword"
-			legendary.display_name = "炎魔之剑"
-			legendary.quality_grade = "Legendary"
-			legendary.item_type = "Weapon"
-			legendary.description = "传说中的武器。"
-			inventory.add_item(legendary, 1)
+			# var legendary = BaseItem.new()
+			# legendary.id = "legend_sword"
+			# legendary.display_name = "炎魔之剑"
+			# legendary.quality_grade = "Legendary"
+			# legendary.item_type = "Weapon"
+			# legendary.description = "传说中的武器。"
+			# inventory.add_item(legendary, 1)
 
 func unlock_spell(spell_id: String) -> void:
 	if spell_id not in unlocked_spells:

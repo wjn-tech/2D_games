@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+  <!-- Main Blue Mana Shard -->
+  <path d="M10,10 L40,25 L25,30 L35,50 Z" fill="#00ffff" filter="url(#glow)" stroke="#ffffff" stroke-width="2"/>
+</svg>

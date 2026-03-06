@@ -98,6 +98,17 @@ func _on_connection_request(from_node_name, from_port, to_node_name, to_port):
 
 func _on_disconnection_request(from_node_name, from_port, to_node_name, to_port):
 	disconnect_node(from_node_name, from_port, to_node_name, to_port)
+
+func get_grid_global_position(grid_x: int, grid_y: int) -> Vector2:
+	# Calculate position in graph space
+	var graph_pos = Vector2(grid_x * snapping_distance, grid_y * snapping_distance)
+	# Center of the cell
+	graph_pos += Vector2(snapping_distance / 2.0, snapping_distance / 2.0)
+	
+	# Convert to screen space
+	# Global position of GraphEdit + (Graph Pos - Scroll) * Zoom
+	return global_position + (graph_pos - scroll_offset) * zoom
+
 	nodes_changed.emit()
 
 func _on_delete_nodes_request(nodes: Array):

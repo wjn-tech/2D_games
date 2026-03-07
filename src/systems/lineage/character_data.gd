@@ -48,6 +48,14 @@ const INC_PER_TAMED_LEVEL = 0.02 # 2% per tamed level
 @export var spouse_id: int = -1
 @export var generation: int = 1
 @export var age: float = 0.0
+
+# Transient Data (Not Saved) - For UI Visualization of current Equipment
+var current_tool_mana: float = -1.0
+var current_tool_max_mana: float = -1.0
+
+# Spell Learning Data
+@export var intrinsic_spell_pool: Array[String] = []
+
 @export var growth_stage: int = 0 # 0:BABY, 1:JUVENILE, 2:ADULT
 @export var imprint_quality: float = 0.0 # 0.0 - 1.0
 

@@ -18,12 +18,32 @@ func _ready():
 	add_theme_stylebox_override("panel", HUDStyles.get_panel_style())
 	
 	gui_input.connect(_on_gui_input)
-	mouse_entered.connect(_on_mouse_entered_slot)
-	mouse_exited.connect(_on_mouse_exited_slot)
+	
+	# Using _notification instead for more robust hover detection across all speeds
+	# if not mouse_entered.is_connected(_on_mouse_entered_slot):
+	# 	mouse_entered.connect(_on_mouse_entered_slot)
+	# if not mouse_exited.is_connected(_on_mouse_exited_slot):
+	# 	mouse_exited.connect(_on_mouse_exited_slot)
+		
 	_setup_internal_name_label()
 	
 	# Initial style
 	_update_style()
+	
+	# Forced Pivot to center for better scale animation consistency
+	pivot_offset = size / 2
+	
+	# But WE (the slot itself) must stop/catch the mouse
+	mouse_filter = Control.MOUSE_FILTER_STOP
+	# Initial child sweep
+	_set_mouse_filter_recursive(self, Control.MOUSE_FILTER_IGNORE)
+	mouse_filter = Control.MOUSE_FILTER_STOP
+
+func _set_mouse_filter_recursive(node: Node, filter: int) -> void:
+	for child in node.get_children():
+		if child is Control:
+			child.mouse_filter = filter
+		_set_mouse_filter_recursive(child, filter)
 
 func set_active(active: bool) -> void:
 	is_active = active
@@ -54,7 +74,24 @@ func get_slot_data() -> Dictionary:
 		return inventory.get_slot(slot_index)
 	return { "item": null, "count": 0 }
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_MOUSE_ENTER:
+		# 强制子节点穿透，特别是动态生成的图标或标签
+		for child in get_children():
+			if child is Control:
+				child.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_on_mouse_entered_slot()
+	elif what == NOTIFICATION_MOUSE_EXIT:
+		_on_mouse_exited_slot()
+
 func _on_mouse_entered_slot() -> void:
+	# Audio Feedback
+	# if has_node("/root/AudioManager"):
+	# 	print("InventorySlot: Hovered -> Playing 'hover'")
+	# 	get_node("/root/AudioManager").play_ui_sfx("hover")
+	# else:
+	# 	print("InventorySlot: Hovered -> No AudioManager found!")
+
 	_on_mouse_entered() # Call existing logic
 	
 	# Scale animation
@@ -67,6 +104,22 @@ func _on_mouse_exited_slot() -> void:
 	
 	var tween = create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tween.tween_property(self, "scale", Vector2.ONE, 0.1)
+
+func _on_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			# if has_node("/root/AudioManager"):
+			# 	get_node("/root/AudioManager").play_ui_sfx("click")
+			
+			slot_clicked.emit(inventory, slot_index)
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			# Context menu or split?
+			pass
+
+func _process(_delta: float) -> void:
+	# Removed: Aggressive mouse filter enforcement in _process is unnecessary and costly.
+	# The filters are now correctly handled in _ready and _update_visual.
+	pass
 
 func _setup_internal_name_label():
 	name_tooltip = Label.new()
@@ -117,6 +170,27 @@ func _on_inventory_changed(idx: int):
 func _update_visual():
 	var slot = inventory.get_slot(slot_index)
 	var item = slot.get("item")
+	
+	# Aggressively ensure children do NOT block input
+	# This avoids the "slow hover silent" issue by using STOP on the slot
+	# and IGNORE on all internal visuals (Icon, Label, etc.)
+	if icon: 
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if count_lbl: 
+		count_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var margin = get_node_or_null("MarginContainer")
+	if margin: 
+		margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		for child in margin.get_children():
+			if child is Control:
+				child.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	# Also check generic child elements that might be added dynamically
+	for child in get_children():
+		if child is Control and child != self:
+			if child.name != "HoverNameLabel": # Keep tooltip logic separate
+				child.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
 	if item:
 		icon.texture = item.icon
 		icon.visible = true
@@ -131,15 +205,8 @@ func _update_visual():
 		icon.visible = false
 		count_lbl.visible = false
 
-func _on_gui_input(event):
-	if event is InputEventMouseButton and event.pressed:
-		if event.button_index == MOUSE_BUTTON_LEFT:
-			# Handle simple click if needed, but mainly Drag handled by _get_drag_data
-			slot_clicked.emit(inventory, slot_index)
-		elif event.button_index == MOUSE_BUTTON_RIGHT:
-			# 右键一键丢弃
-			if GameState.inventory.has_method("drop_item_from_slot"):
-				GameState.inventory.drop_item_from_slot(inventory, slot_index)
+# Renamed or removed duplicate _on_gui_input to avoid conflict
+# The correct one is above.
 
 func _on_mouse_entered():
 	var slot = inventory.get_slot(slot_index)

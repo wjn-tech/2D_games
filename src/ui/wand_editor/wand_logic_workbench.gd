@@ -15,17 +15,38 @@ var max_slots = 5
 func _ready():
 	_setup_library()
 	_rebuild_workbench_slots()
+	if GameState:
+		GameState.spell_unlocked.connect(func(_id): _setup_library())
 
 func _setup_library():
-	# Mock Library Items
-	var items = [
+	# Clear existing library
+	if palette_grid:
+		for child in palette_grid.get_children():
+			child.queue_free()
+
+	# Real library from GameState + Defaults
+	var items = []
+	
+	# Default basic spells for every wizard
+	var default_ids = ["spark_bolt", "action_projectile", "modifier_speed"]
+	var all_ids = default_ids.duplicate()
+	if GameState:
+		for s in GameState.unlocked_spells:
+			if s not in all_ids:
+				all_ids.append(s)
+	
+	for spell_id in all_ids:
+		items.append(_create_spell_item_resource(spell_id))
+	
+	# Mock/Hardcoded Items for Demo/Legacy compatibility if needed
+	var legacy_mocks = [
 		_create_mock_item("Trigger", "trigger", Color(1, 0.9, 0.7)),
-		_create_mock_item("Ruby (Fire)", "modifier_element", Color(0.7, 0, 0), {"element": "fire"}),
-		_create_mock_item("Sapphire (Ice)", "modifier_element", Color(0, 0, 0.7), {"element": "ice"}),
 		_create_mock_item("Iron (Dmg)", "modifier_damage", Color(0.7, 0.7, 0.7), {"amount": 20}),
-		_create_mock_item("Prism (Split)", "splitter", Color(0, 0.8, 1.0)),
-		_create_mock_item("Launcher", "action_projectile", Color(1, 0.5, 0.5))
+		_create_mock_item("Prism (Split)", "splitter", Color(0, 0.8, 1.0))
 	]
+	
+	for m in legacy_mocks:
+		items.append(m)
 	
 	for item in items:
 		var btn = Button.new()
@@ -36,6 +57,22 @@ func _setup_library():
 		btn.script = load("res://src/ui/wand_editor/components/palette_item.gd")
 		btn.item_data = item
 		palette_grid.add_child(btn)
+
+func _create_spell_item_resource(spell_id: String):
+	# Try to load from GameState DB
+	if GameState and GameState.item_db.has(spell_id):
+		return GameState.item_db[spell_id]
+	
+	# Fallback generator for missing resource
+	var item = BaseItem.new()
+	item.id = spell_id
+	item.display_name = spell_id.capitalize().replace("_", " ")
+	item.wand_logic_type = "action_projectile" # Default
+	if "modifier" in spell_id: item.wand_logic_type = "modifier"
+	elif "logic" in spell_id: item.wand_logic_type = "trigger"
+	
+	item.icon = load("res://icon.svg")
+	return item
 
 func _create_mock_item(name, type, color, val = {}):
 	var item = BaseItem.new()

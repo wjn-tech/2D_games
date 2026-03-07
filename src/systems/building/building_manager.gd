@@ -166,8 +166,18 @@ func _process(_delta: float) -> void:
 				
 				# 关键修复：放置后通知玩家脚本进入冷却，防止瞬间挖掉
 				var player = get_tree().get_first_node_in_group("player")
-				if player and "action_cooldown" in player:
-					player.action_cooldown = 0.3 # 0.3秒安全期
+				if player:
+					if "action_cooldown" in player:
+						player.action_cooldown = 0.4 # 增加到 0.4 秒安全期
+					if "current_mining_tile" in player:
+						player.current_mining_tile = Vector2i(-1, -1)
+				
+				# Audio feedback with type checking
+				var am = get_node_or_null("/root/AudioManager")
+				if am and is_instance_valid(preview_instance):
+					# Use play_sfx_2d for spatial sound or play_sfx for non-spatial
+					# If you want spatial sound, use play_sfx_2d:
+					am.play_sfx_2d("build", preview_instance.global_position)
 				
 				_last_placed_map_pos = current_map_pos
 				_started_this_frame = false # 确保点击第一帧处理后不再重复触发 _started
@@ -175,6 +185,10 @@ func _process(_delta: float) -> void:
 		elif Input.is_action_just_pressed("mouse_right") and not _started_this_frame:
 			get_viewport().set_input_as_handled()
 			cancel_building()
+			var am = get_node_or_null("/root/AudioManager")
+			if am:
+				# am.play_ui_sfx("cancel")
+				pass
 		
 		_started_this_frame = false
 
@@ -183,6 +197,11 @@ func is_building() -> bool:
 
 func start_building(resource: Resource, cost_override = null) -> void:
 	_refresh_tile_map()
+	
+	# Audio feedback
+	# var am = get_node_or_null("/root/AudioManager")
+	# if am:
+	# 	am.play_ui_sfx("hover")
 	
 	# 如果已经在建造同一个东西且预览实例有效，则不执行任何操作，防止闪烁
 	if current_resource == resource and is_instance_valid(preview_instance):

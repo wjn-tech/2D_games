@@ -198,6 +198,14 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if current_wand:
 		current_wand.update_mana(delta)
+		# Update transient data for HUD
+		if attributes and attributes.data:
+			attributes.data.current_tool_mana = current_wand.current_mana
+			if current_wand.embryo:
+				attributes.data.current_tool_max_mana = current_wand.embryo.mana_capacity
+	else:
+		if attributes and attributes.data:
+			attributes.data.current_tool_max_mana = -1.0
 		
 	if weapon_pivot and input_enabled:
 		var mouse_pos = get_global_mouse_position()
@@ -559,6 +567,9 @@ func _physics_process(delta: float) -> void:
 		jump_ramp_timer = JUMP_RAMP_TIME
 		jump_buffer_timer = 0.0
 		coyote_timer = 0.0
+		# 跳跃音效 - 根据需求已注释
+		# if has_node("/root/AudioManager"):
+		# 	get_node("/root/AudioManager").play_sfx("jump", -8.0, 0.2)
 
 	if jump_ramp_timer > 0.0:
 		velocity.y += JUMP_VELOCITY * (delta / JUMP_RAMP_TIME)
@@ -583,6 +594,45 @@ func _physics_process(delta: float) -> void:
 	var was_on_floor = is_on_floor()
 	move_and_slide()
 	
+	# 落地音效
+	if not was_on_floor and is_on_floor():
+		# 检查垂直速度，只有达到一定速度（下落一定距离）才播放声音
+		if abs(velocity.y) > 400 or (fall_time > 0.4): # fall_time 是 player.gd 中已有的变量
+			if has_node("/root/AudioManager"):
+				get_node("/root/AudioManager").play_sfx("land", -10.0, 0.2)
+	
+	# Audio Footsteps
+	if is_on_floor() and abs(velocity.x) > 10:
+		var step_interval = 22 # 稍微增加间隔，避免太急促
+		# 如果角色正在跑（未来可能有跑动逻辑）
+		if abs(velocity.x) > SPEED * 1.5:
+			step_interval = 16
+			
+		if Engine.get_frames_drawn() % step_interval == 0:
+			if has_node("/root/AudioManager"):
+				var am = get_node("/root/AudioManager")
+				var sound_to_play = "footstep"
+				
+				# 简单的地面检测
+				var space_state = get_world_2d().direct_space_state
+				var query = PhysicsRayQueryParameters2D.create(global_position, global_position + Vector2(0, 10)) # 缩短射线，只检测脚下
+				query.collision_mask = 1 # 假设地面在 layer 1
+				query.exclude = [get_rid()] # 排除自己
+				var result = space_state.intersect_ray(query)
+				
+				if result and result.collider is TileMapLayer:
+					var tm = result.collider
+					var map_pos = tm.local_to_map(tm.to_local(result.position + Vector2(0, 2)))
+					var atlas_coords = tm.get_cell_atlas_coords(map_pos)
+					if atlas_coords == Vector2i(1, 0): # Grass
+						sound_to_play = "footstep_grass"
+					elif atlas_coords == Vector2i(0, 0): # Dirt
+						sound_to_play = "footstep_dirt"
+				
+				# 播放音效，增加随机音高使听起来更自然
+				# 降低音量，走路声不应太突兀
+				am.play_sfx(sound_to_play, -18.0, 0.4)
+	
 	if min_visual and velocity.x != 0:
 		min_visual.scale.x = abs(min_visual.scale.x) * sign(velocity.x)
 	
@@ -592,7 +642,7 @@ func _physics_process(delta: float) -> void:
 func _attempt_execution() -> void:
 	var enemies = get_tree().get_nodes_in_group("npcs")
 	var closest: Node2D = null
-	var min_dist = 120.0 # Slightly larger than 100 to feel generous
+	var min_dist = 200.0 # Increased range for execution (User Request: "延长斩杀判定距离")
 	
 	for enemy in enemies:
 		# Check if property exists first
@@ -642,6 +692,11 @@ func _handle_continuous_actions() -> void:
 				
 				# Call Cast Spell - returns internal duration + recharge + delay
 				var total_cooldown = SpellProcessor.cast_spell(current_wand, self, dir, spawn_pos)
+				
+				# 发射音效 (根据魔杖类型可以做区分，此处使用通用音效)
+				if total_cooldown > 0: # 确认施法成功（非冷却中）
+					if has_node("/root/AudioManager"):
+						get_node("/root/AudioManager").play_sfx("spell_fire", -6.0, 0.3)
 				
 				# Action cooldown prevents firing until sequence is done
 				action_cooldown = max(total_cooldown, 0.05) # Minimum speed cap

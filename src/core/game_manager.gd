@@ -1,4 +1,4 @@
-﻿extends Node
+extends Node
 
 ## GameManager (Autoload)
 ## 负责管理游戏的高层状态切换与核心流程。
@@ -287,20 +287,19 @@ func _input(event: InputEvent) -> void:
 		pass
 
 func _spawn_player_safely(player: Node2D, target_pos: Vector2) -> void:
-    player.process_mode = Node.PROCESS_MODE_DISABLED
-    player.global_position = target_pos
-    if player is CharacterBody2D:
-        player.velocity = Vector2.ZERO
-    if not InfiniteChunkManager:
-        player.process_mode = Node.PROCESS_MODE_INHERIT
-        return
-    InfiniteChunkManager.update_player_vicinity(target_pos)
-    var chunk_coord = InfiniteChunkManager.get_chunk_coord(target_pos)
-    if not InfiniteChunkManager.loaded_chunks.has(chunk_coord):
-        var max_wait = 500
-        while not InfiniteChunkManager.loaded_chunks.has(chunk_coord) and max_wait > 0:
-            await get_tree().process_frame
-            max_wait -= 1
-    player.process_mode = Node.PROCESS_MODE_INHERIT
-    player.global_position = target_pos + Vector2(0, -2)
-
+	player.process_mode = Node.PROCESS_MODE_DISABLED
+	player.global_position = target_pos
+	if player is CharacterBody2D:
+		player.velocity = Vector2.ZERO
+	if not InfiniteChunkManager:
+		player.process_mode = Node.PROCESS_MODE_INHERIT
+		return
+	InfiniteChunkManager.update_player_vicinity(target_pos)
+	var chunk_coord = InfiniteChunkManager.get_chunk_coord(target_pos)
+	if not InfiniteChunkManager.loaded_chunks.has(chunk_coord):
+		var max_wait = 500
+		while not InfiniteChunkManager.loaded_chunks.has(chunk_coord) and max_wait > 0:
+			await get_tree().process_frame
+			max_wait -= 1
+	player.process_mode = Node.PROCESS_MODE_INHERIT
+	player.global_position = target_pos + Vector2(0, -2)

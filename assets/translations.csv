@@ -60,3 +60,5 @@ OBJ_CLOSE_EDITOR,"成功！关闭编辑器(K)测试法术","Success! Close Edito
 OBJ_TEST_FIRE,"逻辑正常。摧毁目标！","Logic confirmed. Destroy the Debris target!"
 OBJ_REOPEN_EDITOR,"逻辑不完整！重新打开编辑器(K)连接节点","Logic incomplete! Re-open Editor (K) to connect nodes"
 NPC_COURT_MAGE,"宫廷法师","Court Mage"
+apocryphal man,"伪经之人","Apocryphal Man"
+

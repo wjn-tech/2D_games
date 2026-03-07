@@ -117,6 +117,36 @@ func _ready() -> void:
 	# 自动归类敌人
 	if npc_data and npc_data.alignment == "Hostile":
 		add_to_group("enemies")
+		
+		# --- Ensure Spell Pool is Populated for Absorption ---
+		if npc_data.get("intrinsic_spell_pool") != null and npc_data.intrinsic_spell_pool.is_empty():
+			_populate_intrinsic_spell_pool()
+
+func _populate_intrinsic_spell_pool() -> void:
+	if not npc_data or npc_data.get("intrinsic_spell_pool") == null: return
+	var d_name = npc_data.display_name.to_lower()
+	var pool: Array[String] = []
+	
+	# Common Spells
+	var common = ["spark_bolt", "action_projectile", "modifier_speed", "modifier_delay"]
+	pool.append_array(common)
+	
+	# Specific Spells based on name/type
+	if "slime" in d_name or "史莱姆" in d_name:
+		pool.append_array(["projectile_slime", "modifier_element_slime"])
+	elif "skeleton" in d_name or "bone" in d_name or "骨" in d_name:
+		pool.append_array(["modifier_pierce", "magic_bolt", "modifier_damage"])
+	elif "eye" in d_name or "眼" in d_name:
+		pool.append_array(["projectile_blackhole", "projectile_teleport"])
+	elif "fire" in d_name or "火" in d_name:
+		pool.append_array(["modifier_element_fire", "projectile_tnt"])
+	elif "ice" in d_name or "冰" in d_name:
+		pool.append_array(["modifier_element_ice", "magic_bolt"])
+	elif "boss" in d_name:
+		pool.append_array(["projectile_blackhole", "modifier_damage_plus", "logic_splitter", "logic_sequence"])
+		
+	npc_data.intrinsic_spell_pool = pool
+
 
 	# 实例化气泡对话框 (保留用于手动say，但移除自动闲聊)
 	var bubble_scene = load("res://scenes/ui/speech_bubble.tscn")
@@ -509,8 +539,12 @@ func update_growth_visual() -> void:
 func _die() -> void:
 	print(name, " died.")
 	
-	# 触发常规掉落 (Noita 风格)
-	_drop_normal_loot()
+	# --- MODIFIED: Use SpellAbsorptionManager instead of physical spell loot ---
+	if get_node_or_null("/root/SpellAbsorptionManager"):
+		get_node("/root/SpellAbsorptionManager").handle_npc_death(self)
+	else:
+		# Fallback to normal loot if manager not found (shouldn't happen with Autoload)
+		_drop_normal_loot()
 	
 	# 触发群体仇恨
 	var player = get_tree().get_first_node_in_group("player")
@@ -540,17 +574,8 @@ func _die() -> void:
 	queue_free()
 
 func _drop_normal_loot() -> void:
-	# 基础掉落逻辑：所有 NPC 都有极低概率掉落随机法术，
-	# 特定 NPC 有更高概率掉落特定法术。
-	
-	var drop_chance = 0.05 # 默认 5% 掉落法术
-	if npc_data and npc_data.alignment == "Hostile":
-		drop_chance = 0.1 # 敌对生物 10%
-	
-	if randf() < drop_chance:
-		var spell_id = _get_random_spell_for_npc()
-		if spell_id != "":
-			_spawn_spell_item(spell_id)
+	# REPURPOSED: Only drops gold/materials. Spells are absorbed via SpellAbsorptionManager.
+	pass
 
 func _get_random_spell_for_npc() -> String:
 	var d_name = npc_data.display_name.to_lower()
@@ -816,9 +841,10 @@ func execute_by_player(player: Node2D) -> void:
 	if player.has_method("set_physics_process"):
 		player.set_physics_process(false)
 	
-	# Pull Effect
+	# Execution Sequence (Invincibility Frame, No Pull)
 	var tween = create_tween()
-	tween.tween_property(self, "global_position", player.global_position, 0.25).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	# Just wait for a moment to emphasize the hit (Invincibility Frame)
+	tween.tween_interval(0.25)
 	tween.tween_callback(func():
 		# Effect
 		if UIManager and UIManager.has_method("show_floating_text"):
@@ -878,18 +904,8 @@ func _spawn_loot(item: Resource, count: int) -> void:
 		loot.call_deferred("setup", item, count, 0.0)
 
 func _spawn_spell_item(spell_id: String) -> void:
-	var spell_item = SpellItem.new()
-	spell_item.id = "spell_scroll_" + spell_id
-	spell_item.spell_unlock_id = spell_id
-	spell_item.display_name = "法术: " + spell_id
-	spell_item.item_type = "Consumable"
-	# Placeholder icon from palette
-	var atlas = AtlasTexture.new()
-	atlas.atlas = load("res://assets/minimalist_palette.png")
-	atlas.region = Rect2(48, 0, 16, 16) # Magic looking region
-	spell_item.icon = atlas
-	
-	_spawn_loot(spell_item, 1)
+	# DEPRECATED: Spells are absorbed as pixels now.
+	pass
 
 func get_inventory():
 	# 移除之前的随机生成逻辑，现在由 WorldGenerator 在生成时初始化

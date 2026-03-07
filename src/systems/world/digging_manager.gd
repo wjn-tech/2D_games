@@ -134,6 +134,13 @@ func mine_tile_step(coords: Vector2i, delta: float, pickaxe_power: int) -> bool:
 	var required_power = _get_custom_data(tile_data, target_layer, coords, "required_power", 0, Vector2i(-1,-1), s_id)
 	var hardness = _get_custom_data(tile_data, target_layer, coords, "hardness", 1.0, Vector2i(-1,-1), s_id)
 	
+	# 检查玩家属性提供的挖掘伤害（由力量决定）
+	var mining_damage = 1.0
+	var player = get_tree().get_first_node_in_group("player")
+	if player and player.has_node("AttributeComponent"):
+		var attr = player.get_node("AttributeComponent")
+		mining_damage = attr.damage_mult # 使用力量修正系数作为挖掘伤害
+	
 	# print("DiggingManager: 正在挖掘 ", coords, " 进度: ", mining_progress_map.get(coords, 0.0), "/", hardness)
 	
 	if pickaxe_power < required_power:
@@ -143,7 +150,8 @@ func mine_tile_step(coords: Vector2i, delta: float, pickaxe_power: int) -> bool:
 	if not mining_progress_map.has(coords):
 		mining_progress_map[coords] = 0.0
 		
-	mining_progress_map[coords] += delta
+	# 应用伤害修正系数
+	mining_progress_map[coords] += delta * mining_damage
 	
 	# --- 视觉与粒子更新 ---
 	var progress_ratio = mining_progress_map[coords] / hardness

@@ -26,18 +26,21 @@ Currently, the project lacks an integrated audio system. This proposal introduce
 
 ## Design Decisions
 - **Pool Management**: Use an internal pool of `AudioStreamPlayer` nodes to allow overlapping SFX without performance hits.
+- **2D Spatial Audio**: Use `AudioStreamPlayer2D` for world-based emitters (NPCs, Environment) to support distance-based attenuation.
 - **Audio Buses**: Define "Master", "BGM", "SFX", and "Ambient" buses for volume control.
+- **Volume Integration**: Volume sliders will be integrated into the existing `SettingsWindow`.
+- **Dynamic Behavior**: BGM and Ambience will support smooth cross-fading. Ambient sounds will include a Low-Pass Filter (LPF) for "muffled" effects when the player is underground.
 - **Decoupling**: Systems trigger sounds via `AudioManager` global calls or signals via `EventBus`.
 
 ## Impact
 - **Performance**: Negligible if using pooling and compressed audio formats (Ogg/MP3 for music, Wav for SFX).
 - **Architecture**: Enhances the existing modular pattern by centralizing audio logic.
 
-## Questions for Clarification
-1. **Asset Source**: Do we have existing audio assets, or should placeholders/generated sounds be used initially?
-2. **Dynamic Music**: Does the music need to change dynamically based on combat state or biome intensity?
-3. **Spatial Audio**: Do we need 2D spatial audio (e.g., sounds getting quieter as they move off-screen) for NPCs and environment?
-4. **Volume Settings**: Should UI controls for Volume be part of this proposal or a separate settings-window update?
-5. **Pitch Randomization**: Should the system automatically apply pitch variation to repeated sounds (like footsteps) to prevent fatigue?
-6. **Voice Overs**: Is there any plan for NPC voice-overs or grunts that require special handling?
-7. **Transition Duration**: What are the preferred fade-in/out durations for BGM transitions?
+## Implementation Details (Confirmed)
+- **SFX Assets**: Will be generated/provided as high-quality Wav files.
+- **BGM/Ambience**: Provided by the user; placed in `assets/audio/bgm/` and `assets/audio/ambient/`.
+- **Pitch Randomization**: Enabled for repetitive SFX.
+- **Spatial Audio**: Enabled for world-based events.
+- **Settings**: Integrated into current global settings.
+- **Environment**: Muffled effect (LPF) enabled for interiors/underground.
+

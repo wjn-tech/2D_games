@@ -79,9 +79,8 @@ func open_window(window_name: String, scene_path: String, blocks_input: bool = t
 
 	# 3. 如果还是没找到，则实例化新窗口
 	if not window:
-		if not get_tree().current_scene:
-			print("UIManager: 当前场景尚未加载，延迟打开窗口")
-			call_deferred("open_window", window_name, scene_path, blocks_input)
+		if not get_tree() or not get_tree().current_scene:
+			print("UIManager: 当前场景尚未加载，无法打开窗口: ", window_name)
 			return null
 
 		if not ResourceLoader.exists(scene_path):
@@ -199,24 +198,30 @@ func show_floating_text(text_content: String, global_pos: Vector2, color: Color 
 
 ## 关闭窗口
 func close_window(window_name: String) -> void:
-	var window: Control = null
-	
-	if active_windows.has(window_name):
-		window = active_windows[window_name]
-	else:
+	if not active_windows.has(window_name):
 		# 增强：场景重载后可能丢失字典引用，尝试在当前场景中寻找预置节点
 		var scene_root = get_tree().current_scene
 		if scene_root:
-			window = scene_root.find_child(window_name, true, false)
-			if window and window is Control:
+			var found = scene_root.find_child(window_name, true, false)
+			if is_instance_valid(found) and found is Control:
 				print("UIManager: 探测并同步场景中的预置窗口: ", window_name)
-				active_windows[window_name] = window
+				active_windows[window_name] = found
+
+	var window: Control = null
+	if active_windows.has(window_name):
+		var potential_window = active_windows[window_name]
+		if is_instance_valid(potential_window):
+			window = potential_window
+		else:
+			active_windows.erase(window_name)
 
 	if not is_instance_valid(window):
-		if active_windows.has(window_name):
-			active_windows.erase(window_name)
-		if window_name in blocking_windows:
-			blocking_windows.erase(window_name)
+		active_windows.erase(window_name)
+		blocking_windows.erase(window_name)
+		return
+		
+	# 如果窗口已经在关闭过程中，直接返回
+	if window.get_meta("ui_target_state", "open") == "closed":
 		return
 		
 	# 设置目标状态为关闭
@@ -230,27 +235,30 @@ func close_window(window_name: String) -> void:
 	if tween:
 		await tween.finished
 	
+	# 再次检查窗口有效性，因为 await 期间可能发生场景重载或销毁
+	if not is_instance_valid(window):
+		active_windows.erase(window_name)
+		return
+		
 	if window_name == "InventoryWindow":
 		EventBus.inventory_closed.emit()
 	
 	if window_name == "WandEditor":
 		EventBus.wand_editor_closed.emit()
 
-		
-	if is_instance_valid(window):
-		# 检查在等待期间是否被重新打开了
-		if window.has_meta("ui_target_state") and window.get_meta("ui_target_state") == "open":
-			print("UIManager: 窗口 %s 在关闭动画期间被重新打开，取消隐藏动作。" % window_name)
-			return
+	# 检查在等待期间是否被重新打开了
+	if window.get_meta("ui_target_state", "closed") == "open":
+		print("UIManager: 窗口 %s 在关闭动画期间被重新打开，取消隐藏动作。" % window_name)
+		return
 			
-		# 只有 MainMenu 和 HUD 是真正持久的预置节点，其他的动态窗口即使在场景中找到也应该销毁
-		var is_persistent = window_name == "MainMenu" or window_name == "HUD"
-		
-		if is_persistent:
-			window.visible = false
-		else:
-			active_windows.erase(window_name)
-			window.queue_free()
+	# 只有 MainMenu 和 HUD 是真正持久的预置节点，其他的动态窗口即使在场景中找到也应该销毁
+	var is_persistent = window_name == "MainMenu" or window_name == "HUD"
+	
+	if is_persistent:
+		window.visible = false
+	else:
+		active_windows.erase(window_name)
+		window.queue_free()
 		
 	if blocking_windows.is_empty():
 		is_ui_focused = false

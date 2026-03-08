@@ -9,12 +9,13 @@ signal item_clicked(index: int)
 var inventory: Inventory
 
 func setup(inv: Inventory):
-	if inventory and inventory.content_changed.is_connected(_on_content_changed):
+	if is_instance_valid(inventory) and inventory.is_connected("content_changed", _on_content_changed):
 		inventory.content_changed.disconnect(_on_content_changed)
 		
 	inventory = inv
-	if inventory:
-		inventory.content_changed.connect(_on_content_changed)
+	if is_instance_valid(inventory):
+		if not inventory.is_connected("content_changed", _on_content_changed):
+			inventory.content_changed.connect(_on_content_changed)
 	_rebuild_slots()
 
 func _on_content_changed(_slot_index: int):

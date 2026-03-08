@@ -41,6 +41,9 @@ func change_state(new_state: State) -> void:
 	
 	match current_state:
 		State.START_MENU:
+			# 确保游戏状态完全重置，避免上一局的数据（如 is_new_game, player_data）污染新会话
+			reset_game_state()
+			
 			get_tree().paused = true
 			# 关闭除了主菜单以外的所有窗口
 			UIManager.close_all_windows(false, ["MainMenu"]) 
@@ -193,11 +196,33 @@ func change_state(new_state: State) -> void:
 
 var _is_starting_new_game: bool = false
 
+func reset_game_state() -> void:
+	# 核心状态重置，用于返回主菜单或清理会话
+	print("GameManager: Resetting game state...")
+	is_new_game = false
+	_is_starting_new_game = false
+	GameState.player_data = null
+	
+	# 重置持久化层
+	if SaveManager and SaveManager._cached_player_data:
+		SaveManager._cached_player_data.clear()
+		
+	# 重置子系统
+	if InfiniteChunkManager and InfiniteChunkManager.has_method("restart"): InfiniteChunkManager.restart()
+	if NPCSpawner and NPCSpawner.has_method("reset"): NPCSpawner.reset()
+	if Chronometer and Chronometer.has_method("reset"): Chronometer.reset()
+	if LayerManager and LayerManager.has_method("reset"): LayerManager.reset() 
+
 func start_new_game() -> void:
 	if _is_starting_new_game:
 		return
 	_is_starting_new_game = true
-	is_new_game = true # 强制标记为新游戏
+	
+	# 先重置所有旧状态
+	reset_game_state()
+	
+	# 显式标记为新游戏
+	is_new_game = true 
 	
 	# 1. 缓冲机制：先进入黑屏，确保场景切换期间玩家看不到原始 UI 的闪烁
 	if UIManager:
@@ -213,7 +238,9 @@ func start_new_game() -> void:
 		for meta_key in GameState.get_meta_list():
 			GameState.remove_meta(meta_key)
 		GameState.set_meta("pending_new_seed", new_seed)
-		GameState.player_data = null
+		
+		# 避免空指针 crash：初始化一个临时的空玩家数据，防止场景加载期间脚本访问报错
+		GameState.player_data = CharacterData.new()
 	
 	print("GameManager: 新游戏启动，种子: ", new_seed)
 	
@@ -260,6 +287,38 @@ func start_new_game() -> void:
 		
 		timer.timeout.connect(_on_reload_finished)
 
+func load_game(slot_id: int) -> void:
+	if _is_starting_new_game: return
+	_is_starting_new_game = true
+	
+	reset_game_state()
+	
+	# Load data into Cache
+	if not SaveManager.load_game(slot_id):
+		_is_starting_new_game = false
+		print("GameManager: Load failed!")
+		return
+	
+	# Transition
+	if UIManager:
+		await UIManager.play_fade(true, 0.3)
+	
+	get_tree().paused = true
+	current_state = State.GAME_OVER
+	
+	var scene_path = "res://scenes/main.tscn"
+	if GameState.has_meta("pending_scene_path"):
+		scene_path = GameState.get_meta("pending_scene_path")
+		GameState.remove_meta("pending_scene_path")
+	
+	var error = get_tree().change_scene_to_file(scene_path)
+	if error == OK:
+		get_tree().create_timer(0.2).timeout.connect(_on_reload_finished)
+	else:
+		_is_starting_new_game = false
+		get_tree().paused = false
+		print("GameManager: Failed to change scene during load.")
+
 func _on_reload_finished() -> void:
 	_is_starting_new_game = false
 	print("GameManager: 场景重载完毕，正在初始化...")
@@ -272,7 +331,9 @@ func _on_reload_finished() -> void:
 	
 	# 初始化玩家数据
 	print("Initializing Player Data...")
-	GameState.player_data = CharacterData.new()
+	# 避免覆盖在 start_new_game 或 load_game 中已经初始化的数据引用
+	if not GameState.player_data:
+		GameState.player_data = CharacterData.new()
 	
 	# 如果是从存档重载，恢复缓存的数据
 	if SaveManager and not SaveManager._cached_player_data.is_empty():

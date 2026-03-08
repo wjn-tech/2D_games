@@ -290,6 +290,10 @@ func load_game(slot_id: int) -> bool:
 		# 将位置存储在 Meta 中，供 GameManager 生成玩家时读取
 		GameState.set_meta("load_spawn_pos", data.player.position)
 		
+		# 确保玩家数据对象存在，避免空指针访问
+		if not GameState.player_data:
+			GameState.player_data = CharacterData.new()
+			
 		var p_data = GameState.player_data
 		var saved_stats = _cached_player_data
 		

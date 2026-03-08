@@ -8,7 +8,8 @@ func _ready() -> void:
 	_update_stats()
 	
 	if EventBus:
-		EventBus.player_data_refreshed.connect(_update_stats)
+		if not EventBus.is_connected("player_data_refreshed", _update_stats):
+			EventBus.player_data_refreshed.connect(_update_stats)
 
 func _update_stats() -> void:
 	# Clear old

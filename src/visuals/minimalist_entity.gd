@@ -24,7 +24,10 @@ var _pulse_phase: float = 0.0
 # --- User Configurable Style Map ---
 const STYLE_MAP = {
 	"Player": {"shape": Shape.RECT, "color": Color(0.2, 0.5, 0.9), "size": Vector2(14, 26), "outline_width": 2.0},
+	"Princess": {"shape": Shape.RECT, "color": Color(0.9, 0.4, 0.7), "size": Vector2(14, 26), "outline_width": 2.0},
 	"公主": {"shape": Shape.RECT, "color": Color(0.9, 0.4, 0.7), "size": Vector2(14, 26), "outline_width": 2.0},
+	"Spouse": {"shape": Shape.RECT, "color": Color(0.8, 0.5, 0.9), "size": Vector2(14, 26), "outline_width": 1.5},
+	"Crush": {"shape": Shape.RECT, "color": Color(1.0, 0.6, 0.8), "size": Vector2(14, 26), "outline_width": 1.5},
 	"Child": {"shape": Shape.RECT, "color": Color(0.5, 0.7, 1.0), "size": Vector2(14, 26), "outline_width": 1.5},
 	"Child of": {"shape": Shape.RECT, "color": Color(0.5, 0.7, 1.0), "size": Vector2(14, 26), "outline_width": 1.5},
 	"Slime": {"shape": Shape.TRIANGLE, "color": Color(1.0, 0.3, 0.3), "pulse": 2.0},

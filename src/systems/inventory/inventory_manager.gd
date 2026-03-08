@@ -186,6 +186,9 @@ func select_hotbar_slot(index: int) -> void:
 	var item = get_equipped_item()
 	equipped_item_changed.emit(item)
 	EventBus.item_equipped.emit(item)
+	# 显式发出全局信号，确保教程系统能捕捉到任何位置切换后的装备变化
+	if item:
+		EventBus.item_equipped.emit(item)
 	item_visual_updated.emit(item) # Ensure visual sync
 
 func get_equipped_item() -> Resource:

@@ -206,6 +206,17 @@ func _ready() -> void:
 		LayerManager.register_layer(1, layer_1)
 		LayerManager.register_layer(2, layer_2)
 		
+		# 强制初始化图层属性，防止 LayerManager 注册因时序问题失效
+		# 背景墙 (Layer 1) 应在玩家图层 (Layer 0) 之后
+		if layer_1:
+			layer_1.z_index = -20
+			layer_1.modulate = Color(0.7, 0.7, 0.7, 0.8) # 80% 可见度
+		
+		# 深层地底 (Layer 2)
+		if layer_2:
+			layer_2.z_index = -40
+			layer_2.modulate = Color(0.5, 0.5, 0.5, 0.6)
+		
 		# 注册树木图层 (使用 meta 标记所属的主图层)
 		if tree_layer_0: 
 			tree_layer_0.set_meta("layer_index", 0)
@@ -218,6 +229,7 @@ func _ready() -> void:
 			tree_layer_2.add_to_group("map_layers")
 	
 	layer_0.add_to_group("world_tiles")
+	add_to_group("world_generator")
 	
 	check_tileset_ids()
 
@@ -561,20 +573,19 @@ func generate_chunk_cells(coord: Vector2i) -> Dictionary:
 				
 			# --- 背景墙逻辑：防止地下出现虚空 ---
 			# 只要是在地表以下，就在 Layer 1 (背景) 放置背景墙
-			if global_y > surface_base + 2.0:
+			if global_y > surface_base + 3.0:
 				var bg_biome = get_biome_at(global_x, global_y)
 				var bg_data = biome_params.get(bg_biome, biome_params[BiomeType.FOREST])
 				
-				# 背景墙使用 sub_block 坐标，但通常我们会调暗它或使用特定纹理
-				# 目前我们将其放在 Layer 1，LayerManager 会自动处理它的半透明/暗化
+				# 在地下深处强制放置背景墙以填补洞穴
+				var bg_tile = bg_data["sub_block"]
+				if global_y > surface_base + 30.0:
+					bg_tile = bg_data["stone_block"]
+				
 				result[1][local_pos] = {
 					"source": bg_data.get("source_id", tile_source_id),
-					"atlas": bg_data["sub_block"]
+					"atlas": bg_tile
 				}
-				
-				# 深层背景可以使用岩石
-				if global_y > surface_base + 40.0:
-					result[1][local_pos]["atlas"] = bg_data["stone_block"]
 						
 	return result
 

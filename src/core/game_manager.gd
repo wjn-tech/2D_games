@@ -70,6 +70,13 @@ func change_state(new_state: State) -> void:
 			if entities:
 				entities.visible = true
 			
+			# 修复加载存档背景不显：强制显示背景层
+			var background = scene_root.find_child("Background", true, false)
+			if background:
+				background.visible = true
+			elif scene_root is ParallaxBackground:
+				scene_root.visible = true
+			
 			# 2. 只有从菜单进入、从死亡状态恢复或转生成功时才生成/重置玩家位置
 			if old_state == State.START_MENU or old_state == State.GAME_OVER or old_state == State.REINCARNATING:
 				# 尝试处理世界生成
@@ -142,15 +149,38 @@ func change_state(new_state: State) -> void:
 								child.queue_free()
 								
 							for b_info in buildings_data:
-								if not FileAccess.file_exists(b_info.scene_path): continue
+								var scene_path = b_info.scene_path
+								# 路径修正逻辑 (从 save_manager 移植并增强)
+								if "workshop.tscn" in scene_path and not "buildings/" in scene_path:
+									scene_path = "res://scenes/world/buildings/workshop.tscn"
+								if "ruins_stone.tscn" in scene_path and not "buildings/" in scene_path:
+									scene_path = "res://scenes/world/buildings/ruins_stone.tscn"
+									
+								if not FileAccess.file_exists(scene_path): 
+									push_warning("GameManager: 找不到建筑场景 %s" % scene_path)
+									continue
 								
-								var scene = load(b_info.scene_path)
+								var scene = load(scene_path)
 								if scene:
 									var instance = scene.instantiate()
 									b_container.add_child(instance)
 									instance.global_position = b_info.position
 									instance.rotation = b_info.rotation
-									# 可以在此恢复自定义数据
+									
+									# 恢复关联的 BuildingResource 和数据
+									if b_info.has("custom_data") and b_info.custom_data.has("resource_id"):
+										var res_id = b_info.custom_data.resource_id
+										if GameState.building_db.has(res_id):
+											var res = GameState.building_db[res_id]
+											if instance.has_method("setup"):
+												instance.setup(res)
+											
+											# 注册到城邦系统
+											if get_node_or_null("/root/SettlementManager"):
+												get_node("/root/SettlementManager").register_building(instance, res)
+									
+									if instance.has_method("load_custom_data"):
+										instance.load_custom_data(b_info.get("custom_data", {}))
 		State.PAUSED:
 			get_tree().paused = true
 			UIManager.open_window("PauseMenu", "res://scenes/ui/PauseMenu.tscn")
@@ -209,7 +239,26 @@ func start_new_game() -> void:
 		tree.create_timer(0.2).timeout.connect(_on_reload_finished)
 	else:
 		get_tree().paused = false
-		get_tree().reload_current_scene()
+		
+		# 如果存档包含特定场景路径，切换到该场景
+		if GameState.has_meta("pending_scene_path"):
+			var scene_path = GameState.get_meta("pending_scene_path")
+			GameState.remove_meta("pending_scene_path")
+			if scene_path != get_tree().current_scene.scene_file_path:
+				get_tree().change_scene_to_file(scene_path)
+			else:
+				get_tree().reload_current_scene()
+		else:
+			get_tree().reload_current_scene()
+			
+		# 场景加载是异步的，我们需要通过定时器来等待加载完成
+		# 如果使用 change_scene_to_file，通常 SceneTree 会在下一帧完成切换
+		var timer = get_tree().create_timer(0.2)
+		# 尝试解绑旧连接以免重复
+		if timer.timeout.is_connected(_on_reload_finished):
+			timer.timeout.disconnect(_on_reload_finished)
+		
+		timer.timeout.connect(_on_reload_finished)
 
 func _on_reload_finished() -> void:
 	_is_starting_new_game = false
@@ -224,7 +273,50 @@ func _on_reload_finished() -> void:
 	# 初始化玩家数据
 	print("Initializing Player Data...")
 	GameState.player_data = CharacterData.new()
-	GameState.player_data.display_name = "冒险者"
+	
+	# 如果是从存档重载，恢复缓存的数据
+	if SaveManager and not SaveManager._cached_player_data.is_empty():
+		var p_data = GameState.player_data
+		var saved = SaveManager._cached_player_data
+		
+		# 映射数据到新对象
+		p_data.display_name = saved.get("display_name", "冒险者")
+		p_data.health = saved.get("health", 100)
+		p_data.max_health = saved.get("max_health", 100)
+		p_data.strength = saved.get("strength", 10)
+		p_data.agility = saved.get("agility", 10)
+		p_data.intelligence = saved.get("intelligence", 10)
+		p_data.constitution = saved.get("constitution", 10)
+		p_data.stat_points = int(saved.get("stat_points", 0))
+		p_data.level = int(saved.get("level", 1))
+		p_data.experience = float(saved.get("experience", 0.0))
+		
+		# 血脉系统属性
+		if saved.has("stat_levels"): p_data.stat_levels = saved.stat_levels
+		if saved.has("mutations"): p_data.mutations = saved.mutations
+		p_data.generation = int(saved.get("generation", 1))
+		p_data.current_age = float(saved.get("age", saved.get("current_age", 20.0)))
+		p_data.max_life_span = float(saved.get("max_life_span", 120.0))
+		p_data.growth_stage = int(saved.get("growth_stage", 2)) # 默认成年
+		
+		# 恢复教程进度
+		p_data.tutorial_completed = saved.get("tutorial_completed", false)
+		p_data.tutorial_step = int(saved.get("tutorial_step", 0))
+
+		# 强制重置新游戏标志，防止教程污染
+		if p_data.tutorial_completed or not is_new_game:
+			is_new_game = false
+		
+		print("GameManager: 已从 SaveManager 缓存恢复玩家属性 (HP: %d, LV: %d)" % [p_data.health, p_data.level])
+		# 清理缓存，防止下次非存档重载干扰
+		SaveManager._cached_player_data = {}
+	else:
+		GameState.player_data.display_name = "冒险者"
+		# 新游戏状态下，确认教程初始状态
+		if is_new_game:
+			GameState.player_data.tutorial_completed = false
+			GameState.player_data.tutorial_step = 0
+	
 	if EventBus:
 		print("Emitting player_data_refreshed...")
 		EventBus.player_data_refreshed.emit()

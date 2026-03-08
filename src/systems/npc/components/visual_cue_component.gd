@@ -3,8 +3,8 @@ class_name VisualCueComponent
 
 # Ranges in pixels (1 unit = 16 pixels)
 const UNIT_SIZE = 16.0
-@export var interact_dist: float = 5.0 * UNIT_SIZE
-@export var badge_dist: float = 10.0 * UNIT_SIZE
+@export var interact_dist: float = 12.0 * UNIT_SIZE # 增加交互距离从 5 到 12 (约 200px)
+@export var badge_dist: float = 25.0 * UNIT_SIZE # 增加徽章距离从 10 到 25 (约 400px)
 
 @export var visual_entity: MinimalistEntity
 @export var prompt_control: Control

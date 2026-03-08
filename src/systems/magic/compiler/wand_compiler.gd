@@ -2,7 +2,7 @@ extends RefCounted
 class_name WandCompiler
 
 # Bump this when making breaking changes to compilation output
-const COMPILE_VERSION: int = 1
+const COMPILE_VERSION: int = 2
 
 # Node Types Configuration
 const NODE_TYPE_TRIGGER = "trigger" # Acts as Start OR intermediate
@@ -483,6 +483,12 @@ static func _create_instruction(wand_data: WandData, node: Dictionary, adj: Dict
 		# So we need SpellInstruction.TYPE_MODIFIER.
 		# I should check SpellInstruction definition.
 		instr.type = "MODIFIER" # Ad-hoc string type if enum not available, or I'll check/add it.
+		
+		# CRITICAL FIX: Inject the specific modifier type (e.g. modifier_orbit, modifier_damage)
+		# into the params so the runtime knows WHICH modifier this is.
+		if not instr.params.has("type"):
+			instr.params["type"] = node_type
+			
 		return instr
 
 	# Sequence?

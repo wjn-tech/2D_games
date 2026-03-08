@@ -52,6 +52,14 @@ var name_label: Label
 func _ready() -> void:
 	spawn_position = global_position
 	
+	# 核心修复：确保所有敌对NPC都注册到统一组中，以便生成器进行密度控制和清理
+	if npc_data and npc_data.npc_type == "Hostile":
+		if not is_in_group("hostile_npcs"):
+			add_to_group("hostile_npcs")
+	elif not is_in_group("hostile_npcs"): 
+		# 对于没有数据的默认视为敌对（保险起见）
+		add_to_group("hostile_npcs")
+	
 	# 新增：如果是友方 NPC，则与玩家忽略物理碰撞
 	if npc_data and npc_data.npc_type != "Hostile":
 		var player = get_tree().get_first_node_in_group("player")
@@ -481,7 +489,7 @@ func assign_home(room_info: Dictionary):
 				npc_data.home_pos = l0.to_global(l0.map_to_local(room_info.interior[0]))
 				home_position = npc_data.home_pos
 
-func take_damage(amount: float, _type: String = "physical") -> void:
+func take_damage(amount: float, _type: String = "physical", source: Node = null) -> void:
 	if npc_data:
 		var old_hp = npc_data.health
 		npc_data.health -= amount
@@ -507,7 +515,7 @@ func take_damage(amount: float, _type: String = "physical") -> void:
 		_update_hp_bar()
 
 		if npc_data.health <= 0:
-			_die()
+			_die(source)
 
 func update_growth_visual() -> void:
 	if not npc_data: return
@@ -536,9 +544,18 @@ func update_growth_visual() -> void:
 	
 	print(name, " [", npc_data.display_name, "] 尺寸对齐完成: Scale ", target_scale)
 
-func _die() -> void:
+func _die(killer: Node = null) -> void:
 	print(name, " died.")
 	
+	# Vampiric Effect Check
+	if killer and killer.get("is_vampiric"):
+		var caster = killer.get("caster")
+		if caster and caster.get("attributes") and caster.attributes.data:
+			caster.attributes.data.add_max_hp(1.0)
+			# Visual Feedback
+			if UIManager:
+				UIManager.show_floating_text("+1 MaxHP", caster.global_position + Vector2(0, -40), Color.RED)
+
 	# --- MODIFIED: Use SpellAbsorptionManager instead of physical spell loot ---
 	if get_node_or_null("/root/SpellAbsorptionManager"):
 		get_node("/root/SpellAbsorptionManager").handle_npc_death(self)

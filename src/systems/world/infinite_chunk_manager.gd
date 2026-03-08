@@ -42,20 +42,53 @@ func restart() -> void:
 	# 如果是新游戏，我们必须清空之前保存的所有区块 Delta
 	world_delta_data.clear()
 	
-	_wipe_save_data_debug() # 彻底清理磁盘上的旧区块文件
+	# 删除危险的 _wipe_save_data_debug() 调用，防止存档被误删
+	print("InfiniteChunkManager: restart() called, memory deltas cleared.")
 	
 	# 重置最后玩家位置，强制立刻更新
 	update_player_vicinity(Vector2(0, -999999)) # Force update on next frame
 
 func set_save_root(path_root: String) -> void:
-	# e.g. "user://saves/slot_1/world/"
-	active_save_root = path_root
+	# 确保路径以斜杠结尾
+	var final_path = path_root
+	if not final_path.ends_with("/"):
+		final_path += "/"
+		
+	if active_save_root == final_path:
+		return 
+		
+	active_save_root = final_path
 	_ensure_save_dir()
 	print("InfiniteChunkManager: 存档路径已切换至 ", active_save_root)
 	
-	# 切换存档时清空缓存（注意：这应该在游戏重新开始时调用，而不是运行时热切换）
+	# 显式保存旧路径下的数据（如果需要，或者由 SaveManager 统一触发）
+	# save_all_deltas()
+	
+	# 切换存档时清空缓存
 	world_delta_data.clear()
 	loaded_chunks.clear()
+	_loading_queue.clear()
+	
+	# 预加载新路径下的修改数据
+	_preload_all_deltas()
+
+func _preload_all_deltas() -> void:
+	if not DirAccess.dir_exists_absolute(active_save_root):
+		return
+		
+	var dir = DirAccess.open(active_save_root)
+	if dir:
+		dir.list_dir_begin()
+		var file_name = dir.get_next()
+		while file_name != "":
+			if file_name.ends_with(".tres") and file_name.begins_with("chunk_"):
+				var path = active_save_root + file_name
+				var chunk = ResourceLoader.load(path)
+				if chunk is WorldChunk:
+					world_delta_data[chunk.coord] = chunk
+			file_name = dir.get_next()
+		dir.list_dir_end()
+		print("InfiniteChunkManager: 预加载了 %d 个区块修改数据。" % world_delta_data.size())
 
 func save_all_deltas() -> void:
 	for coord in world_delta_data:
@@ -850,10 +883,21 @@ func _load_chunk(_coord: Vector2i) -> void:
 
 func _apply_cells_to_layers(chunk_coord: Vector2i, cells: Dictionary, chunk: WorldChunk) -> void:
 	var generator = get_tree().get_first_node_in_group("world_generator")
+	
+	# 改良的图层获取逻辑：如果 LayerManager 尚未就绪，直接从 WorldGenerator 获取引用
+	var l1 = LayerManager.get_layer(1) if LayerManager else null
+	if not l1 and generator and "layer_1" in generator: l1 = generator.layer_1
+	
+	var l2 = LayerManager.get_layer(2) if LayerManager else null
+	if not l2 and generator and "layer_2" in generator: l2 = generator.layer_2
+	
+	var l0 = get_tree().get_first_node_in_group("world_tiles")
+	if not l0 and generator and "layer_0" in generator: l0 = generator.layer_0
+
 	var layers = {
-		0: get_tree().get_first_node_in_group("world_tiles"), 
-		1: LayerManager.get_layer(1) if LayerManager else null,
-		2: LayerManager.get_layer(2) if LayerManager else null,
+		0: l0, 
+		1: l1,
+		2: l2,
 		10: generator.tree_layer_0 if generator else null,
 		11: generator.tree_layer_1 if generator else null,
 		12: generator.tree_layer_2 if generator else null
@@ -885,7 +929,8 @@ func _apply_cells_to_layers(chunk_coord: Vector2i, cells: Dictionary, chunk: Wor
 		
 		# 1. 应用生成的瓦片 (如果没有 Delta 覆盖)
 		for local_pos in layer_cells:
-			if chunk_deltas.has(local_pos): continue # 跳过，由 Delta 处理
+			var key = str(local_pos.x) + "," + str(local_pos.y)
+			if chunk_deltas.has(key): continue # 跳过，由 Delta 处理
 			
 			var data = layer_cells[local_pos]
 			if not (data is Dictionary): continue
@@ -894,9 +939,14 @@ func _apply_cells_to_layers(chunk_coord: Vector2i, cells: Dictionary, chunk: Wor
 			layer.set_cell(map_pos, data.get("source", -1), data.get("atlas", Vector2i(-1, -1)))
 			
 		# 2. 应用玩家修改 (Delta)
-		for local_pos in chunk_deltas:
+		for key in chunk_deltas:
+			# 解析字符串键为 Vector2i
+			var parts = key.split(",")
+			if parts.size() != 2: continue
+			var local_pos = Vector2i(int(parts[0]), int(parts[1]))
+			
 			var map_pos = origin + local_pos
-			var delta = chunk_deltas[local_pos]
+			var delta = chunk_deltas[key]
 			if not (delta is Dictionary): continue
 			
 			if delta.get("source", -1) == -1:

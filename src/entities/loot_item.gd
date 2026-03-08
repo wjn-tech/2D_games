@@ -17,6 +17,10 @@ var pickup_delay: float = 0.8
 # Physics
 var fall_gravity: float = 980.0
 
+var creation_time: float = 0.0
+var merge_timer: float = randf_range(0.0, 1.0) # Staggered merge checks
+const MAX_GLOBAL_LOOT = 200
+
 func setup(data: BaseItem, qty: int = 1, delay: float = 0.8) -> void:
 	item_data = data
 	amount = qty
@@ -29,12 +33,24 @@ func setup(data: BaseItem, qty: int = 1, delay: float = 0.8) -> void:
 func _ready() -> void:
 	add_to_group("loot")
 	add_to_group("pickups")
+	creation_time = Time.get_ticks_msec() / 1000.0
 	
-	# CharacterBody2D doesn't use body_entered directly for its main collision.
-	# We'll use a child Area2D for easier pickup detection if needed, 
-	# or just check player proximity in _physics_process.
+	_check_global_limit()
 	
 	_update_visuals()
+
+func _check_global_limit():
+	var loot_items = get_tree().get_nodes_in_group("loot")
+	if loot_items.size() > MAX_GLOBAL_LOOT:
+		# Sort by creation time to remove oldest
+		loot_items.sort_custom(func(a, b): return a.creation_time < b.creation_time)
+		
+		# Remove excess items (remove multiple to quickly get under limit)
+		var to_remove = loot_items.size() - MAX_GLOBAL_LOOT
+		for i in range(to_remove):
+			var item = loot_items[i]
+			if is_instance_valid(item) and item != self:
+				item.queue_free()
 
 func _update_visuals():
 	if not sprite: 
@@ -43,7 +59,7 @@ func _update_visuals():
 	
 	if item_data:
 		# 优先使用 icon 属性
-		if item_data.icon:
+		if item_data.get("icon"):
 			sprite.texture = item_data.icon
 		# 如果没有 icon 但有 building_resource 元数据，从资源中获取图标
 		elif item_data.has_meta("building_resource"):
@@ -60,9 +76,48 @@ func _update_visuals():
 	sprite.texture = preload("res://icon.svg")
 	sprite.modulate = Color.GOLD
 
+func _try_merge():
+	if is_collecting or pickup_delay > 0: return
+	
+	var others = get_tree().get_nodes_in_group("loot")
+	var merge_radius = 80.0 # Increased from 48.0
+	
+	for other in others:
+		if other == self or not is_instance_valid(other): continue
+		if other.is_collecting: continue
+		
+		# Check distance
+		if global_position.distance_to(other.global_position) < merge_radius:
+			# Check compatibility
+			# IMPORTANT: Use resource path comparison for reliability
+			var my_id = item_data.resource_path if item_data else ""
+			var other_id = other.item_data.resource_path if other.item_data else ""
+			
+			if my_id == other_id and my_id != "":
+				# Decide who stays: the one with more or the older one
+				if other.amount >= self.amount or other.creation_time < self.creation_time:
+					# Merge into 'other'
+					other.amount += self.amount
+					# If other has been quiet, reset its merge timer to trigger cascade
+					other.merge_timer = 0.1 
+					queue_free()
+					return
+				else:
+					# Merge 'other' into me
+					self.amount += other.amount
+					other.queue_free()
+					# Don't break, see if we can merge with more in this cycle
+					# but use a small yield or just break to prevent deep recursions
+					break 
+
 func _physics_process(delta: float) -> void:
 	if pickup_delay > 0:
 		pickup_delay -= delta
+		
+	merge_timer -= delta
+	if merge_timer <= 0:
+		merge_timer = 1.0 + randf_range(-0.2, 0.2)
+		_try_merge()
 
 	if is_collecting: return
 
@@ -73,11 +128,16 @@ func _physics_process(delta: float) -> void:
 	var being_attracted = false
 	if target_player:
 		var dist = global_position.distance_to(target_player.global_position)
-		if dist < attraction_range and pickup_delay <= 0:
+		# Greatly increased attraction range for better pickup feel and cleaning
+		var effective_range = attraction_range
+		if is_in_group("loot"): effective_range = 250.0 
+		
+		if dist < effective_range and pickup_delay <= 0:
 			being_attracted = true
 			var dir = (target_player.global_position - global_position).normalized()
-			# 磁铁般吸附
-			velocity = velocity.move_toward(dir * move_speed, 2000 * delta)
+			# Magnet-like attraction - faster as it gets closer
+			var pull_speed = move_speed * (1.0 + (1.0 - dist/effective_range) * 2.0)
+			velocity = velocity.move_toward(dir * pull_speed, 3000 * delta)
 			
 			if dist < 30.0:
 				_collect()

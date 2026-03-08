@@ -228,6 +228,10 @@ static func _spawn_instruction(instr: SpellInstruction, parent: Node, pos: Vecto
 	# Map types to scenes
 	if instr.type == SpellInstruction.TYPE_PROJECTILE or instr.type == "PROJECTILE" or instr.type == "action_projectile":
 		scene_to_spawn = load("res://src/systems/magic/projectiles/projectile_standard.tscn")
+		# Override for specific projectile scenes
+		if instr.params is Dictionary and instr.params.get("projectile_id") == "healing_circle":
+			scene_to_spawn = load("res://src/systems/magic/projectiles/projectile_healing_circle.tscn")
+			
 	elif instr.type == SpellInstruction.TYPE_TRIGGER_TIMER or instr.type == "trigger_timer" or instr.type == "TRIGGER_TIMER":
 		scene_to_spawn = load("res://src/systems/magic/projectiles/trigger_timer.tscn")
 	elif instr.type == SpellInstruction.TYPE_TRIGGER_COLLISION or instr.type == "trigger_collision" or instr.type == "TRIGGER_COLLISION":
@@ -254,6 +258,10 @@ static func _spawn_instruction(instr: SpellInstruction, parent: Node, pos: Vecto
 	
 	print("SpellProcessor: Spawned projectile: ", instr.type, " at ", pos, " parent: ", spawned_node.get_parent().name if spawned_node.get_parent() else "NULL")
 	spawned_node.global_position = pos
+	
+	# Explicitly assign caster if node supports it (Crucial for mechanics like Orbit or Kill Attribution)
+	if source and "caster" in spawned_node:
+		spawned_node.caster = source
 	
 	# Apply Modifiers Logic (Spread)
 	var spread = 0.0
@@ -302,12 +310,12 @@ static func _spawn_instruction(instr: SpellInstruction, parent: Node, pos: Vecto
 		if m_params.has("damage_multiplier"):
 			final_params["damage"] = float(final_params.get("damage", 10.0)) * float(m_params["damage_multiplier"])
 
-	if spawned_node.has_method("setup"):
-		spawned_node.setup(final_params, modifiers) 
-	
 	if source and "caster" in spawned_node:
 		spawned_node.caster = source
 
+	if spawned_node.has_method("setup"):
+		spawned_node.setup(final_params, modifiers) 
+	
 	if spawned_node is CharacterBody2D and LayerManager:
 		spawned_node.collision_mask = LayerManager.LAYER_WORLD_0 | LayerManager.LAYER_NPC
 
@@ -377,7 +385,16 @@ static func _append_tier_to_runner(runner: SpellRunner, tier: ExecutionTier, pos
 		# Modifiers accumulate and apply to the next projectile in this tier
 		if instr.type == SpellInstruction.TYPE_MODIFIER:
 			local_mods.append(instr)
-			# Modifiers don't schedule a separate event
+			
+			# FIX: If modifier has child_tier (nested branch from compiler), execute it now
+			# This handles cases where compiler nests dependencies under the modifier (logic tree)
+			if instr.child_tier and not instr.child_tier.instructions.is_empty():
+				# Apply current modifiers (including self) to the child tier
+				var added = _append_tier_to_runner(runner, instr.child_tier, position, direction, parent, local_mods, offset, false)
+				offset += added
+				# The modifier is consumed by the child tier
+				local_mods.clear()
+			
 			continue
 
 		if instr.type == SpellInstruction.TYPE_LOGIC_BLOCK and instr.child_tier:
@@ -390,27 +407,29 @@ static func _append_tier_to_runner(runner: SpellRunner, tier: ExecutionTier, pos
 				# Schedule each child branch at the same offset; advance by the longest child duration
 				var max_added = 0.0
 				for child_instr in instr.child_tier.instructions:
+                    # FIX: Create a temp tier for the child to use recursive _append logic properly
 					var tmp = ExecutionTier.new()
-					tmp.instructions.clear()
-					# Duplicate the child (including nested child_tier) and force its top-level delay to 0
-					var child_dup = child_instr.duplicate()
-					if child_dup.params is Dictionary:
-						child_dup.params["delay"] = 0.0
-					tmp.instructions.append(child_dup)
+					tmp.instructions.append(child_instr.duplicate())
+					
+					# Pass accumulated modifiers down context-freely
 					var combined_mods = base_mods.duplicate()
 					if child_instr.modifiers:
 						combined_mods.append_array(child_instr.modifiers)
+						
 					var added = _append_tier_to_runner(runner, tmp, position, direction, parent, combined_mods, offset, false)
 					print("WAND_RUNNER_DBG: scheduled child at offset=", offset, " added_duration=", added, " child_type=", child_instr.type)
 					if added > max_added:
 						max_added = added
 				offset += max_added
-				# After a logic block, modifiers are not automatically consumed; keep local_mods
+				# FIX: Logic Blocks (Multicast) consume the modifiers that applied to them
+				local_mods.clear()
 				continue
 			else:
 				# Sequential: append entire child tier at current offset
 				var added_seq = _append_tier_to_runner(runner, instr.child_tier, position, direction, parent, base_mods, offset, false)
 				offset += added_seq
+				# FIX: Logic Blocks consume modifiers
+				local_mods.clear()
 				continue
 
 		# For projectiles and triggers: schedule them with accumulated local_mods

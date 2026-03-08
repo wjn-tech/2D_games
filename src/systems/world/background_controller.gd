@@ -18,11 +18,15 @@ func _ready() -> void:
 		# Optional: child.queue_free() if we want to aggressively remove them
 	
 	# Create solid color background
-	add_child(bg_rect)
+	if not bg_rect.get_parent():
+		add_child(bg_rect)
 	bg_rect.anchor_right = 1.0
 	bg_rect.anchor_bottom = 1.0
 	bg_rect.color = sky_day
 	bg_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	# 确保即使在加载存档流程中也能被看见
+	self.visible = true
 	
 	# Ensure it covers the viewport even if camera moves (ParallaxBackground handles this partially, 
 	# but ColorRect inside ParallaxBackground needs to be handled or simplified)
@@ -31,16 +35,18 @@ func _ready() -> void:
 	# Better to set the bg_rect size to a very large value or fix it relative to screen.
 	bg_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
 	
+	# 初始强制获取一次地表高度，避免在 Ready 阶段由于 WorldGenerator 没准备好而导致高度为 0
+	_update_surface_height()
+
+func _update_surface_height() -> void:
 	var world_gen = get_tree().get_first_node_in_group("world_generator")
-	if world_gen:
+	if world_gen and "world_height" in world_gen:
 		surface_height = world_gen.world_height * 0.6 * 16
 
 func _process(_delta: float) -> void:
 	# 获取地表高度
 	if surface_height == 0.0:
-		var world_gen = get_tree().get_first_node_in_group("world_generator")
-		if world_gen:
-			surface_height = world_gen.world_height * 0.6 * 16
+		_update_surface_height()
 	
 	var camera = get_viewport().get_camera_2d()
 	if not camera: return

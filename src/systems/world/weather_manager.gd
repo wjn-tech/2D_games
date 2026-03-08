@@ -70,6 +70,10 @@ func _handle_thunder(delta: float) -> void:
 		thunder_cooldown = randf_range(10.0, 30.0)
 
 func _trigger_thunder() -> void:
+	# 新手教程期间禁用打雷 (音效和视觉)
+	if GameManager and GameManager.is_new_game:
+		return
+		
 	print("WeatherManager: 触发打雷 SFX")
 	
 	# Audio feedback
@@ -106,15 +110,20 @@ func _apply_weather_effects() -> void:
 	# Audio feedback
 	if has_node("/root/AudioManager"):
 		var am = get_node("/root/AudioManager")
-		match current_weather:
-			WeatherType.RAINY:
-				am.play_ambient("rain", 1.0)
-			WeatherType.THUNDERSTORM:
-				am.play_ambient("rain", 1.2)
-			WeatherType.SNOWY:
-				am.play_ambient("blizzard", 0.8)
-			_:
-				am.play_ambient("wind_grass", 0.5)
+		
+		# 新手教程期间静默天气音效
+		if GameManager and GameManager.is_new_game:
+			am.stop_ambient(1.0)
+		else:
+			match current_weather:
+				WeatherType.RAINY:
+					am.play_ambient("rain", 1.0)
+				WeatherType.THUNDERSTORM:
+					am.play_ambient("rain", 1.2)
+				WeatherType.SNOWY:
+					am.play_ambient("blizzard", 0.8)
+				_:
+					am.play_ambient("wind_grass", 0.5)
 
 	# 视觉反馈：确保 CanvasModulate 启用
 	var canvas_modulate = get_tree().get_first_node_in_group("global_light")

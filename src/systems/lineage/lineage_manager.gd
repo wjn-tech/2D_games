@@ -28,7 +28,7 @@ func process_growth(delta: float) -> void:
 		
 		var old_stage = child.growth_stage
 		if child.age >= 1.0:
-			child.growth_stage = 2 # ABULT
+			child.growth_stage = 2 # ADULT
 			child.age = 1.0 # Cap normalized age for growth purpose (lifespan manager handles real years)
 		elif child.age >= 0.5:
 			child.growth_stage = 1 # JUVENILE

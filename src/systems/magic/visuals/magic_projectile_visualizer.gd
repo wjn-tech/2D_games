@@ -362,6 +362,38 @@ func _apply_behavior_identity():
 			p_amount = 50 # Lower amount needed for trails
 			p_lifetime = 0.4
 			
+		"vampire_bolt":
+			# VAMPIRES: Blood red trail.
+			core_color = Color(3.0, 0.0, 0.0) # Bright Red
+			rim_color = Color(0.8, 0.0, 0.0)
+			
+			c_mat.emission_sphere_radius = 1.0
+			c_mat.scale_max = 1.2
+			
+			var p_mat = MagicParticleFactory.get_material_plasma()
+			p_mat.color_ramp = _create_complex_fade_gradient(core_color, Color(0.5, 0.0, 0.0))
+			_trail_particles.process_material = p_mat
+			_trail_particles.trail_enabled = true
+			_trail_particles.trail_lifetime = 0.5
+			p_amount = 60
+			p_lifetime = 0.5
+
+		"vampire_bolt":
+			# VAMPIRE: Blood red energy.
+			core_color = Color(3.0, 0.0, 0.0)
+			rim_color = Color(0.8, 0.0, 0.0)
+			
+			c_mat.emission_sphere_radius = 1.0
+			c_mat.scale_max = 1.2
+			
+			var p_mat = MagicParticleFactory.get_material_plasma()
+			p_mat.color_ramp = _create_complex_fade_gradient(core_color, Color(0.5, 0.0, 0.0))
+			_trail_particles.process_material = p_mat
+			_trail_particles.trail_enabled = true
+			_trail_particles.trail_lifetime = 0.5
+			p_amount = 60
+			p_lifetime = 0.5
+
 		"magic_arrow":
 			# ENERGY: Purple razor-thin needle
 			core_color = Color(5.0, 2.0, 5.0)

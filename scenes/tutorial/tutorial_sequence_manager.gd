@@ -39,7 +39,15 @@ enum Step {
 	COMPLETED
 }
 
-var current_step: Step = Step.INIT
+var current_step: Step = Step.INIT:
+	set(v):
+		current_step = v
+		# 实时同步进度到玩家数据，确保随时存档都能保留状态
+		if GameState.player_data:
+			GameState.player_data.tutorial_step = int(v)
+			if v == Step.COMPLETED:
+				GameState.player_data.tutorial_completed = true
+
 var camera: Camera2D
 var cinematic: Node # Changed from CinematicOverlay to Node to support TerminalOverlay
 var tracker: ObjectiveTracker
@@ -49,21 +57,47 @@ var _original_cam_offset: Vector2 = Vector2.ZERO
 var _movement_start_pos: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
+	# 显式隐藏，等待数据初始化
+	visible = false
+	process_mode = Node.PROCESS_MODE_DISABLED
+	
+	# 等待 GameManager 完成数据加载
+	if EventBus:
+		EventBus.player_data_refreshed.connect(_on_data_ready)
+
+func _on_data_ready() -> void:
 	# 1. 验证是否运行教程
-	var is_tutorial_scene = get_tree().current_scene.scene_file_path.contains("tutorial")
-	if not GameManager.is_new_game and not is_tutorial_scene:
-		process_mode = Node.PROCESS_MODE_DISABLED
-		visible = false
+	
+	# 首先获取玩家数据状态
+	var tutorial_active = false
+	var saved_step = 0
+	if GameState.player_data:
+		if not GameState.player_data.tutorial_completed:
+			tutorial_active = true
+			saved_step = GameState.player_data.tutorial_step
+			
+	# 如果是新游戏，强制激活
+	if GameManager.is_new_game:
+		tutorial_active = true
+		saved_step = 0
+		
+	# 如果是一个纯粹的教程场景文件（例如独立测试场景），也强制激活
+	var is_tutorial_scene_file = get_tree().current_scene.scene_file_path.contains("tutorial")
+	
+	if not tutorial_active and not is_tutorial_scene_file:
 		queue_free()
 		return
 		
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	visible = true
 	
-	# 2. 等待初始化
-	await get_tree().process_frame
+	# 使用 cast 或直接赋值 (GDScript 2.0 能够处理 int -> enum)
+	current_step = saved_step as Step
 	
-	visible = true # Explicitly show tutorial scene
-	
+	# 2. 初始化逻辑 (原 _ready 的剩余部分)
+	_init_tutorial_elements()
+
+func _init_tutorial_elements() -> void:
 	# 找到合适的主角 (优先使用场景中已有的 Player，避免 TutorialSpaceship 自带的 Player 造成双主角冲突)
 	var global_player = get_tree().get_first_node_in_group("player")
 	if has_node("Player"):
@@ -460,9 +494,19 @@ func _on_editor_closed() -> void:
 	if current_step >= Step.WAIT_INVENTORY:
 		EventBus.player_input_enabled.emit(true)
 		
-	if current_step == Step.WAIT_FIX_SPELL or current_step == Step.WAIT_LOGIC_TAB:
-		# 如果逻辑已经合法，或者用户已经切换了页签直接退出了
+	if current_step == Step.WAIT_FIX_SPELL or current_step == Step.WAIT_LOGIC_TAB or current_step == Step.WAIT_EDITOR:
+		# 修复：教程逻辑检测不仅依赖于刚刚关闭的编辑器，而是检测玩家当前装备的任何合法法杖
 		var wand = GameState.inventory.get_equipped_item()
+		
+		# 如果当前位没有，遍历快捷栏看看有没有合适的法杖
+		if not wand or not (wand is WandItem):
+			for i in range(GameState.inventory.hotbar_capacity):
+				var slot = GameState.inventory.hotbar.get_slot(i)
+				if slot.item and slot.item is WandItem:
+					wand = slot.item
+					# 自动切换到该槽位，方便玩家使用
+					GameState.inventory.select_hotbar_slot(i)
+					break
 		
 		var logic_ok = false
 		if wand and wand is WandItem:

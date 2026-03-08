@@ -27,6 +27,12 @@ var explode_on_bounce: bool = false
 var homing_target: Node2D = null
 var homing_search_radius: float = 400.0
 
+# Spell Expansion V1
+var is_vampiric: bool = false
+var is_orbiting_caster: bool = false
+var orbit_radius: float = 80.0
+var initial_orbit_phase: float = 0.0
+
 # Logic
 var modifiers: Array = []
 var _fly_time: float = 0.0
@@ -47,27 +53,45 @@ const VFX_SCENES = {
 }
 
 func setup(params: Dictionary, mods: Array):
+	modifiers = mods
+	
 	if "speed" in params: speed = float(params.speed)
 	if "lifetime" in params: lifetime = float(params.lifetime)
 	if "damage" in params: damage = float(params.damage)
 	if "element" in params: element = params.element
 	if "projectile_id" in params: special_behavior = params.projectile_id
+
+	if special_behavior == "vampire_bolt":
+		is_vampiric = true
 	
 	# Default Element for Tutorial/Unmodified Spells
 	if element == "none" or element == "":
 		element = "magic_bolt"
 	
-	modifiers = mods
 	_apply_modifiers_stat_change()
 	
 	velocity_vector = Vector2.RIGHT.rotated(rotation) * speed
+	
+	# Initial orbit phase based on cast direction so projectiles don't all stack at 0
+	if is_orbiting_caster:
+		print("DEBUG: Orbit Enabled! Radius: ", orbit_radius, " Caster: ", caster)
+		initial_orbit_phase = rotation
+		# Force initial phase setup for renderer immediately
+		var phase = initial_orbit_phase
+		var offset = Vector2(orbit_radius, 0).rotated(phase)
+		if is_instance_valid(caster):
+			global_position = caster.global_position + offset
+			rotation = phase + PI/2
+
 	_update_visuals()
 
 func _apply_modifiers_stat_change():
+	# print("DEBUG: Modifiers applied to projectile: ", modifiers)
 	for mod in modifiers:
 		var m_type = ""
 		var m_params = {}
 		
+		# Robust param extraction
 		if mod is SpellInstruction:
 			m_type = mod.type
 			m_params = mod.params
@@ -76,6 +100,12 @@ func _apply_modifiers_stat_change():
 			m_params = mod.get("params", mod)
 			if m_params.is_empty() and not mod.is_empty(): m_params = mod
 			
+		# CRITICAL FIX: If generic MODIFIER, check params for true type
+		if (m_type == "MODIFIER" or m_type == "modifier") and m_params.has("type"):
+			m_type = m_params["type"]
+            
+		# print("DEBUG: Applying Modifier: ", m_type, " Params:", m_params)
+
 		if m_type == "modifier_speed":
 			speed *= 1.5 
 		elif m_type == "modifier_damage":
@@ -87,9 +117,14 @@ func _apply_modifiers_stat_change():
 			lifetime += float(m_params.get("lifetime_add", 0.0))
 		elif m_type == "modifier_pierce":
 			pierce_count = int(m_params.get("pierce", 1))
-		elif m_type == "modifier_homing":
+		elif m_type == "modifier_homing" or m_type.contains("homing"):
 			homing_strength = float(m_params.get("homing_strength", 0.5))
 			if special_behavior == "": special_behavior = "homing"
+		elif m_type == "modifier_orbit" or m_type.contains("orbit") or m_type == "SPELL_MODIFIER_ORBIT":
+			is_orbiting_caster = true
+			orbit_radius = 120 # Increase radius for better visibility
+			if m_params.has("radius"): orbit_radius = float(m_params.get("radius"))
+			# print("DEBUG: Orbit Modifier Active! Caster: ", caster)
 		elif m_type == "modifier_bounce_explosive":
 			explode_on_bounce = true
 			if special_behavior == "": special_behavior = "explosive_bounce"
@@ -117,6 +152,24 @@ func _update_visuals():
 			_visualizer.play_muzzle_flash()
 		else:
 			call_deferred("_play_muzzle_flash_deferred")
+            
+	if is_orbiting_caster:
+		var trail = Line2D.new()
+		trail.width = 3.0
+		trail.default_color = Color(0.5, 0.0, 1.0, 0.5)
+		trail.top_level = true
+		trail.name = "Trail"
+		add_child(trail)
+		var script = GDScript.new()
+		script.source_code = "extends Line2D\nfunc _physics_process(_delta):\n\tadd_point(get_parent().global_position)\n\tif points.size() > 20: remove_point(0)"
+		trail.script = script
+	
+	if is_vampiric:
+		# For vampire, we rely on MagicProjectileVisualizer "vampire_bolt" behavior
+		# But we can add a subtle tint just in case visualizer is disabled
+		if not use_magic_visualizer:
+			modulate = Color(1.0, 0.2, 0.2)
+
 
 func _play_muzzle_flash_deferred():
 	if is_instance_valid(_visualizer) and _visualizer.is_inside_tree():
@@ -151,6 +204,11 @@ func _physics_process(delta: float):
 		_on_lifetime_expired()
 		return
 
+	# Orbit Behavior (New V1)
+	if is_orbiting_caster:
+		_process_orbit(delta)
+		return
+
 	# Homing behavior
 	if homing_strength > 0.0:
 		_process_homing(delta)
@@ -161,9 +219,11 @@ func _physics_process(delta: float):
 		if _visualizer: _visualizer.rotation = rotation # Ensure visualizer follows
 
 	# Movement & Collision
-	var collision = move_and_collide(velocity_vector * delta)
-	if collision:
-		_on_hit(collision)
+	# Orbit projectiles handle their own collision in _process_orbit
+	if not is_orbiting_caster:
+		var collision = move_and_collide(velocity_vector * delta)
+		if collision:
+			_on_hit(collision)
 
 func _process_homing(delta: float):
 	if not is_instance_valid(homing_target):
@@ -189,6 +249,90 @@ func _process_behavior(delta: float):
 	elif special_behavior == "bouncing_burst":
 		# Lightweight bouncy logic
 		velocity_vector.y += 400.0 * delta # Light gravity pull
+
+var damage_cooldowns = {} # { collider_id: timestamp }
+
+func _process_orbit(delta: float):
+	if not is_instance_valid(caster):
+		# Fallback: try to find player
+		var players = get_tree().get_nodes_in_group("player")
+		if not players.is_empty():
+			caster = players[0]
+		else:
+			# Lost control, just float
+			velocity_vector = Vector2.DOWN * 50.0
+			is_orbiting_caster = false
+			return
+		
+	# Angular Motion
+	# speed = linear speed. omega = v / r
+	var omega = speed / orbit_radius
+	
+	# Current Phase based on time + initial
+	var phase = initial_orbit_phase + (_fly_time * omega)
+	
+	var offset = Vector2(orbit_radius, 0).rotated(phase)
+	var target_pos = caster.global_position + offset
+	
+	# Update visual rotation to face tangent
+	var tangent_angle = phase + PI/2
+	rotation = tangent_angle
+	if _visualizer: _visualizer.rotation = rotation
+	
+	# Check for enemies along the path or at target position
+	# Using shape query for "collision" without stopping
+	var space = get_world_2d().direct_space_state
+	var query = PhysicsShapeQueryParameters2D.new()
+	var shape = CircleShape2D.new()
+	shape.radius = 12.0 # Approximate projectile size
+	query.shape = shape
+	query.transform = Transform2D(rotation, global_position)
+	query.collision_mask = collision_mask # Use projectile's mask
+	
+	var results = space.intersect_shape(query, 8)
+	for res in results:
+		var col = res.collider
+		if col == self or col == caster: continue
+		if col.has_method("take_damage"):
+             # Orbit damage logic
+			_try_apply_orbit_damage(col)
+
+	# If motion is huge (first frame snap), just teleport
+	var dist = global_position.distance_to(target_pos)
+	if dist > 50.0:
+		global_position = target_pos
+		return
+		
+	# Move freely, ignoring walls
+	global_position = target_pos
+	rotation = phase + PI/2 # Face tangent
+
+func _try_apply_orbit_damage(target: Node):
+	var now = Time.get_ticks_msec()
+	var id = target.get_instance_id()
+	
+	# 0.5s cooldown per target
+	if id in damage_cooldowns:
+		if now - damage_cooldowns[id] < 500:
+			return
+			
+	damage_cooldowns[id] = now
+	
+	if target.is_in_group("destructible") or target is StaticBody2D:
+		target.take_damage(damage, global_position)
+	else:
+		if target is BaseNPC:
+			target.take_damage(damage, element, self)
+		else:
+			target.take_damage(damage, element)
+	
+	_spawn_hit_vfx(target.global_position)
+
+func _spawn_hit_vfx(pos: Vector2):
+	# Small impact effect
+	if special_behavior in VFX_SCENES:
+		# Use existing visualizer impact handling
+		pass
 
 func _process_blackhole(delta: float):
 	var dm = get_tree().get_first_node_in_group("digging_manager")
@@ -274,7 +418,10 @@ func _on_hit(col: KinematicCollision2D):
 			collider.take_damage(damage, global_position)
 		else:
 			# Enemy/Player logic
-			collider.take_damage(damage, element)
+			if collider is BaseNPC:
+				collider.take_damage(damage, element, self)
+			else:
+				collider.take_damage(damage, element)
 			
 		hit_enemy = true
 

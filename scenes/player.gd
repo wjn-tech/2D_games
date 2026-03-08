@@ -897,34 +897,20 @@ func _try_place_held_item() -> void:
 	# 如果已经在建造中，则忽略，防止冲突
 	# 但如果我们要“切换”建筑，可能需要逻辑
 	
-	# 1. 检查元数据中是否有预载的建筑资源 (针对门、桌子、火把等)
+	# 1. 优先处理瓦片物品 (泥土、石头等)，确保不会被建筑数据库拦截
+	if item is TileItemData:
+		bm.start_building(item)
+		return
+
+	# 2. 检查元数据中是否有预载的建筑资源 (针对门、桌子、火把等)
 	if item.has_meta("building_resource"):
 		# 传递 override cost，确保消耗物品本身而不是原材料
 		bm.start_building(item.get_meta("building_resource"), { item.id: 1 })
 		return
 
-	# 2. 检查全局建筑数据库 (解决掉落物捡回后丢失元数据的问题)
+	# 3. 检查全局建筑数据库 (解决掉落物捡回后丢失元数据的问题)
 	if GameState.building_db.has(item.id):
 		bm.start_building(GameState.building_db[item.id], { item.id: 1 })
-		return
-
-	# 3. 特殊处理工作台
-	if item.id == "workbench" or item.id == "workbench_item":
-		var res = BuildingResource.new()
-		res.scene = load("res://scenes/world/workbench.tscn")
-		# 强制工作台物品消耗自身，而不是 wood:4 这种配方成本
-		res.cost = { item.id: 1 }
-		res.id = item.id
-		res.display_name = item.display_name
-		res.requires_flat_ground = true
-		res.grid_size = Vector2i(2, 1) # 工作台是 2x1 规格
-		res.influence_radius = 160.0
-		bm.start_building(res, { item.id: 1 })
-		return
-	
-	# 3. 处理瓦片物品 (泥土、石头等)
-	if item is TileItemData:
-		bm.start_building(item)
 		return
 
 func _interact() -> void:

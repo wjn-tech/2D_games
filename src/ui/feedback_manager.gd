@@ -32,6 +32,9 @@ func spawn_floating_text(pos: Vector2, text: String, color: Color = Color.WHITE)
 	# For now, we'll create the text dynamically if scene doesn't exist to avoid crashing
 	
 	var label = Label.new()
+	# 关键修复：禁用输入拦截
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
 	label.text = text
 	label.add_theme_color_override("font_color", color)
 	label.add_theme_font_size_override("font_size", 14)
@@ -57,15 +60,21 @@ func spawn_success_particles(pos: Vector2) -> void:
 func show_message(text: String, duration: float = 3.0) -> void:
 	var canvas = CanvasLayer.new()
 	canvas.layer = 120 # High layer
+	# 关键修复：CanvasLayer 容器本身不应拦截输入
+	canvas.process_mode = Node.PROCESS_MODE_ALWAYS
 	get_tree().root.add_child(canvas)
 	
 	var label = Label.new()
+	# 关键修复：Label 不拦截鼠标
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.text = text
 	label.add_theme_font_size_override("font_size", 24)
 	label.add_theme_color_override("font_outline_color", Color.BLACK)
 	label.add_theme_constant_override("outline_size", 6)
 	
 	var center = CenterContainer.new()
+	# 关键修复：容器节点不拦截鼠标
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	# Position slightly higher than center
 	center.position.y = -50 

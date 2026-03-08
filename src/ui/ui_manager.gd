@@ -111,6 +111,7 @@ func open_window(window_name: String, scene_path: String, blocks_input: bool = t
 			
 			if window is Control:
 				window.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+				# 修复：主窗口实例化后延迟应用主题，避免因为 Variation 尚未加载导致的警告
 				window.theme = main_theme
 
 	# 4. 统一设置状态和显示
@@ -123,6 +124,9 @@ func open_window(window_name: String, scene_path: String, blocks_input: bool = t
 			if not window_name in blocking_windows:
 				blocking_windows.append(window_name)
 			is_ui_focused = true
+		else:
+			# 如果明确不拦截输入，确保 mouse_filter 为 IGNORE
+			window.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			
 		_play_open_animation(window)
 		window_opened.emit(window_name)
@@ -163,13 +167,22 @@ func play_fade(to_black: bool, duration: float = 0.5) -> Signal:
 	return tween.finished
 
 ## 显示漂浮文字
-func show_floating_text(text: String, global_pos: Vector2, color: Color = Color.WHITE) -> void:
+func show_floating_text(text_content: String, global_pos: Vector2, color: Color = Color.WHITE) -> void:
 	var label = Label.new()
+	# 关键修复 1: 强制忽略输入
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	# 关键修复 2: 确保脚本正确挂载并初始化
 	label.set_script(load("res://src/ui/floating_text.gd"))
 	
 	# 将全局坐标转换为 UI 坐标
 	var ui_root = get_tree().current_scene.find_child("UI", true, false)
 	if ui_root:
+		# 关键修复 3: 检查 UI 根节点是否拦截了输入
+		if ui_root is Control and ui_root.mouse_filter != Control.MOUSE_FILTER_IGNORE:
+			# 如果是主 UI 容器，但只是用来挂载漂浮文字，它不应该拦截
+			if ui_root.name == "UI": ui_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		
 		ui_root.add_child(label)
 		# 如果 UI 是 CanvasLayer，我们需要将世界坐标转换为屏幕坐标
 		var canvas_transform = get_tree().root.get_viewport().get_canvas_transform()
@@ -178,7 +191,11 @@ func show_floating_text(text: String, global_pos: Vector2, color: Color = Color.
 		get_tree().current_scene.add_child(label)
 		label.global_position = global_pos
 	
-	label.setup(text, color)
+	if label.has_method("setup"):
+		label.setup(text_content, color)
+	else:
+		label.text = text_content
+		label.add_theme_color_override("font_color", color)
 
 ## 关闭窗口
 func close_window(window_name: String) -> void:

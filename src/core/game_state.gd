@@ -50,7 +50,36 @@ func unlock_spell(spell_id: String) -> void:
 		spell_unlocked.emit(spell_id)
 		print("GameState: Spell unlocked: ", spell_id)
 		if get_node_or_null("/root/FeedbackManager"):
-			get_node("/root/FeedbackManager").show_message("新法术已解锁: " + spell_id)
+			# 修复：法术解锁提示显示英文的问题。
+			# 增加对常见法术 ID (如 spark_bolt) 的直接匹配，并确保分词处理更智能。
+			
+			var display_name = ""
+			
+			# 1. 尝试从翻译表中获取 (支持多种 Key 格式)
+			var possible_keys = [
+				"SPELL_" + spell_id.to_upper(),
+				spell_id.to_upper(),
+				spell_id.to_lower(),
+				spell_id # 原始 ID
+			]
+			
+			for key in possible_keys:
+				var t = tr(key)
+				if t != key: # 如果 tr 返回的结果不等于 key，说明找到了翻译
+					display_name = t
+					break
+			
+			# 2. 如果没有任何翻译命中，则进行手动格式化兜底
+			if display_name == "":
+				# 处理 spark_bolt -> Spark Bolt
+				display_name = spell_id.replace("_", " ").capitalize()
+			
+			# 获取翻译后的提示模板
+			var msg_template = tr("MSG_SPELL_UNLOCKED")
+			if msg_template == "MSG_SPELL_UNLOCKED":
+				msg_template = "新法术已解锁"
+				
+			get_node("/root/FeedbackManager").show_message(msg_template + ": " + display_name)
 
 func _load_databases() -> void:
 	# 加载物品数据库

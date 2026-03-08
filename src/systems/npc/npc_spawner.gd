@@ -16,6 +16,7 @@ enum Zone { SURFACE, UNDERGROUND, CAVERN, SPACE }
 # 新增：生态统计与来源定义
 var population_map: Dictionary = {} 
 var area_capacity: int = 15 # 每个区域的最大承载力
+var pending_spawns: int = 0 # 新增：正在队列中等待生成的数量
 
 class SpawnRule:
 	var scene_path: String
@@ -38,6 +39,21 @@ class SpawnRule:
 		max_active_count = _max
 
 var spawn_table: Array[SpawnRule] = []
+
+var active_mobs_cache: Array = [] # 缓存优化（并未实现完全缓存，保留原有逻辑）
+var pending_spawns_by_path: Dictionary = {} # 新增：按类型追踪等待生成的数量
+
+func _increment_pending(path: String) -> void:
+	pending_spawns += 1
+	if not pending_spawns_by_path.has(path):
+		pending_spawns_by_path[path] = 1
+	else:
+		pending_spawns_by_path[path] += 1
+
+func _decrement_pending(path: String) -> void:
+	pending_spawns -= 1
+	if pending_spawns_by_path.has(path) and pending_spawns_by_path[path] > 0:
+		pending_spawns_by_path[path] -= 1
 
 func _ready() -> void:
 	add_to_group("npc_spawner")
@@ -86,12 +102,20 @@ func _process_despawn() -> void:
 	
 	var active_mobs = get_tree().get_nodes_in_group("hostile_npcs")
 	for mob in active_mobs:
-		if mob.global_position.distance_to(player.global_position) > 2500.0:
-			# 远离玩家过远（约 2-3 个屏幕外），清理
+		var dist = mob.global_position.distance_to(player.global_position)
+		if dist > 1800.0:
+			# 超过约1.5个屏幕清理，比之前更进场激进
+			mob.queue_free()
+		elif dist > 1200.0 and (active_mobs.size() + pending_spawns) > area_capacity * 0.8:
+			# 如果总数接近上限，清理远处但还没跑太远的怪
 			mob.queue_free()
 
 func _count_active_mobs(scene_path: String) -> int:
 	var count = 0
+	# 包含等待生成的数量，防止同种怪物过度生成
+	if pending_spawns_by_path.has(scene_path):
+		count += pending_spawns_by_path[scene_path]
+		
 	var active_mobs = get_tree().get_nodes_in_group("hostile_npcs")
 	for mob in active_mobs:
 		# 通过比较场景文件的路径来匹配种类
@@ -101,7 +125,9 @@ func _count_active_mobs(scene_path: String) -> int:
 
 func _try_spawn_cycle() -> void:
 	# --- 种群密度控制 (Carrying Capacity) ---
-	var current_mobs = get_tree().get_nodes_in_group("hostile_npcs").size()
+	var active_mobs_count = get_tree().get_nodes_in_group("hostile_npcs").size()
+	var current_mobs = active_mobs_count + pending_spawns # 修复堆叠生成问题的关键
+	
 	if current_mobs >= area_capacity:
 		return
 		
@@ -120,10 +146,24 @@ func _try_spawn_cycle() -> void:
 	
 	# --- 局部密度控制 (Localized Density Check) ---
 	# 限制同一区域内的刷怪上限密度，防止刷出一堆怪堆在一起
+	var local_density_radius = 600.0 # 稍微缩小检测半径以使检测更精准
+	var max_local_density = 3      # 严格限制到 3 只内容
+	var global_max_density_radius = 1200.0 # 新增：中等范围总数限制
+	var global_max_in_range = 8
+	
+	var local_count = 0
+	var mid_range_count = 0
+	
 	var active_mobs = get_tree().get_nodes_in_group("hostile_npcs")
 	for mob in active_mobs:
-		if spawn_pos.distance_to(mob.global_position) < 400.0:
-			# 区域内存在其他怪物，放弃本次生成
+		var dist = spawn_pos.distance_to(mob.global_position)
+		if dist < local_density_radius:
+			local_count += 1
+		if dist < global_max_density_radius:
+			mid_range_count += 1
+			
+		if local_count >= max_local_density or mid_range_count >= global_max_in_range:
+			# 区域内怪物密度过大，放弃本次生成
 			return
 	
 	var context = _analyze_context(spawn_pos)
@@ -151,11 +191,15 @@ func _try_spawn_cycle() -> void:
 
 ## 新增：自然生成逻辑 (Plausible Origins)
 func _execute_plausible_spawn(rule: SpawnRule, pos: Vector2) -> void:
+	# 立即增加 pending_spawns 计数 (按类型)，防止新的循环因为看不到实际生成的实体而过度请求生成
+	_increment_pending(rule.scene_path)
+	
 	match rule.origin_type:
 		"burrow":
 			# 从地下钻出：在实体实际实例化之前模拟“地动”
 			# 未来可在这里实例化尘土粒子特效
 			print("EcologicalSpawn: [", rule.scene_path.get_file().get_basename(), "] 正在地下挖掘...")
+			# 注意：await 期间 pending_spawns 保持增加，阻止新的 spawn_cycle 触发
 			await get_tree().create_timer(1.0).timeout
 			_spawn_mob(rule.scene_path, pos)
 			
@@ -171,6 +215,9 @@ func _execute_plausible_spawn(rule: SpawnRule, pos: Vector2) -> void:
 		_:
 			# 默认生成
 			_spawn_mob(rule.scene_path, pos)
+			
+	# 生成完成后减少 pending 计数（此时 _spawn_mob 已经将实体放入树中，active_mobs 应该增加了）
+	_decrement_pending(rule.scene_path)
 
 func _analyze_context(pos: Vector2) -> Dictionary:
 	var ctx = {}
@@ -314,8 +361,11 @@ func _spawn_mob(path: String, pos: Vector2) -> void:
 			mob.npc_data.display_name = "NPC_ZOMBIE_SOLDIER"
 		elif path.contains("skeleton"):
 			mob.npc_data.display_name = "NPC_SKELETON_CAVEMAN"
-			mob.add_to_group("hostile_npcs")
 		
+		# 强制添加到敌对NPC组，以便密度检查生效
+		if not mob.is_in_group("hostile_npcs"):
+			mob.add_to_group("hostile_npcs")
+			
 		# 确保血条显示正确同步
 		if mob.has_method("_update_hp_bar"):
 			mob._update_hp_bar()

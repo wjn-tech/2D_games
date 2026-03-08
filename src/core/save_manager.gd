@@ -7,6 +7,9 @@ const SAVE_ROOT = "user://saves/"
 const DATA_FILENAME = "data.dat"
 const THUMBNAIL_FILENAME = "preview.jpg"
 
+# 临时存储从文件恢复的玩家数据，用于场景重载后同步
+var _cached_player_data: Dictionary = {}
+
 # 存档元数据结构
 var save_metadata: Dictionary = {}
 var current_slot_id: int = -1
@@ -78,16 +81,17 @@ func save_game(slot_id: int) -> void:
 	if not DirAccess.dir_exists_absolute(slot_dir):
 		DirAccess.make_dir_recursive_absolute(slot_dir)
 	
-	# 1. 切换无限地图管理器的目标目录并保存
+	# 1. 切换无限地图管理器的目标目录并同步保存最新的内存修改
 	var world_path = slot_dir + "world_deltas/"
 	if InfiniteChunkManager:
 		InfiniteChunkManager.set_save_root(world_path)
-		InfiniteChunkManager.save_all_deltas()
+		InfiniteChunkManager.save_all_deltas() # 强制物块修改写盘
 	
 	# 2. 收集核心游戏数据
 	var data = {
 		"version": "2.0",
 		"timestamp": Time.get_unix_time_from_system(),
+		"scene_path": get_tree().current_scene.scene_file_path, # 保存当前场景路径
 		"game_time": GameState.current_time,
 		"player": _pack_player_data(),
 		"inventory": _pack_inventory(),
@@ -97,6 +101,7 @@ func save_game(slot_id: int) -> void:
 		"minimap": _pack_minimap(),
 		"persist_group": _pack_persist_group(),
 		"hostiles": _pack_hostiles(),
+		"descendants": _pack_descendants(), # 新增：保存子嗣列表
 		"world_seed": _get_world_seed()
 	}
 	
@@ -173,7 +178,10 @@ func _pack_player_data() -> Dictionary:
 			"generation": p_data.generation,
 			"age": p_data.age,
 			"growth_stage": p_data.growth_stage,
-			"imprint_quality": p_data.imprint_quality
+			"imprint_quality": p_data.imprint_quality,
+			# Tutorial State
+			"tutorial_completed": p_data.tutorial_completed,
+			"tutorial_step": p_data.tutorial_step
 		}
 	}
 
@@ -224,6 +232,10 @@ func _load_binary_data(path: String) -> Variant:
 	return data
 
 func load_game(slot_id: int) -> bool:
+	# 只要加载存档，就意味着这绝对不是新游戏
+	if GameManager:
+		GameManager.is_new_game = false
+		
 	current_slot_id = slot_id
 	start_autosave()
 	
@@ -260,13 +272,24 @@ func load_game(slot_id: int) -> bool:
 		GameState.set_meta("pending_new_seed", data.world_seed)
 		print("SaveManager: Loaded World Seed: ", data.world_seed)
 	
+	if data.has("scene_path"):
+		GameState.set_meta("pending_scene_path", data.scene_path)
+	
 	# 3. 恢复玩家数据 (缓存，待 GameManager 应用)
 	if data.has("player"):
-		var p_info = data.player
+		_cached_player_data = data.player.data
+		# 将位置存储在 Meta 中，供 GameManager 生成玩家时读取
+		GameState.set_meta("load_spawn_pos", data.player.position)
+		
 		var p_data = GameState.player_data
-		var saved_stats = p_info.data
+		var saved_stats = _cached_player_data
 		
 		p_data.display_name = saved_stats.get("display_name", "NPC_PLAYER_DEFAULT")
+		
+		# 强制手动缓存教程状态，防止 GameManager 漏读
+		# 注意：这些属性会被 GameManager 再次从 _cached_player_data 覆盖，但这里先设个底
+		p_data.tutorial_completed = saved_stats.get("tutorial_completed", false)
+		p_data.tutorial_step = saved_stats.get("tutorial_step", 0)
 
 		# 3.1 Lineage System Data Restoration
 		if saved_stats.has("stat_levels"):
@@ -288,7 +311,8 @@ func load_game(slot_id: int) -> bool:
 		p_data.health = saved_stats.get("health", 100)
 		
 		# 将位置存储在 Meta 中，供 GameManager 生成玩家时读取
-		GameState.set_meta("load_spawn_pos", p_info.position)
+		if data.player.has("position"):
+			GameState.set_meta("load_spawn_pos", data.player.position)
 
 	# 4. 恢复背包
 	if data.has("inventory") and GameState.inventory:
@@ -310,6 +334,7 @@ func load_game(slot_id: int) -> bool:
 	
 	if data.has("persist_group"): _unpack_persist_group(data.persist_group)
 	if data.has("hostiles"): _unpack_hostiles(data.hostiles)
+	if data.has("descendants"): _unpack_descendants(data.descendants) # 新增：恢复子嗣列表
 	
 	print("SaveManager: 存档 %d 数据已载入内存预备" % slot_id)
 	return true
@@ -400,11 +425,18 @@ func _pack_hostiles() -> Array:
 		if mob.scene_file_path.is_empty(): continue
 		if mob.get("health") != null and mob.health <= 0: continue # Don't save dead
 		
+		# 识别是否是子嗣
+		var is_descendant = false
+		if "npc_data" in mob and mob.npc_data:
+			if LineageManager.descendants.has(mob.npc_data):
+				is_descendant = true
+		
 		var data = {
 			"scene_path": mob.scene_file_path,
 			"pos": mob.global_position,
 			"hp": mob.get("health") if mob.get("health") != null else 100,
-			"max_hp": mob.get("max_health") if mob.get("max_health") != null else 100
+			"max_hp": mob.get("max_health") if mob.get("max_health") != null else 100,
+			"is_descendant": is_descendant # 记录是否是子嗣
 		}
 		
 		# If using CharacterData resource system
@@ -412,6 +444,8 @@ func _pack_hostiles() -> Array:
 			data["hp"] = mob.npc_data.health
 			data["max_hp"] = mob.npc_data.max_health
 			data["display_name"] = mob.npc_data.display_name
+			# 存入完整的 CharacterData 字典表示，确保属性（如 age, growth_stage, npc_type）不丢失
+			data["character_full_data"] = _resource_to_dict(mob.npc_data)
 			
 		list.append(data)
 	return list
@@ -436,10 +470,21 @@ func _unpack_hostiles(list: Array) -> void:
 			if "npc_data" in mob and mob.npc_data:
 				# Ensure data uniqueness
 				mob.npc_data = mob.npc_data.duplicate()
+				
+				# 如果有完整数据字典，则恢复所有属性
+				if info.has("character_full_data"):
+					_dict_to_resource(info.character_full_data, mob.npc_data)
+				
 				mob.npc_data.health = info.hp
 				mob.npc_data.max_health = info.max_hp
 				if info.has("display_name"):
 					mob.npc_data.display_name = info.display_name
+					
+				# 如果是子嗣，将其加入全局列表（如果列表中还没有该对象）
+				if info.get("is_descendant", false):
+					if not LineageManager.descendants.has(mob.npc_data):
+						LineageManager.descendants.append(mob.npc_data)
+						
 			elif "health" in mob:
 				mob.health = info.hp
 				if "max_health" in mob: mob.max_health = info.max_hp
@@ -449,3 +494,45 @@ func _unpack_hostiles(list: Array) -> void:
 			
 			if mob.has_method("_update_hp_bar"):
 				mob._update_hp_bar()
+
+# 辅助函数：将 Resource 转换为字典（通用版，针对 CharacterData 优化）
+func _resource_to_dict(res: Resource) -> Dictionary:
+	var dict = {}
+	# 获取所有可保存的属性（脚本中的变量名）
+	var props = res.get_property_list()
+	for p in props:
+		# 过滤掉内置属性和只读属性，只保留脚本定义的变量 (PROPERTY_USAGE_STORAGE)
+		if p.usage & PROPERTY_USAGE_STORAGE and p.name != "script" and p.name != "Built-in Script":
+			dict[p.name] = res.get(p.name)
+	return dict
+
+# 辅助函数：将字典应用回 Resource
+func _dict_to_resource(dict: Dictionary, res: Resource) -> void:
+	for key in dict.keys():
+		res.set(key, dict[key])
+
+func _pack_descendants() -> Array:
+	var list = []
+	for d in LineageManager.descendants:
+		list.append(_resource_to_dict(d))
+	return list
+
+func _unpack_descendants(list: Array) -> void:
+	# 仅作为保险，如果场景中已经加载了（通过 _unpack_hostiles），此处不应重复
+	# 但为了防止某些子嗣没在场景树中，这里做一次清理和恢复
+	LineageManager.descendants.clear()
+	for dict in list:
+		var d = CharacterData.new()
+		_dict_to_resource(dict, d)
+		
+		# 打印调试信息，确认恢复后的状态
+		print("SaveManager: 恢复子嗣 %s, UUID: %d, 成长阶段: %d" % [d.display_name, d.uuid, d.growth_stage])
+		
+		# 只有当列表中还没有同名/同UUID的对象时才添加
+		var exists = false
+		for existing in LineageManager.descendants:
+			if existing.get("uuid") == d.get("uuid"):
+				exists = true
+				break
+		if not exists:
+			LineageManager.descendants.append(d)

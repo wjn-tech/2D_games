@@ -103,7 +103,17 @@ func _change_state(new_state: SlimeState) -> void:
 	if not min_visual:
 		return
 
-	# Create a new tween only once we know visuals exist
+	# Only create tween if we are going to add properties to it
+	# This prevents "Tween started with no Tweeners" error
+	var need_tween = false
+	if new_state == SlimeState.IDLE: need_tween = true
+	if new_state == SlimeState.JUMP_PREPARE: need_tween = true
+	if new_state == SlimeState.JUMP_AIRBORNE: need_tween = true
+	if new_state == SlimeState.LAND_RECOVER: need_tween = true
+	
+	if not need_tween:
+		return
+
 	_visual_tween = create_tween().set_parallel(true)
 	
 	match new_state:

@@ -41,14 +41,18 @@ func _ready() -> void:
 
 func _load_panels() -> void:
 	# Load existing panels if available, otherwise create placeholders
-	if FileAccess.file_exists("res://scenes/ui/settings/panels/GeneralPanel.tscn"):
-		panels["General"] = load("res://scenes/ui/settings/panels/GeneralPanel.tscn").instantiate()
-	if FileAccess.file_exists("res://scenes/ui/settings/panels/GraphicsPanel.tscn"):
-		panels["Graphics"] = load("res://scenes/ui/settings/panels/GraphicsPanel.tscn").instantiate()
-	if FileAccess.file_exists("res://scenes/ui/settings/panels/AudioPanel.tscn"):
-		panels["Audio"] = load("res://scenes/ui/settings/panels/AudioPanel.tscn").instantiate()
-	if FileAccess.file_exists("res://scenes/ui/settings/panels/InputPanel.tscn"):
-		panels["Input"] = load("res://scenes/ui/settings/panels/InputPanel.tscn").instantiate()
+	if ResourceLoader.exists("res://scenes/ui/settings/panels/GeneralPanel.tscn"):
+		var g = load("res://scenes/ui/settings/panels/GeneralPanel.tscn")
+		if g: panels["General"] = g.instantiate()
+	if ResourceLoader.exists("res://scenes/ui/settings/panels/GraphicsPanel.tscn"):
+		var gr = load("res://scenes/ui/settings/panels/GraphicsPanel.tscn")
+		if gr: panels["Graphics"] = gr.instantiate()
+	if ResourceLoader.exists("res://scenes/ui/settings/panels/AudioPanel.tscn"):
+		var a = load("res://scenes/ui/settings/panels/AudioPanel.tscn")
+		if a: panels["Audio"] = a.instantiate()
+	if ResourceLoader.exists("res://scenes/ui/settings/panels/InputPanel.tscn"):
+		var ip = load("res://scenes/ui/settings/panels/InputPanel.tscn")
+		if ip: panels["Input"] = ip.instantiate()
 	
 	# If failed to load, create dummy controls to avoid crashes
 	for key in tabs.keys():

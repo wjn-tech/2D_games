@@ -140,12 +140,21 @@ func save_game(slot_id: int) -> void:
 func _write_atomic_compressed(path: String, data: Variant) -> bool:
 	var tmp_path = path + ".tmp"
 	var bak_path = path + ".bak"
-	
+    
+	# 首先尝试使用压缩写入（ZSTD）。若导出平台不支持 ZSTD 或 open_compressed 返回 null，
+	# 回退到普通的无压缩写入，保证导出运行时也能保存。
 	var file = FileAccess.open_compressed(tmp_path, FileAccess.WRITE, FileAccess.COMPRESSION_ZSTD)
+	var used_compressed := true
+	if not file:
+		# 回退：普通写入（向后兼容导出环境）
+		file = FileAccess.open(tmp_path, FileAccess.WRITE)
+		used_compressed = false
 	if not file:
 		return false
 	file.store_var(data, true) # Ensure full object (Resource) serialization
 	file.close()
+	if not used_compressed:
+		print("SaveManager: Compression not available; saved uncompressed: ", tmp_path)
 	
 	if FileAccess.file_exists(path):
 		if FileAccess.file_exists(bak_path):
@@ -459,9 +468,9 @@ func _unpack_hostiles(list: Array) -> void:
 		entities_layer = get_tree().current_scene # Fallback
 	
 	for info in list:
-		if not FileAccess.file_exists(info.scene_path): continue
+		if not ResourceLoader.exists(info.scene_path): continue
 		
-		var scn = load(info.scene_path)
+		var scn = ResourceLoader.load(info.scene_path)
 		if scn:
 			var mob = scn.instantiate()
 			mob.global_position = info.pos

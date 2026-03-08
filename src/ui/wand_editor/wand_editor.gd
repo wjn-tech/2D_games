@@ -648,11 +648,13 @@ func _add_visual_palette_button(parent, item):
 
 	_setup_interactive_glow(btn)
 	
-	if not FileAccess.file_exists("res://src/ui/wand_editor/components/visual_palette_button.gd"):
+	if not ResourceLoader.exists("res://src/ui/wand_editor/components/visual_palette_button.gd"):
 		push_error("Visual Palette Button script missing!")
 		return
-		
-	btn.set_script(load("res://src/ui/wand_editor/components/visual_palette_button.gd"))
+
+	var vscr = load("res://src/ui/wand_editor/components/visual_palette_button.gd")
+	if vscr:
+		btn.set_script(vscr)
 	btn.setup(item)
 	
 	# Connect Selection Signal
@@ -665,12 +667,14 @@ func _add_logic_palette_button(parent, item):
 	parent.add_child(btn)
 	_setup_interactive_glow(btn)
 	
-	if not FileAccess.file_exists("res://src/ui/wand_editor/components/logic_palette_button.gd"):
+	if not ResourceLoader.exists("res://src/ui/wand_editor/components/logic_palette_button.gd"):
 		# Fallback if I haven't created it yet, but I just did.
 		push_error("Logic Palette Button script missing!")
 		return
-	
-	btn.set_script(load("res://src/ui/wand_editor/components/logic_palette_button.gd"))
+
+	var lscr = load("res://src/ui/wand_editor/components/logic_palette_button.gd")
+	if lscr:
+		btn.set_script(lscr)
 	
 	# Add metadata for Tutorial System lookup
 	if has_method("_get_item_id"):
@@ -692,14 +696,18 @@ func _create_mock_item(name, type, color, val = {}, icon_path = null):
 	item.wand_visual_color = color
 	item.wand_logic_value = val
 	
-	if icon_path and FileAccess.file_exists(icon_path):
-		item.icon = load(icon_path)
-	elif icon_path and FileAccess.file_exists(icon_path + ".import"):
-		item.icon = load(icon_path)
-	else:
-		# Use a default texture or nothing. 
-		# If nothing, the button will just be colored.
-		pass
+	if icon_path:
+		if ResourceLoader.exists(icon_path):
+			item.icon = ResourceLoader.load(icon_path)
+		elif FileAccess.file_exists(icon_path):
+			item.icon = load(icon_path)
+		elif ResourceLoader.exists(icon_path + ".import"):
+			item.icon = ResourceLoader.load(icon_path + ".import")
+		elif FileAccess.file_exists(icon_path + ".import"):
+			item.icon = load(icon_path + ".import")
+		else:
+			# fallback to no icon; button will be colored
+			pass
 	return item
 
 func _on_save_pressed():

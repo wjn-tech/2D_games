@@ -156,11 +156,11 @@ func change_state(new_state: State) -> void:
 								if "ruins_stone.tscn" in scene_path and not "buildings/" in scene_path:
 									scene_path = "res://scenes/world/buildings/ruins_stone.tscn"
 									
-								if not FileAccess.file_exists(scene_path): 
+								if not ResourceLoader.exists(scene_path):
 									push_warning("GameManager: 找不到建筑场景 %s" % scene_path)
 									continue
-								
-								var scene = load(scene_path)
+					
+								var scene = ResourceLoader.load(scene_path)
 								if scene:
 									var instance = scene.instantiate()
 									b_container.add_child(instance)

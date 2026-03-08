@@ -741,8 +741,8 @@ func place_building() -> void:
 				
 				# 1. 优先尝试自定义家具贴图集 (确保放置后视觉一致)
 				var custom_path = "res://assets/world/custom_furniture.png"
-				if FileAccess.file_exists(custom_path):
-					var custom_tex = load(custom_path)
+				if ResourceLoader.exists(custom_path):
+					var custom_tex = ResourceLoader.load(custom_path)
 					if custom_tex and resource_data.id:
 						var region = Rect2(0,0,0,0)
 						match resource_data.id:
@@ -823,8 +823,8 @@ func place_building() -> void:
 			var scene_sprite = new_building.get_node_or_null("Sprite2D")
 			if scene_sprite and resource_data.id:
 				var custom_path = "res://assets/world/custom_furniture.png"
-				if FileAccess.file_exists(custom_path):
-					var custom_tex = load(custom_path)
+				if ResourceLoader.exists(custom_path):
+					var custom_tex = ResourceLoader.load(custom_path)
 					var region = Rect2(0,0,0,0)
 					match resource_data.id:
 						"workbench", "workbench_item": region = Rect2(0, 0, 32, 16)

@@ -333,12 +333,18 @@ func _is_pos_on_screen(pos: Vector2) -> bool:
 	
 	return buffered_rect.has_point(pos)
 
+
 func _spawn_mob(path: String, pos: Vector2) -> void:
-	if not FileAccess.file_exists(path):
+	# 支持打包资源路径（res://）和外部文件路径
+	if not (ResourceLoader.exists(path) or FileAccess.file_exists(path)):
 		print("NPCSpawner: ERROR! File not found: ", path)
 		return
-		
-	var scene = load(path)
+
+	var scene = null
+	if ResourceLoader.exists(path):
+		scene = ResourceLoader.load(path)
+	elif FileAccess.file_exists(path):
+		scene = load(path)
 	if not scene: return
 	
 	var mob = scene.instantiate()

@@ -82,8 +82,24 @@ func _on_data_ready() -> void:
 		saved_step = 0
 		
 	# 如果是一个纯粹的教程场景文件（例如独立测试场景），也强制激活
-	var is_tutorial_scene_file = get_tree().current_scene.scene_file_path.contains("tutorial")
-	
+	# 在导出环境中直接访问 scene_file_path 可能不可靠，改为优先使用存档/Meta 或 player_data
+	var is_tutorial_scene_file = false
+	var cs = get_tree().current_scene
+	if cs:
+		var sfp = ""
+		# 尝试安全地读取 scene_file_path（有些运行时场景可能为空或未设置）
+		if str(cs.scene_file_path) != "null" and cs.scene_file_path != null and cs.scene_file_path != "":
+			sfp = str(cs.scene_file_path)
+		is_tutorial_scene_file = sfp.find("tutorial") != -1
+
+	# 另外，如果 SaveManager/加载逻辑通过 GameState 保存了 pending_scene_path，也检查该字段
+	if not tutorial_active:
+		if GameState.has_meta("pending_scene_path"):
+			var pending = GameState.get_meta("pending_scene_path")
+			if typeof(pending) == TYPE_STRING and str(pending).find("tutorial") != -1:
+				tutorial_active = true
+				saved_step = GameState.player_data.tutorial_step if GameState.player_data else 0
+
 	if not tutorial_active and not is_tutorial_scene_file:
 		queue_free()
 		return

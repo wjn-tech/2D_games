@@ -84,11 +84,11 @@ func open_window(window_name: String, scene_path: String, blocks_input: bool = t
 			call_deferred("open_window", window_name, scene_path, blocks_input)
 			return null
 
-		if not FileAccess.file_exists(scene_path):
-			push_error("UIManager: 找不到场景文件: " + scene_path + "。请确保你已经创建并保存了该场景。")
+		if not ResourceLoader.exists(scene_path):
+			push_error("UIManager: 找不到场景文件: " + scene_path + "。请确保资源路径正确且已包含在导出中。")
 			return null
-			
-		var scene = load(scene_path)
+		
+		var scene = ResourceLoader.load(scene_path)
 		if not scene:
 			push_error("UIManager: 无法加载 UI 场景 " + scene_path)
 			return null

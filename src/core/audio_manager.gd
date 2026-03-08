@@ -197,11 +197,16 @@ func _warmup_audio_engine() -> void:
 
 func _try_load(path_base: String) -> AudioStream:
 	var path_ogg = path_base + ".ogg"
-	if FileAccess.file_exists(path_ogg):
+	# 优先使用 ResourceLoader 来查找导出后的打包资源
+	if ResourceLoader.exists(path_ogg):
+		return ResourceLoader.load(path_ogg)
+	elif FileAccess.file_exists(path_ogg):
 		return load(path_ogg)
-	
+
 	var path_wav = path_base + ".wav"
-	if FileAccess.file_exists(path_wav):
+	if ResourceLoader.exists(path_wav):
+		return ResourceLoader.load(path_wav)
+	elif FileAccess.file_exists(path_wav):
 		return load(path_wav) # .wav files are imported as AudioStreamWAV
 	
 	return null

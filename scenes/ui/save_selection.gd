@@ -94,11 +94,9 @@ func _perform_save(slot_id: int) -> void:
 	GameManager.change_state(GameManager.State.START_MENU)
 	
 func _perform_load(slot_id: int) -> void:
-	if SaveManager.load_game(slot_id):
-		UIManager.close_window("SaveSelection")
-		UIManager.close_window("MainMenu")
-		GameManager.change_state(GameManager.State.PLAYING)
-		
-		# 强制刷新状态
-		GameManager.current_state = GameManager.State.PAUSED 
-		GameManager.change_state(GameManager.State.PLAYING)
+	# 使用 GameManager 托管的加载流程，确保场景正确切换和状态重置
+	GameManager.load_game(slot_id)
+	
+	UIManager.close_window("SaveSelection")
+	UIManager.close_window("MainMenu")
+	# 状态切换由 GameManager._on_reload_finished 处理

@@ -20,15 +20,21 @@ func _ready() -> void:
 	_apply_styles()
 
 	if EventBus:
-		EventBus.player_data_refreshed.connect(_on_player_data_refreshed)
+		if not EventBus.is_connected("player_data_refreshed", _on_player_data_refreshed):
+			EventBus.player_data_refreshed.connect(_on_player_data_refreshed)
 		if EventBus.has_signal("stats_changed"):
-			EventBus.stats_changed.connect(_update_status)
+			if not EventBus.is_connected("stats_changed", _update_status):
+				EventBus.stats_changed.connect(_update_status)
 			
 	_on_player_data_refreshed()
 
 func _on_player_data_refreshed() -> void:
-	if GameState.player_data and not GameState.player_data.stat_changed.is_connected(_on_stat_changed):
-		GameState.player_data.stat_changed.connect(_on_stat_changed)
+	# 检查并清理旧的连接，防止指向失效实例
+	var current_pd = GameState.player_data
+	if is_instance_valid(current_pd):
+		if not current_pd.is_connected("stat_changed", _on_stat_changed):
+			current_pd.stat_changed.connect(_on_stat_changed)
+			
 	_update_status()
 
 func _on_stat_changed(_stat_name: String, _new_value: float) -> void:

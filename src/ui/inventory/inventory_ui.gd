@@ -31,10 +31,12 @@ func _ready() -> void:
 	
 	# Listen for Inventory updates
 	if GameState.inventory:
-		GameState.inventory.inventory_changed.connect(refresh_ui)
+		if not GameState.inventory.is_connected("inventory_changed", refresh_ui):
+			GameState.inventory.inventory_changed.connect(refresh_ui)
 	
 	if EventBus:
-		EventBus.player_data_refreshed.connect(refresh_ui)
+		if not EventBus.is_connected("player_data_refreshed", refresh_ui):
+			EventBus.player_data_refreshed.connect(refresh_ui)
 		
 	# Connect Trash Slot
 	if trash_slot:

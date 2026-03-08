@@ -66,33 +66,53 @@ func _ready() -> void:
 		EventBus.player_data_refreshed.connect(_on_data_ready)
 
 func _on_data_ready() -> void:
+	# 显式重置可见性，避免不必要的帧闪烁
+	visible = false
+	
 	# 1. 验证是否运行教程
 	
-	# 首先获取玩家数据状态
-	var tutorial_active = false
-	var saved_step = 0
-	if GameState.player_data:
-		if not GameState.player_data.tutorial_completed:
-			tutorial_active = true
-			saved_step = GameState.player_data.tutorial_step
-			
-	# 如果是新游戏，强制激活
-	if GameManager.is_new_game:
-		tutorial_active = true
-		saved_step = 0
-		
 	# 如果是一个纯粹的教程场景文件（例如独立测试场景），也强制激活
 	var is_tutorial_scene_file = get_tree().current_scene.scene_file_path.contains("tutorial")
 	
-	if not tutorial_active and not is_tutorial_scene_file:
+	# 检查是否为新游戏
+	var is_new = GameManager.is_new_game
+	
+	# 获取存档中的状态
+	var tutorial_completed = false
+	var saved_step = 0
+	
+	if GameState.player_data:
+		tutorial_completed = GameState.player_data.tutorial_completed
+		saved_step = GameState.player_data.tutorial_step
+	
+	# 核心判定逻辑：
+	# 1. 如果已完成教程，且不是强制新游戏（理论上新游戏会重置 completed=false，但双重保险），则不运行
+	# 2. 除非我们身处教程场景文件内（可能是测试或错误加载），这时必须运行以免卡关
+	if tutorial_completed and not is_new and not is_tutorial_scene_file:
+		print("Tutorial: Tutorial already completed. Destroying manager.")
 		queue_free()
 		return
 		
+	# 3. 如果是已完成的存档，却错误地加载进了教程场景（场景文件 check）
+	# 这通常意味着 SaveManager 的场景恢复逻辑出了问题，或者用户手动修改了存档
+	# 在这种情况下，我们应该尝试把玩家送回主世界，或者至少销毁教程逻辑防止软锁
+	if tutorial_completed and is_tutorial_scene_file and not is_new:
+		print("Tutorial: Loaded into tutorial scene with COMPLETED state. This is anomalous.")
+		# 可选：可以尝试跳转回主场景，暂时先销毁逻辑
+		queue_free()
+		return
+
+	# 激活教程
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	visible = true
 	
-	# 使用 cast 或直接赋值 (GDScript 2.0 能够处理 int -> enum)
-	current_step = saved_step as Step
+	# 恢复步骤：如果是新游戏，强制从 0 开始；否则恢复存档步骤
+	if is_new:
+		current_step = Step.INIT
+	else:
+		current_step = saved_step as Step
+	
+	print("Tutorial: Activated. Step: ", current_step, " IsNew: ", is_new)
 	
 	# 2. 初始化逻辑 (原 _ready 的剩余部分)
 	_init_tutorial_elements()

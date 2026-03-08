@@ -24,10 +24,19 @@ func _ready() -> void:
 
 func _connect_to_player_data() -> void:
 	player_data = GameState.player_data
-	if not player_data.stat_changed.is_connected(_on_stat_changed):
+	
+	if not player_data:
+		print("CharacterPanelUI: Player data is null!")
+		return
+		
+	if not player_data.is_connected("stat_changed", _on_stat_changed):
 		player_data.stat_changed.connect(_on_stat_changed)
 
 func _on_player_data_refreshed() -> void:
+	# 刷新前先检查旧的 player_data 是否有效并清理连接
+	if is_instance_valid(player_data) and player_data.is_connected("stat_changed", _on_stat_changed):
+		player_data.stat_changed.disconnect(_on_stat_changed)
+		
 	_connect_to_player_data()
 	_refresh_stats()
 	_refresh_header()

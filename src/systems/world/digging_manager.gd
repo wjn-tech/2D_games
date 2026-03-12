@@ -246,6 +246,42 @@ func _get_current_tile_map() -> Node:
 		
 	return null
 
+func has_mineable_tile_at(coords: Vector2i) -> bool:
+	var layers_to_check = []
+	if LayerManager:
+		layers_to_check.append(LayerManager.active_layer)
+		for i in [0, 1, 2]:
+			if i != LayerManager.active_layer:
+				layers_to_check.append(i)
+	else:
+		layers_to_check = [0]
+
+	for l_idx in layers_to_check:
+		var target_map = null
+		if LayerManager:
+			target_map = LayerManager.get_layer(l_idx)
+		else:
+			target_map = _get_current_tile_map()
+
+		if not target_map:
+			continue
+
+		var tree_layer = _get_tree_layer(target_map)
+		if tree_layer:
+			if tree_layer is TileMap:
+				if tree_layer.get_cell_source_id(0, coords) != -1:
+					return true
+			elif tree_layer.get_cell_source_id(coords) != -1:
+				return true
+
+		if target_map is TileMap:
+			if target_map.get_cell_source_id(mining_layer, coords) != -1:
+				return true
+		elif target_map.get_cell_source_id(coords) != -1:
+			return true
+
+	return false
+
 func _get_tile_data(current_tile_map: Node, coords: Vector2i) -> TileData:
 	if current_tile_map is TileMap:
 		return current_tile_map.get_cell_tile_data(mining_layer, coords)
@@ -463,7 +499,7 @@ func get_tile_display_name(current_tile_map: Node, coords: Vector2i) -> String:
 	return "未知方块"
 
 ## 尝试挖掘指定坐标的 Tile
-func try_mine_tile(coords: Vector2i, pickaxe_power: int) -> bool:
+func try_mine_tile(coords: Vector2i, pickaxe_power: int, spawn_loot: bool = true) -> bool:
 	# 自动检测所有图层的方块 (0: 地面, 1: 背景, 2: 深层)
 	var layers_to_check = []
 	if LayerManager:
@@ -487,11 +523,11 @@ func try_mine_tile(coords: Vector2i, pickaxe_power: int) -> bool:
 		var tree_layer = _get_tree_layer(target_map)
 		
 		# 优先检查树木图层
-		if tree_layer and _do_mine_at_layer(tree_layer, coords, pickaxe_power):
+		if tree_layer and _do_mine_at_layer(tree_layer, coords, pickaxe_power, spawn_loot):
 			return true
 			
 		# 其次检查该图层
-		if _do_mine_at_layer(target_map, coords, pickaxe_power):
+		if _do_mine_at_layer(target_map, coords, pickaxe_power, spawn_loot):
 			return true
 
 	return false
@@ -505,7 +541,7 @@ func _get_tree_layer(ground_layer: Node) -> Node:
 			return l
 	return null
 
-func _do_mine_at_layer(current_tile_map: Node, coords: Vector2i, pickaxe_power: int) -> bool:
+func _do_mine_at_layer(current_tile_map: Node, coords: Vector2i, pickaxe_power: int, spawn_loot: bool = true) -> bool:
 	var source_id = -1
 	var tile_data: TileData = null
 	
@@ -555,9 +591,6 @@ func _do_mine_at_layer(current_tile_map: Node, coords: Vector2i, pickaxe_power: 
 			"time_left": respawn_time
 		}
 	
-	# --- 获取掉落物路径 (在移除之前或传递参数) ---
-	var drop_path = _get_custom_data(tile_data, current_tile_map, coords, "drop_item", "", atlas_coords, source_id)
-	
 	# --- 移除 Tile ---
 	if current_tile_map is TileMap:
 		current_tile_map.set_cell(mining_layer, coords, -1)
@@ -565,7 +598,8 @@ func _do_mine_at_layer(current_tile_map: Node, coords: Vector2i, pickaxe_power: 
 		current_tile_map.set_cell(coords, -1)
 	
 	# --- 生成掉落物 ---
-	_spawn_loot(coords, tile_data, current_tile_map, atlas_coords, source_id)
+	if spawn_loot:
+		_spawn_loot(coords, tile_data, current_tile_map, atlas_coords, source_id)
 	
 	# --- 无限地图 Delta 记录与粒子反馈 ---
 	var world_pos = current_tile_map.map_to_local(coords)
@@ -602,7 +636,6 @@ func _do_mine_at_layer(current_tile_map: Node, coords: Vector2i, pickaxe_power: 
 			_fell_tree(coords, current_tile_map, world_gen, offset)
 		
 	tile_mined.emit(coords, {"source_id": source_id})
-	_spawn_loot(coords, tile_data, current_tile_map, atlas_coords)
 	return true
 
 func _fell_tree(mined_coords: Vector2i, target_map: Node, world_gen: WorldGenerator, root_offset: int) -> void:
@@ -716,7 +749,7 @@ func _spawn_loot(coords: Vector2i, tile_data: TileData, current_tile_map: Node, 
 		print("DiggingManager: 挖掘成功，但该 Tile 未配置 drop_item 属性。")
 
 # --- Magic Interaction API ---
-func explode_at(global_pos: Vector2, radius: float, power: int = 100) -> void:
+func explode_at(global_pos: Vector2, radius: float, power: int = 100, spawn_loot: bool = true) -> void:
 	var ground_layer = _get_current_tile_map()
 	if not ground_layer: return
 	
@@ -729,11 +762,11 @@ func explode_at(global_pos: Vector2, radius: float, power: int = 100) -> void:
 			var cell_center = ground_layer.to_global(ground_layer.map_to_local(target))
 			
 			if cell_center.distance_to(global_pos) <= radius:
-				try_mine_tile(target, power)
+				try_mine_tile(target, power, spawn_loot)
 
 func dissolve_at(global_pos: Vector2, radius: float) -> void:
 	# Blackhole logic: infinite mining power
-	explode_at(global_pos, radius, 999999)
+	explode_at(global_pos, radius, 999999, false)
 
 func _setup_cracking_tileset():
 	# 创建一个包含 10 帧裂纹效果的动态 TileSet

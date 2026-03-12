@@ -37,6 +37,18 @@ var initial_orbit_phase: float = 0.0
 var modifiers: Array = []
 var _fly_time: float = 0.0
 
+const BLACKHOLE_SUCK_RADIUS := 180.0
+const BLACKHOLE_KILL_RADIUS := 20.0
+const BLACKHOLE_PULL_INTERVAL := 0.05
+const BLACKHOLE_TERRAIN_INTERVAL := 0.2
+const BLACKHOLE_QUERY_LIMIT := 24
+
+var _blackhole_pull_accumulator: float = 0.0
+var _blackhole_terrain_accumulator: float = 0.0
+var _blackhole_query_shape: CircleShape2D
+var _blackhole_query: PhysicsShapeQueryParameters2D
+var _digging_manager: Node
+
 # Components
 var impact_vfx: PackedScene
 
@@ -103,7 +115,7 @@ func _apply_modifiers_stat_change():
 		# CRITICAL FIX: If generic MODIFIER, check params for true type
 		if (m_type == "MODIFIER" or m_type == "modifier") and m_params.has("type"):
 			m_type = m_params["type"]
-            
+			
 		# print("DEBUG: Applying Modifier: ", m_type, " Params:", m_params)
 
 		if m_type == "modifier_speed":
@@ -152,7 +164,7 @@ func _update_visuals():
 			_visualizer.play_muzzle_flash()
 		else:
 			call_deferred("_play_muzzle_flash_deferred")
-            
+			
 	if is_orbiting_caster:
 		var trail = Line2D.new()
 		trail.width = 3.0
@@ -217,6 +229,10 @@ func _physics_process(delta: float):
 	if velocity_vector.length_squared() > 1:
 		rotation = velocity_vector.angle()
 		if _visualizer: _visualizer.rotation = rotation # Ensure visualizer follows
+
+	if special_behavior == "blackhole":
+		global_position += velocity_vector * delta
+		return
 
 	# Movement & Collision
 	# Orbit projectiles handle their own collision in _process_orbit
@@ -294,7 +310,7 @@ func _process_orbit(delta: float):
 		var col = res.collider
 		if col == self or col == caster: continue
 		if col.has_method("take_damage"):
-             # Orbit damage logic
+			 # Orbit damage logic
 			_try_apply_orbit_damage(col)
 
 	# If motion is huge (first frame snap), just teleport
@@ -334,42 +350,64 @@ func _spawn_hit_vfx(pos: Vector2):
 		# Use existing visualizer impact handling
 		pass
 
+func _ensure_blackhole_resources() -> void:
+	if not _blackhole_query_shape:
+		_blackhole_query_shape = CircleShape2D.new()
+		_blackhole_query_shape.radius = BLACKHOLE_SUCK_RADIUS
+
+	if not _blackhole_query:
+		_blackhole_query = PhysicsShapeQueryParameters2D.new()
+		_blackhole_query.shape = _blackhole_query_shape
+		_blackhole_query.collision_mask = 2 | 4 | 1
+		_blackhole_query.collide_with_bodies = true
+		_blackhole_query.collide_with_areas = false
+
+	if not is_instance_valid(_digging_manager):
+		_digging_manager = get_tree().get_first_node_in_group("digging_manager")
+
 func _process_blackhole(delta: float):
-	var dm = get_tree().get_first_node_in_group("digging_manager")
-	if dm:
-		dm.dissolve_at(global_position, 32.0)
-		
-	var suck_radius = 180.0
-	var kill_radius = 20.0
-	
+	_ensure_blackhole_resources()
+	_blackhole_pull_accumulator += delta
+	_blackhole_terrain_accumulator += delta
+
+	if _blackhole_terrain_accumulator >= BLACKHOLE_TERRAIN_INTERVAL and is_instance_valid(_digging_manager):
+		_digging_manager.dissolve_at(global_position, 32.0)
+		_blackhole_terrain_accumulator = fmod(_blackhole_terrain_accumulator, BLACKHOLE_TERRAIN_INTERVAL)
+
+	if _blackhole_pull_accumulator < BLACKHOLE_PULL_INTERVAL:
+		return
+
+	var step_delta = _blackhole_pull_accumulator
+	_blackhole_pull_accumulator = 0.0
+
 	var space = get_world_2d().direct_space_state
-	var query = PhysicsShapeQueryParameters2D.new()
-	var shape = CircleShape2D.new()
-	shape.radius = suck_radius
-	query.shape = shape
-	query.transform = global_transform
-	query.collision_mask = 2 | 4 | 1 
-	
-	var results = space.intersect_shape(query, 32)
+	_blackhole_query.transform = Transform2D(0.0, global_position)
+	_blackhole_query.exclude = [get_rid()]
+
+	var results = space.intersect_shape(_blackhole_query, BLACKHOLE_QUERY_LIMIT)
 	for res in results:
 		var target = res.collider
-		if target == self: continue
+		if not is_instance_valid(target) or target == self:
+			continue
 		
 		var to_bh = global_position - target.global_position
 		var dist = to_bh.length()
+		if dist <= 0.001:
+			continue
 		var dir = to_bh.normalized()
 		
-		if dist < kill_radius:
+		if dist < BLACKHOLE_KILL_RADIUS:
 			if target.has_method("take_damage"):
 				target.take_damage(damage * 5.0, "arcane")
 			elif target is not TileMap:
 				target.queue_free()
 		else:
-			var strength = pow((suck_radius - dist) / suck_radius, 2) * 2500.0
+			var falloff = max(0.0, (BLACKHOLE_SUCK_RADIUS - dist) / BLACKHOLE_SUCK_RADIUS)
+			var strength = pow(falloff, 2) * 2500.0
 			if target is RigidBody2D:
-				target.apply_central_impulse(dir * strength * delta)
+				target.apply_central_impulse(dir * strength * step_delta)
 			elif target is CharacterBody2D:
-				target.velocity += dir * strength * delta * 0.5
+				target.velocity += dir * strength * step_delta * 0.5
 
 func _find_homing_target(radius: float) -> Node:
 	var space = get_world_2d().direct_space_state
@@ -395,6 +433,11 @@ func _find_homing_target(radius: float) -> Node:
 	return best
 
 func _on_hit(col: KinematicCollision2D):
+	# Trigger/Custom Logic Hook
+	if has_method("_custom_trigger_hit"):
+		call("_custom_trigger_hit", col)
+		return
+
 	if special_behavior == "tnt":
 		_explode()
 		return

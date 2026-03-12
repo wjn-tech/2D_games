@@ -353,11 +353,35 @@ func _update_stats_display():
 			if child.name != "ManaTicker":
 				child.queue_free()
 		
+		var debug_plan = SpellProcessor.debug_build_cast_plan(current_wand)
+		var plan_valid = bool(debug_plan.get("is_valid", false))
+		var compile_errors: Array = debug_plan.get("errors", []) if debug_plan is Dictionary else []
 		var sim_stats = SpellProcessor.get_wand_stats(current_wand)
 		var sim_duration = sim_stats.get("duration", 0.0) if sim_stats is Dictionary else 0.0
 		var sim_dmg = sim_stats.get("total_damage", 0.0) if sim_stats is Dictionary else 0.0
 		var sim_projs = sim_stats.get("projectile_count", 0) if sim_stats is Dictionary else 0
 		var sim_mana = sim_stats.get("simulated_mana_usage", 0.0) if sim_stats is Dictionary else 0.0
+		var diag_label = ""
+		var diag_value = ""
+		var diag_color = Color("#66ff66")
+		if plan_valid:
+			sim_duration = float(debug_plan.get("max_fire_delay", sim_duration))
+			sim_mana = float(debug_plan.get("total_mana_cost", sim_mana))
+			sim_projs = debug_plan.get("emissions", []).size()
+			var cycle_mana = float(debug_plan.get("total_mana_cost", 0.0))
+			var current_mana = float(current_wand.current_mana)
+			if sim_projs <= 0:
+				diag_label = "预览异常:"
+				diag_value = "没有编译出可发射投射物"
+				diag_color = Color("#ff6666")
+			else:
+				diag_label = "需蓝 / 当前:"
+				diag_value = "%.0f / %.0f" % [cycle_mana, current_mana]
+				diag_color = Color("#66ff66") if current_mana >= cycle_mana else Color("#ff6666")
+		else:
+			diag_label = "编译失败:"
+			diag_value = str(compile_errors[0]) if not compile_errors.is_empty() else "未知错误"
+			diag_color = Color("#ff6666")
 		
 		stats_container.add_child(_create_stat_header("法杖详细属性"))
 		stats_container.add_child(_create_stat_row("res://assets/ui/icons/icon_level.svg", "等级:", str(embryo.level)))
@@ -373,6 +397,7 @@ func _update_stats_display():
 		stats_container.add_child(_create_stat_row("", "单次爆发法力:", "%.0f" % sim_mana, Color("#66aaff")))
 		stats_container.add_child(_create_stat_row("", "理论全额伤害:", "%.1f" % sim_dmg, Color("#ff4444")))
 		stats_container.add_child(_create_stat_row("", "投射物数量:", str(sim_projs), Color("#ccccff")))
+		stats_container.add_child(_create_stat_row("", diag_label, diag_value, diag_color))
 		
 		stats_container.add_child(_create_stat_header("实时状态"))
 		var block_count = current_wand.visual_grid.size()
@@ -430,6 +455,7 @@ func _input(event: InputEvent) -> void:
 
 func _on_visibility_changed():
 	if visible:
+		_setup_libraries() # Refresh unlocked spells
 		EventBus.wand_editor_opened.emit()
 		get_tree().paused = true # Diegetic UI Pause
 		_apply_sci_fi_theme() # Refresh theme
@@ -613,9 +639,7 @@ func _get_item_id(item: Resource) -> String:
 	
 	if type == "modifier_element":
 		var elem = val.get("element", "")
-		if elem == "fire": return "element_fire" # Mismatch with BaseNPC "modifier_element_fire" vs "element_fire"
-		# BaseNPC code was: "projectile_slime", "modifier_pierce", "logic_splitter"
-		# It didn't handle elements.
+		# BaseNPC code handles standard modifier prefixes
 		return "modifier_element_" + elem
 		
 	if type == "modifier_damage": 

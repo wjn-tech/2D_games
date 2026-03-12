@@ -31,9 +31,16 @@ const STYLE_MAP = {
 	"Child": {"shape": Shape.RECT, "color": Color(0.5, 0.7, 1.0), "size": Vector2(14, 26), "outline_width": 1.5},
 	"Child of": {"shape": Shape.RECT, "color": Color(0.5, 0.7, 1.0), "size": Vector2(14, 26), "outline_width": 1.5},
 	"Slime": {"shape": Shape.TRIANGLE, "color": Color(1.0, 0.3, 0.3), "pulse": 2.0},
+	"林地史莱姆": {"shape": Shape.TRIANGLE, "color": Color(0.55, 0.82, 0.35), "pulse": 2.2},
+	"沼泽史莱姆": {"shape": Shape.TRIANGLE, "color": Color(0.45, 0.7, 0.28), "pulse": 1.8},
 	"Skeleton": {"shape": Shape.RECT, "color": Color(0.8, 0.8, 0.8), "size": Vector2(14, 24)},
+	"洞窟骷髅": {"shape": Shape.RECT, "color": Color(0.84, 0.84, 0.82), "size": Vector2(14, 24)},
 	"Zombie": {"shape": Shape.RECT, "color": Color(0.3, 0.5, 0.3), "size": Vector2(16, 26)},
+	"荒原追兵": {"shape": Shape.RECT, "color": Color(0.42, 0.55, 0.34), "size": Vector2(16, 26)},
 	"Bat": {"shape": Shape.DIAMOND, "color": Color(0.4, 0.3, 0.5), "pulse": 5.0, "size": Vector2(16, 12)},
+	"洞穴蝙蝠": {"shape": Shape.DIAMOND, "color": Color(0.36, 0.31, 0.48), "pulse": 4.6, "size": Vector2(16, 12)},
+	"霜咬蝙蝠": {"shape": Shape.DIAMOND, "color": Color(0.62, 0.83, 0.95), "pulse": 4.2, "size": Vector2(17, 12)},
+	"恶魔之眼": {"shape": Shape.DIAMOND, "color": Color(0.88, 0.36, 0.36), "pulse": 5.2, "size": Vector2(16, 14)},
 	"Ghost": {"shape": Shape.CIRCLE, "color": Color(0.8, 0.9, 1.0, 0.7), "pulse": 1.0},
 	
 	# Type Fallbacks (Ark-style/Role-style)

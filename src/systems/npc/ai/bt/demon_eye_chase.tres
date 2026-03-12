@@ -4,10 +4,17 @@
 
 [sub_resource type="BTAction" id="BTAction_fly"]
 script = ExtResource("1_tasks")
-move_speed = 150.0
-dash_speed = 500.0
-wave_amplitude = 60.0
-dash_cooldown = 4.0
+move_speed = 140.0
+dash_speed = 760.0
+wave_amplitude = 40.0
+dash_cooldown = 2.6
+charge_time = 0.24
+dash_duration = 0.4
+recover_time = 0.18
+dash_trigger_range = 460.0
+dash_min_range = 70.0
+dash_damage = 14.0
+dash_hit_radius = 34.0
 
 [resource]
 root_task = SubResource("BTAction_fly")

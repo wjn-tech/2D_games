@@ -1,12 +1,15 @@
 extends ProjectileBase
 
 var healing_area: Area2D
-var healing_timer: Timer
 var heal_interval: float = 0.5
 var heal_amount_percent: float = 0.05
 var active_bodies: Array = []
 var active_visual: Line2D
 var tween: Tween
+var heal_rate_percent_per_second: float = 0.0
+var popup_interval: float = 0.25
+var heal_popup_accumulator: Dictionary = {}
+var heal_popup_elapsed: Dictionary = {}
 
 func _ready():
 	_setup_visuals()
@@ -30,12 +33,8 @@ func _ready():
 	
 	healing_area.body_entered.connect(_on_body_entered)
 	healing_area.body_exited.connect(_on_body_exited)
-	
-	healing_timer = Timer.new()
-	healing_timer.wait_time = heal_interval
-	healing_timer.autostart = true
-	add_child(healing_timer)
-	healing_timer.timeout.connect(_on_heal_tick)
+
+	heal_rate_percent_per_second = heal_amount_percent / max(heal_interval, 0.001)
 	
 	# Animate Appearance
 	scale = Vector2.ZERO
@@ -77,6 +76,7 @@ func _setup_visuals():
 func _physics_process(delta):
 	# Override ProjectileBase movement to stay put
 	_fly_time += delta
+	_process_continuous_healing(delta)
 	if _fly_time >= lifetime:
 		# Shrink out
 		var t = create_tween()
@@ -92,51 +92,75 @@ func _on_body_entered(body):
 func _on_body_exited(body):
 	if active_bodies.has(body):
 		active_bodies.erase(body)
+	_cleanup_body_tracking(body)
 
-func _on_heal_tick():
+func _process_continuous_healing(delta: float) -> void:
+	var invalid_bodies: Array = []
 	for body in active_bodies:
 		if not is_instance_valid(body):
+			invalid_bodies.append(body)
 			continue
-			
-		# Check cooldown meta to prevent stacking from multiple rings
-		if body.has_meta("healing_cooldown_frame"):
-			var last_frame = body.get_meta("healing_cooldown_frame")
-			# Allow heal every 30 frames (0.5s at 60fps) approx, 
-			# but we rely on this timer being 0.5s.
-			# If multiple rings overlap, they might fire at different times.
-			# We want to limit HEAL FREQUENCY on the target.
-			if Engine.get_process_frames() - last_frame < 20: 
-				continue
-		
-		body.set_meta("healing_cooldown_frame", Engine.get_process_frames())
-		
-		# Heal logic
-		# Player stores data in attributes.data (CharacterData)
-		var char_data = null
-		if "attributes" in body and body.attributes and "data" in body.attributes:
-			char_data = body.attributes.data
-		elif "npc_data" in body:
-			char_data = body.npc_data
-			
-		# Fallback if no data detected but has method
-		if not char_data and body.has_method("restore_health"):
-			# Assuming restore_health exists on body
-			body.restore_health(max(1.0, 20.0 * heal_amount_percent)) # Estimation
-		
-		# Regular healing via CharacterData
-		if char_data:
-			var max_hp = char_data.max_health
-			var missing = max_hp - char_data.health
-			if missing > 0:
-				var heal = ceil(max_hp * heal_amount_percent)
-				char_data.health = min(char_data.health + heal, max_hp)
-				
-				# Visual Popup
-				if UIManager:
-					UIManager.show_floating_text("+%.0f" % heal, body.global_position + Vector2(0, -50), Color.GREEN)
-				
-				# Pulse effect on ring (only if healed)
-				if active_visual:
-					var tw = create_tween()
-					tw.tween_property(active_visual, "width", 8.0, 0.1)
-					tw.tween_property(active_visual, "width", 4.0, 0.2)
+
+		var healed_amount = _heal_body(body, delta)
+		if healed_amount <= 0.0:
+			continue
+
+		var body_id = body.get_instance_id()
+		heal_popup_accumulator[body_id] = heal_popup_accumulator.get(body_id, 0.0) + healed_amount
+		heal_popup_elapsed[body_id] = heal_popup_elapsed.get(body_id, 0.0) + delta
+
+		if heal_popup_elapsed[body_id] >= popup_interval:
+			_emit_heal_feedback(body, body_id)
+
+	for body in invalid_bodies:
+		active_bodies.erase(body)
+		_cleanup_body_tracking(body)
+
+func _heal_body(body, delta: float) -> float:
+	var char_data = null
+	if "attributes" in body and body.attributes and "data" in body.attributes:
+		char_data = body.attributes.data
+	elif "npc_data" in body:
+		char_data = body.npc_data
+
+	if char_data:
+		var max_hp = char_data.max_health
+		var missing = max_hp - char_data.health
+		if missing <= 0.0:
+			return 0.0
+
+		var heal_amount = min(missing, max_hp * heal_rate_percent_per_second * delta)
+		char_data.health = char_data.health + heal_amount
+		return heal_amount
+
+	if body.has_method("restore_health"):
+		var fallback_heal = (20.0 * heal_amount_percent / max(heal_interval, 0.001)) * delta
+		if fallback_heal > 0.0:
+			body.restore_health(fallback_heal)
+			return fallback_heal
+
+	return 0.0
+
+func _emit_heal_feedback(body, body_id: int) -> void:
+	var total_heal = heal_popup_accumulator.get(body_id, 0.0)
+	if total_heal <= 0.0:
+		heal_popup_elapsed[body_id] = 0.0
+		return
+
+	if UIManager:
+		UIManager.show_floating_text("+%.1f" % total_heal, body.global_position + Vector2(0, -50), Color.GREEN)
+
+	if active_visual:
+		var tw = create_tween()
+		tw.tween_property(active_visual, "width", 8.0, 0.1)
+		tw.tween_property(active_visual, "width", 4.0, 0.2)
+
+	heal_popup_accumulator[body_id] = 0.0
+	heal_popup_elapsed[body_id] = 0.0
+
+func _cleanup_body_tracking(body) -> void:
+	if not is_instance_valid(body):
+		return
+	var body_id = body.get_instance_id()
+	heal_popup_accumulator.erase(body_id)
+	heal_popup_elapsed.erase(body_id)

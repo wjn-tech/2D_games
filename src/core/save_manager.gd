@@ -84,7 +84,7 @@ func save_game(slot_id: int) -> void:
 	# 1. 切换无限地图管理器的目标目录并同步保存最新的内存修改
 	var world_path = slot_dir + "world_deltas/"
 	if InfiniteChunkManager:
-		InfiniteChunkManager.set_save_root(world_path)
+		InfiniteChunkManager.set_save_root(world_path, true)
 		InfiniteChunkManager.save_all_deltas() # 强制物块修改写盘
 	
 	# 2. 收集核心游戏数据
@@ -102,6 +102,7 @@ func save_game(slot_id: int) -> void:
 		"persist_group": _pack_persist_group(),
 		"hostiles": _pack_hostiles(),
 		"descendants": _pack_descendants(), # 新增：保存子嗣列表
+		"unlocked_spells": GameState.unlocked_spells,
 		"world_seed": _get_world_seed()
 	}
 	
@@ -140,7 +141,7 @@ func save_game(slot_id: int) -> void:
 func _write_atomic_compressed(path: String, data: Variant) -> bool:
 	var tmp_path = path + ".tmp"
 	var bak_path = path + ".bak"
-    
+	
 	# 首先尝试使用压缩写入（ZSTD）。若导出平台不支持 ZSTD 或 open_compressed 返回 null，
 	# 回退到普通的无压缩写入，保证导出运行时也能保存。
 	var file = FileAccess.open_compressed(tmp_path, FileAccess.WRITE, FileAccess.COMPRESSION_ZSTD)
@@ -182,10 +183,11 @@ func _pack_player_data() -> Dictionary:
 			"constitution": p_data.constitution,
 			# Lineage System Data
 			"stat_levels": p_data.stat_levels,
+			"attributes": p_data.attributes, # Save dynamic attributes (bonuses, money)
 			"mutations": p_data.mutations,
 			"spouse_id": p_data.spouse_id,
 			"generation": p_data.generation,
-			"age": p_data.age,
+			"age": p_data.current_age, # Use current_age to prevent reset to 0
 			"growth_stage": p_data.growth_stage,
 			"imprint_quality": p_data.imprint_quality,
 			# Tutorial State
@@ -198,9 +200,11 @@ func _pack_inventory() -> Dictionary:
 	var result = {"backpack": [], "hotbar": []}
 	if GameState.inventory:
 		var mgr = GameState.inventory # InventoryManager
-		if "backpack" in mgr and mgr.backpack: 
+		if mgr.has_method("serialize_inventory"):
+			return mgr.serialize_inventory()
+		if "backpack" in mgr and mgr.backpack:
 			result.backpack = mgr.backpack.slots
-		if "hotbar" in mgr and mgr.hotbar: 
+		if "hotbar" in mgr and mgr.hotbar:
 			result.hotbar = mgr.hotbar.slots
 	return result
 
@@ -269,11 +273,14 @@ func load_game(slot_id: int) -> bool:
 	var slot_dir = _get_slot_dir(slot_id)
 	if InfiniteChunkManager:
 		InfiniteChunkManager.set_save_root(slot_dir + "world_deltas/")
-		InfiniteChunkManager.world_delta_data.clear()
-		InfiniteChunkManager.loaded_chunks.clear()
 
 	# 2. 恢复全局状态
 	GameState.current_time = data.get("game_time", 0.0)
+	
+	if data.has("unlocked_spells"):
+		GameState.unlocked_spells.assign(data.unlocked_spells)
+	else:
+		GameState.unlocked_spells.clear()
 	
 	if data.has("world_seed"):
 		# Store the seed in GameState meta so GameManager can pick it up 
@@ -330,12 +337,15 @@ func load_game(slot_id: int) -> bool:
 	# 4. 恢复背包
 	if data.has("inventory") and GameState.inventory:
 		var inv_mgr = GameState.inventory
-		if "backpack" in inv_mgr and inv_mgr.backpack:
-			inv_mgr.backpack.slots = data.inventory.get("backpack", [])
-			inv_mgr.backpack.content_changed.emit(-1)
-		if "hotbar" in inv_mgr and inv_mgr.hotbar:
-			inv_mgr.hotbar.slots = data.inventory.get("hotbar", [])
-			inv_mgr.hotbar.content_changed.emit(-1)
+		if inv_mgr.has_method("load_inventory_data"):
+			inv_mgr.load_inventory_data(data.inventory)
+		else:
+			if "backpack" in inv_mgr and inv_mgr.backpack:
+				inv_mgr.backpack.slots = data.inventory.get("backpack", [])
+				inv_mgr.backpack.content_changed.emit(-1)
+			if "hotbar" in inv_mgr and inv_mgr.hotbar:
+				inv_mgr.hotbar.slots = data.inventory.get("hotbar", [])
+				inv_mgr.hotbar.content_changed.emit(-1)
 		
 	# 5. 恢复建筑列表
 	GameState.set_meta("load_buildings", data.get("buildings", []))
@@ -422,10 +432,12 @@ func _unpack_persist_group(data: Dictionary) -> void:
 
 func _get_world_seed() -> int:
 	# Try to find the active WorldGenerator
-	var world_gen = get_tree().get_first_node_in_group("world_generators")
+	var world_gen = get_tree().get_first_node_in_group("world_generator")
 	if not world_gen:
 		var root = get_tree().current_scene
 		if root: world_gen = root.find_child("WorldGenerator", true, false)
+	if not world_gen:
+		world_gen = get_tree().get_first_node_in_group("world_generators")
 	
 	if world_gen and "seed_value" in world_gen:
 		return world_gen.seed_value
@@ -501,9 +513,10 @@ func _unpack_hostiles(list: Array) -> void:
 			elif "health" in mob:
 				mob.health = info.hp
 				if "max_health" in mob: mob.max_health = info.max_hp
-			
-			mob.add_to_group("hostile_npcs") # Ensure in group
+
 			entities_layer.add_child(mob)
+			if mob.has_method("refresh_runtime_groups"):
+				mob.refresh_runtime_groups()
 			
 			if mob.has_method("_update_hp_bar"):
 				mob._update_hp_bar()

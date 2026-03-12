@@ -88,7 +88,9 @@ func change_state(new_state: State) -> void:
 					var world_gen = scene_root.find_child("WorldGenerator", true, false)
 					if not world_gen:
 						# 最后的努力：通过组寻找
-						var gens = get_tree().get_nodes_in_group("world_generators")
+						var gens = get_tree().get_nodes_in_group("world_generator")
+						if gens.is_empty():
+							gens = get_tree().get_nodes_in_group("world_generators")
 						if not gens.is_empty(): world_gen = gens[0]
 					
 					if world_gen:
@@ -202,6 +204,7 @@ func reset_game_state() -> void:
 	is_new_game = false
 	_is_starting_new_game = false
 	GameState.player_data = null
+	GameState.unlocked_spells.clear()
 	
 	# 重置持久化层
 	if SaveManager and SaveManager._cached_player_data:
@@ -342,18 +345,31 @@ func _on_reload_finished() -> void:
 		
 		# 映射数据到新对象
 		p_data.display_name = saved.get("display_name", "冒险者")
-		p_data.health = saved.get("health", 100)
-		p_data.max_health = saved.get("max_health", 100)
-		p_data.strength = saved.get("strength", 10)
-		p_data.agility = saved.get("agility", 10)
-		p_data.intelligence = saved.get("intelligence", 10)
-		p_data.constitution = saved.get("constitution", 10)
+		
+		# 首先恢复核心数据结构 ( Attributes & Stat Levels ) 以确保 max_health 等计算属性正确
+		if saved.has("stat_levels"): 
+			p_data.stat_levels = saved.stat_levels
+			
+		if saved.has("attributes"):
+			p_data.attributes = saved.attributes
+		
+		# 如果是旧存档或者数据不全，尝试使用单个属性赋值 (注意：Legacy setter 会修改 stat_levels)
+		if not saved.has("stat_levels"):
+			p_data.strength = saved.get("strength", 10)
+			p_data.agility = saved.get("agility", 10)
+			p_data.intelligence = saved.get("intelligence", 10)
+			p_data.constitution = saved.get("constitution", 10)
+			# 仅当没有属性系统支持时才手动设置 max_health，否则依赖自动计算
+			p_data.max_health = saved.get("max_health", 100)
+			
 		p_data.stat_points = int(saved.get("stat_points", 0))
 		p_data.level = int(saved.get("level", 1))
 		p_data.experience = float(saved.get("experience", 0.0))
 		
+		# 恢复当前状态 (依赖 max_health 计算完毕)
+		p_data.health = saved.get("health", 100)
+		
 		# 血脉系统属性
-		if saved.has("stat_levels"): p_data.stat_levels = saved.stat_levels
 		if saved.has("mutations"): p_data.mutations = saved.mutations
 		p_data.generation = int(saved.get("generation", 1))
 		p_data.current_age = float(saved.get("age", saved.get("current_age", 20.0)))

@@ -51,6 +51,7 @@ func register_layer(index: int, node: Node) -> void:
 	# 物理隔离核心逻辑：
 	# 为每个图层唯一化 TileSet 并设置其碰撞层位
 	if node is TileMapLayer:
+		node.collision_enabled = not bool(node.get_meta("background_only", false))
 		if node.tile_set:
 			# 复制一份 TileSet 资源以实现独立配置
 			node.tile_set = node.tile_set.duplicate()

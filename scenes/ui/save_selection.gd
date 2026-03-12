@@ -55,10 +55,14 @@ func _update_slot_text(slot_id: int) -> void:
 	if info.is_empty():
 		btn.text = "存档 %d\n[ 空 ]" % slot_id
 	else:
-		btn.text = "存档 %d\n%s  |  %s" % [
+		var topology_mode := String(info.get("topology_mode", "legacy_infinite"))
+		var world_size := String(info.get("world_size_preset", "legacy"))
+		btn.text = "存档 %d\n%s  |  %s\n%s / %s" % [
 			slot_id, 
 			info.get("player_name", "未知"), 
-			info.get("display_time", "")
+			info.get("display_time", ""),
+			topology_mode,
+			world_size
 		]
 
 func _on_slot_pressed(slot_id: int) -> void:

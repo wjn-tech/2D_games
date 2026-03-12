@@ -97,6 +97,8 @@ var noise_temperature: FastNoiseLite = FastNoiseLite.new()
 var noise_moisture: FastNoiseLite = FastNoiseLite.new()
 var noise_cave: FastNoiseLite = FastNoiseLite.new()
 var noise_tunnel: FastNoiseLite = FastNoiseLite.new()
+var noise_cave_region: FastNoiseLite = FastNoiseLite.new()
+var noise_surface_feature: FastNoiseLite = FastNoiseLite.new()
 var noise_tree_cluster: FastNoiseLite = FastNoiseLite.new() # 树木聚簇噪声
 var noise_tree_density: FastNoiseLite = FastNoiseLite.new() # 树木密度噪声
 
@@ -119,6 +121,21 @@ enum BiomeType {
 	UNDERGROUND_TUNDRA, # 冻土层 (冰窟)
 	UNDERGROUND_SWAMP,  # 淤泥层 (毒气穴)
 }
+
+const CAVE_REGION_SURFACE := "Surface"
+const CAVE_REGION_TUNNEL := "Tunnel"
+const CAVE_REGION_CHAMBER := "Chamber"
+const CAVE_REGION_OPEN_CAVERN := "OpenCavern"
+const CAVE_REGION_POCKET := "Pocket"
+const CAVE_REGION_CONNECTOR := "Connector"
+const CAVE_REGION_SOLID := "Solid"
+
+const SURFACE_FEATURE_NONE := "None"
+const SURFACE_FEATURE_STONE_OUTCROP := "StoneOutcrop"
+const SURFACE_FEATURE_DESERT_SPIRE := "DesertSpire"
+const SURFACE_FEATURE_FROST_SPIRE := "FrostSpire"
+const SURFACE_FEATURE_MUD_MOUND := "MudMound"
+const SURFACE_FEATURE_GRASS_KNOLL := "GrassKnoll"
 
 # 2D 噪声缩放因子 (1.0 表示直接使用噪声频率)
 @export var biome_noise_scale: float = 1.0 
@@ -187,6 +204,7 @@ var pois: Dictionary = {} # {Vector2i: String}
 
 func _ready() -> void:
 	add_to_group("world_generator")
+	add_to_group("world_generators")
 	# 确保每一局启动时都有真正的随机底色
 	randomize()
 	if seed_value == 0:
@@ -200,6 +218,13 @@ func _ready() -> void:
 			if l:
 				l.tile_set = layer_0.tile_set
 				
+	# 标记只用于视觉填充的背景层，避免被当作实体墙参与物理。
+	if layer_1:
+		layer_1.set_meta("background_only", true)
+		layer_1.collision_enabled = false
+	if layer_2:
+		layer_2.collision_enabled = false
+
 	# 注册图层
 	if LayerManager:
 		LayerManager.register_layer(0, layer_0)
@@ -230,6 +255,7 @@ func _ready() -> void:
 	
 	layer_0.add_to_group("world_tiles")
 	add_to_group("world_generator")
+	add_to_group("world_generators")
 	
 	check_tileset_ids()
 
@@ -271,6 +297,16 @@ func _setup_noises() -> void:
 	noise_tunnel.fractal_type = FastNoiseLite.FRACTAL_RIDGED 
 	noise_tunnel.fractal_octaves = 2
 
+	# 4.5 洞穴区域与地表地貌特征噪声
+	noise_cave_region.seed = seed_value + 1601
+	noise_cave_region.frequency = 0.022
+	noise_cave_region.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	noise_cave_region.fractal_octaves = 2
+
+	noise_surface_feature.seed = seed_value + 2201
+	noise_surface_feature.frequency = 0.03
+	noise_surface_feature.noise_type = FastNoiseLite.TYPE_VALUE
+
 	# 5. 矿物生成噪声
 	noise_mineral_common.seed = seed_value + 3001
 	noise_mineral_common.frequency = mineral_noise_freq
@@ -309,14 +345,7 @@ func _get_mineral_at(gx: int, gy: int, depth: float) -> Vector2i:
 		if n_legend > 0.88: return diamond_tile
 		# 魔法加速石 (Very Rare)
 		if n_legend > 0.82: return magic_speed_stone_tile
-		# 金矿 (Rare)
-		if n_rare > 0.6: return gold_tile
-		# 法杖核心 (Rare)
-		if n_rare > 0.75: return staff_core_tile # Note: logic overlap, order matters. rare > 0.75 is subset of > 0.6? No, wait. 0.75 is scarcer. 
-		# If I put > 0.6 first, > 0.75 will never hit if I return immediately.
-		# So put rarer things first.
-		
-		# Re-ordering for rarity:
+		# 深层稀有矿物先判定，避免被更宽的金矿阈值吞掉。
 		if n_rare > 0.8: return staff_core_tile
 		if n_rare > 0.6: return gold_tile # Gold is more common than Staff Core in deep
 		
@@ -496,9 +525,163 @@ func get_surface_height_at(global_x: int) -> float:
 	
 	return 300.0 + (blended_cont_val * biome_amp)
 
+func _get_vertical_connector_distance(global_x: int) -> float:
+	var interval := 96
+	var seed_offset := posmod(seed_value, interval)
+	var remainder := posmod(global_x + seed_offset, interval)
+	return min(remainder, interval - remainder)
+
+func _get_vertical_connector_depth_distance(depth: float) -> float:
+	var interval := 72.0
+	var seed_offset := float(posmod(seed_value / 3, int(interval)))
+	var remainder := fposmod(depth + seed_offset, interval)
+	return min(remainder, interval - remainder)
+
+func _get_cave_lane_y(global_x: int, surface_base: float) -> float:
+	return surface_base + 54.0 + sin((float(global_x) * 0.05) + (float(seed_value % 2048) * 0.003)) * 12.0
+
+func get_cave_region_info_at_tile(global_x: int, global_y: int) -> Dictionary:
+	var surface_base = get_surface_height_at(global_x)
+	var depth = global_y - surface_base
+	var info = {
+		"region": CAVE_REGION_SURFACE,
+		"reachable": true,
+		"openness": 1.0,
+		"depth": depth,
+	}
+
+	if depth < 28.0:
+		return info
+
+	var lane_y = _get_cave_lane_y(global_x, surface_base)
+	var lane_dist = abs(global_y - lane_y)
+	var connector_dist = _get_vertical_connector_distance(global_x)
+	var connector_depth_dist = _get_vertical_connector_depth_distance(depth)
+	var chamber_val = noise_cave_region.get_noise_2d(global_x * 0.025, global_y * 0.025)
+	var pocket_val = noise_cave_region.get_noise_2d(global_x * 0.055 + 120.0, global_y * 0.055 - 87.0)
+
+	info["region"] = CAVE_REGION_SOLID
+	info["reachable"] = false
+	info["openness"] = 0.0
+
+	if depth > 36.0 and depth < 240.0 and connector_dist < 4.0 and connector_depth_dist < 10.0:
+		info["region"] = CAVE_REGION_CONNECTOR
+		info["reachable"] = true
+		info["openness"] = 0.55
+	elif depth > 48.0 and chamber_val > 0.78:
+		info["region"] = CAVE_REGION_OPEN_CAVERN
+		info["reachable"] = true
+		info["openness"] = 0.9
+	elif depth > 40.0 and chamber_val > 0.62:
+		info["region"] = CAVE_REGION_CHAMBER
+		info["reachable"] = true
+		info["openness"] = 0.72
+	elif depth > 24.0 and lane_dist < 5.0:
+		info["region"] = CAVE_REGION_TUNNEL
+		info["reachable"] = true
+		info["openness"] = 0.35
+	elif depth > 54.0 and pocket_val > 0.76:
+		info["region"] = CAVE_REGION_POCKET
+		info["reachable"] = lane_dist < 16.0 or chamber_val > 0.5 or connector_dist < 7.0
+		info["openness"] = 0.18
+
+	return info
+
+func get_cave_region_info_at_pos(global_pos: Vector2) -> Dictionary:
+	var tile_x = int(global_pos.x / 16.0)
+	var tile_y = int(global_pos.y / 16.0)
+	return get_cave_region_info_at_tile(tile_x, tile_y)
+
+func get_surface_feature_tag_at_tile(global_x: int, global_y: int) -> String:
+	var surface_y = int(floor(get_surface_height_at(global_x)))
+	if abs(global_y - surface_y) > 8:
+		return SURFACE_FEATURE_NONE
+
+	var biome = get_biome_at(global_x, 0)
+	var feature_val = (noise_surface_feature.get_noise_2d(global_x, 0) + 1.0) * 0.5
+	match biome:
+		BiomeType.DESERT:
+			return SURFACE_FEATURE_DESERT_SPIRE if feature_val > 0.82 else SURFACE_FEATURE_NONE
+		BiomeType.TUNDRA:
+			return SURFACE_FEATURE_FROST_SPIRE if feature_val > 0.78 else SURFACE_FEATURE_NONE
+		BiomeType.SWAMP:
+			return SURFACE_FEATURE_MUD_MOUND if feature_val > 0.76 else SURFACE_FEATURE_NONE
+		BiomeType.PLAINS:
+			return SURFACE_FEATURE_GRASS_KNOLL if feature_val > 0.8 else SURFACE_FEATURE_NONE
+		BiomeType.FOREST:
+			return SURFACE_FEATURE_STONE_OUTCROP if feature_val > 0.77 else SURFACE_FEATURE_NONE
+		_:
+			return SURFACE_FEATURE_NONE
+
+func get_surface_feature_tag_at_pos(global_pos: Vector2) -> String:
+	var tile_x = int(global_pos.x / 16.0)
+	var tile_y = int(global_pos.y / 16.0)
+	return get_surface_feature_tag_at_tile(tile_x, tile_y)
+
+func _should_carve_accessible_cave(global_x: int, global_y: int, surface_base: float, is_spawn_protected: bool) -> bool:
+	if is_spawn_protected:
+		return false
+
+	var depth = global_y - surface_base
+	if depth <= 15.0:
+		return false
+
+	var c_val = noise_cave.get_noise_2d(global_x, global_y)
+	var t_val = noise_tunnel.get_noise_2d(global_x, global_y)
+	var cave_thresh = 0.55 if depth < 80.0 else 0.48
+	var tunnel_thresh = 0.85
+	var noise_carve = c_val > cave_thresh or t_val > tunnel_thresh
+	var cave_info = get_cave_region_info_at_tile(global_x, global_y)
+	var lane_dist = abs(global_y - _get_cave_lane_y(global_x, surface_base))
+
+	match cave_info["region"]:
+		CAVE_REGION_CONNECTOR:
+			return true
+		CAVE_REGION_OPEN_CAVERN:
+			return lane_dist <= 12.0 or noise_carve
+		CAVE_REGION_CHAMBER:
+			return lane_dist <= 8.0 or noise_carve
+		CAVE_REGION_TUNNEL:
+			return lane_dist <= 3.0 or noise_carve
+		CAVE_REGION_POCKET:
+			return noise_carve and cave_info["reachable"]
+		_:
+			return noise_carve
+
+func _apply_surface_features(coord: Vector2i, result: Dictionary, surface_cache: Array) -> void:
+	for x in range(3, 61):
+		var global_x = coord.x * 64 + x
+		var surface_base = surface_cache[x]
+		var top_y = int(floor(surface_base))
+		var feature = get_surface_feature_tag_at_tile(global_x, top_y)
+		if feature == SURFACE_FEATURE_NONE:
+			continue
+		if _is_in_structure_forbidden_zone(global_x, top_y):
+			continue
+
+		match feature:
+			SURFACE_FEATURE_DESERT_SPIRE:
+				for h in range(1, 4):
+					result[0][Vector2i(x, top_y - h)] = {"source": tile_source_id, "atlas": biome_params[BiomeType.DESERT]["stone_block"]}
+			SURFACE_FEATURE_FROST_SPIRE:
+				for h in range(1, 5):
+					result[0][Vector2i(x, top_y - h)] = {"source": tile_source_id, "atlas": biome_params[BiomeType.TUNDRA]["stone_block"]}
+			SURFACE_FEATURE_MUD_MOUND:
+				for ox in range(-1, 2):
+					result[0][Vector2i(x + ox, top_y - 1)] = {"source": tile_source_id, "atlas": biome_params[BiomeType.SWAMP]["surface_block"]}
+			SURFACE_FEATURE_GRASS_KNOLL:
+				result[0][Vector2i(x, top_y - 1)] = {"source": grass_dirt_source_id, "atlas": grass_tile}
+			SURFACE_FEATURE_STONE_OUTCROP:
+				for ox in range(-1, 2):
+					if ox == 0:
+						result[0][Vector2i(x + ox, top_y - 1)] = {"source": tile_source_id, "atlas": stone_tile}
+					elif abs(ox) == 1 and (noise_surface_feature.get_noise_2d(global_x + ox, 20) > -0.2):
+						result[0][Vector2i(x + ox, top_y)] = {"source": tile_source_id, "atlas": stone_tile}
+
 func generate_chunk_cells(coord: Vector2i) -> Dictionary:
 	var result = { 0: {}, 1: {}, 2: {} }
 	var chunk_origin = coord * 64
+	var surface_cache: Array = []
 	
 	for x in range(64):
 		var global_x = chunk_origin.x + x
@@ -517,6 +700,7 @@ func generate_chunk_cells(coord: Vector2i) -> Dictionary:
 		var blended_cont_val = lerp(0.0, cont_val, spawn_flat_weight)
 		
 		var surface_base = 300.0 + (blended_cont_val * biome_amp)
+		surface_cache.append(surface_base)
 		
 		for y in range(64):
 			var global_y = chunk_origin.y + y
@@ -530,16 +714,8 @@ func generate_chunk_cells(coord: Vector2i) -> Dictionary:
 				var dist_from_surf = global_y - surface_base
 				var is_spawn_protected = dist_to_spawn_x < 20 and dist_from_surf < 40.0
 				
-				if dist_from_surf > 15.0 and not is_spawn_protected:
-					var c_val = noise_cave.get_noise_2d(global_x, global_y)
-					var t_val = noise_tunnel.get_noise_2d(global_x, global_y)
-					
-					# 调高阈值以减少大坑，增加实心面积
-					var cave_thresh = 0.55 if dist_from_surf < 80 else 0.48
-					var tunnel_thresh = 0.85
-					
-					if c_val > cave_thresh or t_val > tunnel_thresh:
-						is_solid = false
+				if _should_carve_accessible_cave(global_x, global_y, surface_base, is_spawn_protected):
+					is_solid = false
 					
 			if is_solid:
 				# --- 核心修改：基于位置的生态判定 ---
@@ -586,7 +762,8 @@ func generate_chunk_cells(coord: Vector2i) -> Dictionary:
 					"source": bg_data.get("source_id", tile_source_id),
 					"atlas": bg_tile
 				}
-						
+
+	_apply_surface_features(coord, result, surface_cache)
 	return result
 
 func check_tileset_ids() -> void:

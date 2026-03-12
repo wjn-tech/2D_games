@@ -32,6 +32,11 @@ signal slime_landed
 
 func _ready() -> void:
 	super._ready() 
+	if hsm:
+		hsm.set_active(false)
+	if bt_player:
+		bt_player.active = false
+		bt_player.behavior_tree = null
 	add_to_group("enemies") 
 	if min_visual:
 		original_scale = min_visual.scale
@@ -291,9 +296,9 @@ func _apply_damage(player: Node) -> void:
 	
 	# Determine knockback direction (centralized in CombatManager, but we pass custom data if needed)
 	if CombatManager:
-		CombatManager.deal_damage(self, player, damage_amount, "physical")
+		CombatManager.deal_damage(self, player, damage_amount, "slime")
 	else:
-		player.take_damage(damage_amount, "physical")
+		player.take_damage(damage_amount, "slime")
 		if player.has_method("apply_knockback"):
 			var kb_dir = (player.global_position - global_position).normalized()
 			player.apply_knockback(kb_dir * 400.0)

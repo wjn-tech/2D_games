@@ -1,0 +1,21 @@
+[gd_resource type="BehaviorTree" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/systems/npc/ai/tasks/bt_flying_chase.gd" id="1_task"]
+
+[sub_resource type="BTAction" id="BTAction_fly"]
+script = ExtResource("1_task")
+move_speed = 128.0
+dash_speed = 660.0
+wave_amplitude = 28.0
+dash_cooldown = 2.2
+charge_time = 0.18
+dash_duration = 0.32
+recover_time = 0.14
+dash_trigger_range = 320.0
+dash_min_range = 54.0
+dash_damage = 10.0
+dash_damage_type = "physical"
+dash_hit_radius = 28.0
+
+[resource]
+root_task = SubResource("BTAction_fly")

@@ -262,7 +262,7 @@ func setup(projectile: Node2D, behavior: String, element: String):
 	# Reset State
 	_pulse_speed = 0.0
 	_pulse_amount = 0.0
-	_jitter_amount = 0.5 # Default tiny jitter for everything (organic feel)
+	_jitter_amount = 0.0
 	_spin_speed = 0.0
 	_orbit_speed = 0.0
 	_base_scale = Vector2.ONE
@@ -816,14 +816,19 @@ func _apply_behavior_identity():
 			# VOID: Light-eating abyss with Screen Distortion
 			core_color = Color(0.0, 0.0, 0.0) 
 			rim_color = Color(0.5, 0.0, 1.0) 
+			_pulse_speed = 3.0
+			_pulse_amount = 0.06
+			_spin_speed = 0.6
 			
 			# Core uses Subtractive Mode to create absolute black
 			_core_particles.material.blend_mode = CanvasItemMaterial.BLEND_MODE_SUB
 			_trail_particles.material.blend_mode = CanvasItemMaterial.BLEND_MODE_SUB
+			_core_particles.amount = 48
 			
 			# Setup Distortion FX
 			_back_buffer = BackBufferCopy.new()
-			_back_buffer.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
+			_back_buffer.copy_mode = BackBufferCopy.COPY_MODE_RECT
+			_back_buffer.rect = Rect2(-36, -36, 72, 72)
 			add_child(_back_buffer)
 			
 			_distortion_rect = ColorRect.new()
@@ -831,7 +836,7 @@ func _apply_behavior_identity():
 			shader.code = """
 			shader_type canvas_item;
 			uniform sampler2D screen_texture : hint_screen_texture, repeat_disable, filter_nearest;
-			uniform float strength = 0.08;
+			uniform float strength = 0.05;
 
 			void fragment() {
 				vec2 dir = UV - vec2(0.5);
@@ -849,12 +854,12 @@ func _apply_behavior_identity():
 			smaterial.shader = shader
 			_distortion_rect.material = smaterial
 			_distortion_rect.color = Color(1, 1, 1, 0) # Make the base rect transparent so it doesn't draw a white square
-			_distortion_rect.custom_minimum_size = Vector2(80, 80)
-			_distortion_rect.position = Vector2(-40, -40)
+			_distortion_rect.custom_minimum_size = Vector2(72, 72)
+			_distortion_rect.position = Vector2(-36, -36)
 			add_child(_distortion_rect)
 			
 			c_mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-			c_mat.emission_sphere_radius = 6.0
+			c_mat.emission_sphere_radius = 5.0
 			c_mat.gravity = Vector3.ZERO
 			c_mat.color_ramp = _create_pixel_fade_gradient(Color(1.0, 1.0, 1.0, 1.0)) # Subtracts full white -> becomes black
 			
@@ -862,37 +867,37 @@ func _apply_behavior_identity():
 			var p_mat = MagicParticleFactory.get_material_plasma()
 			p_mat.color_ramp = _create_complex_fade_gradient(Color(1.0, 1.0, 1.0), Color(0.8, 0.8, 0.8)) # Deep subtractive shadow
 			p_mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
-			p_mat.emission_ring_radius = 20.0
-			p_mat.emission_ring_inner_radius = 18.0
-			p_mat.radial_accel_min = -150.0 
-			p_mat.radial_accel_max = -100.0
+			p_mat.emission_ring_radius = 16.0
+			p_mat.emission_ring_inner_radius = 14.0
+			p_mat.radial_accel_min = -120.0 
+			p_mat.radial_accel_max = -80.0
 			p_mat.gravity = Vector3.ZERO
-			p_mat.tangential_accel_min = 50.0 
-			p_mat.tangential_accel_max = 100.0
+			p_mat.tangential_accel_min = 25.0 
+			p_mat.tangential_accel_max = 60.0
 			
 			_secondary_trail_particles = GPUParticles2D.new()
 			_secondary_trail_particles.local_coords = false
 			_secondary_trail_particles.material = CanvasItemMaterial.new()
 			_secondary_trail_particles.material.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
 			_secondary_trail_particles.texture = _create_pixel_dot_texture()
-			_secondary_trail_particles.fixed_fps = 0
+			_secondary_trail_particles.fixed_fps = 30
 			_secondary_trail_particles.interpolate = true
 			
 			var s_mat = MagicParticleFactory.get_material_sparks()
 			s_mat.color_ramp = _create_complex_fade_gradient(Color(2.0, 0.0, 3.0), Color(0.3, 0.0, 1.0))
 			s_mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-			s_mat.emission_sphere_radius = 50.0
-			s_mat.radial_accel_min = -300.0
-			s_mat.radial_accel_max = -200.0
+			s_mat.emission_sphere_radius = 32.0
+			s_mat.radial_accel_min = -220.0
+			s_mat.radial_accel_max = -140.0
 			s_mat.gravity = Vector3.ZERO
 			_secondary_trail_particles.process_material = s_mat
-			_secondary_trail_particles.amount = 100
-			_secondary_trail_particles.lifetime = 0.5
+			_secondary_trail_particles.amount = 36
+			_secondary_trail_particles.lifetime = 0.35
 			add_child(_secondary_trail_particles)
 			
 			_trail_particles.process_material = p_mat
-			p_amount = 200 # Dense ring
-			p_lifetime = 0.4 
+			p_amount = 96
+			p_lifetime = 0.3
 
 		_:
 			# Falback

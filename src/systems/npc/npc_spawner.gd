@@ -24,6 +24,12 @@ class SpawnRule:
 	var biomes: Array
 	var zones: Array 
 	var time_constraints: Array
+	var cave_regions: Array = ["Any"]
+	var feature_tags: Array = ["Any"]
+	var min_openness: float = 0.0
+	var requires_reachable_cave: bool = false
+	var group_min: int = 1
+	var group_max: int = 1
 	var requires_wall: bool = false 
 	var requires_no_wall: bool = false 
 	var origin_type: String = "natural"
@@ -67,26 +73,58 @@ func reset() -> void:
 func _build_registry() -> void:
 	# --- 规则现在包含 max_count ---
 	# 史莱姆：种群较大
-	var slime = SpawnRule.new("res://scenes/npc/slime.tscn", 100, ["Forest", "Plains", "Desert", "Swamp", "Any"], [Zone.SURFACE, Zone.UNDERGROUND], ["Any"], "falling", 8)
+	var slime = SpawnRule.new("res://scenes/npc/slime.tscn", 80, ["Forest", "Plains", "Any"], [Zone.SURFACE], ["Any"], "falling", 8)
 	slime.requires_no_wall = true 
+	slime.group_min = 1
+	slime.group_max = 2
 	spawn_table.append(slime)
+
+	var bog_slime = SpawnRule.new("res://scenes/npc/bog_slime.tscn", 110, ["Swamp"], [Zone.SURFACE, Zone.UNDERGROUND], ["Any"], "falling", 6)
+	bog_slime.requires_no_wall = true
+	bog_slime.feature_tags = ["MudMound", "Any"]
+	bog_slime.cave_regions = ["Pocket", "OpenCavern", "Any"]
+	bog_slime.min_openness = 0.12
+	bog_slime.group_min = 1
+	bog_slime.group_max = 2
+	spawn_table.append(bog_slime)
 	
-	# 僵尸（敌国追兵）：种群适中，任意时间生成
-	var zombie = SpawnRule.new("res://scenes/npc/zombie.tscn", 80, ["Any"], [Zone.SURFACE], ["Any"], "burrow", 5)
+	# 僵尸（敌国追兵）：偏向平原与林地的地表重装近战
+	var zombie = SpawnRule.new("res://scenes/npc/zombie.tscn", 95, ["Plains", "Forest"], [Zone.SURFACE], ["Any"], "burrow", 5)
 	zombie.requires_no_wall = true 
 	spawn_table.append(zombie)
 	
-	# 骷髅（地底洞人）：种群稍大，任意时间生成
-	var skeleton = SpawnRule.new("res://scenes/npc/skeleton.tscn", 120, ["Any"], [Zone.UNDERGROUND, Zone.CAVERN], ["Any"], "burrow", 6)
+	# 骷髅投矛手：偏向连接洞与洞室
+	var skeleton = SpawnRule.new("res://scenes/npc/skeleton.tscn", 105, ["Any"], [Zone.UNDERGROUND, Zone.CAVERN], ["Any"], "burrow", 6)
+	skeleton.cave_regions = ["Tunnel", "Chamber", "Connector"]
+	skeleton.min_openness = 0.3
+	skeleton.requires_reachable_cave = true
 	spawn_table.append(skeleton)
+
+	var cave_bat = SpawnRule.new("res://scenes/npc/cave_bat.tscn", 115, ["Any"], [Zone.UNDERGROUND, Zone.CAVERN], ["Any"], "natural", 6)
+	cave_bat.cave_regions = ["OpenCavern", "Chamber"]
+	cave_bat.min_openness = 0.55
+	cave_bat.requires_reachable_cave = true
+	cave_bat.group_min = 2
+	cave_bat.group_max = 4
+	spawn_table.append(cave_bat)
 	
 	# 蚁狮：较少
 	var antlion = SpawnRule.new("res://scenes/npc/antlion.tscn", 150, ["Desert"], [Zone.SURFACE], ["Day"], "emerging", 3)
 	antlion.requires_no_wall = true
+	antlion.feature_tags = ["DesertSpire", "Any"]
 	spawn_table.append(antlion)
+
+	var frost_bat = SpawnRule.new("res://scenes/npc/frost_bat.tscn", 90, ["Tundra"], [Zone.SURFACE, Zone.UNDERGROUND, Zone.CAVERN], ["Any"], "natural", 4)
+	frost_bat.cave_regions = ["OpenCavern", "Chamber", "Any"]
+	frost_bat.feature_tags = ["FrostSpire", "Any"]
+	frost_bat.min_openness = 0.4
+	frost_bat.group_min = 1
+	frost_bat.group_max = 3
+	spawn_table.append(frost_bat)
 
 	# 恶魔之眼：空中单位较少
 	var eye = SpawnRule.new("res://scenes/npc/demon_eye.tscn", 70, ["Any"], [Zone.SURFACE], ["Night"], "natural", 3)
+	eye.feature_tags = ["Any"]
 	spawn_table.append(eye)
 
 func _process(delta: float) -> void:
@@ -192,7 +230,9 @@ func _try_spawn_cycle() -> void:
 ## 新增：自然生成逻辑 (Plausible Origins)
 func _execute_plausible_spawn(rule: SpawnRule, pos: Vector2) -> void:
 	# 立即增加 pending_spawns 计数 (按类型)，防止新的循环因为看不到实际生成的实体而过度请求生成
-	_increment_pending(rule.scene_path)
+	var spawn_count = randi_range(rule.group_min, rule.group_max)
+	for _i in range(spawn_count):
+		_increment_pending(rule.scene_path)
 	
 	match rule.origin_type:
 		"burrow":
@@ -201,23 +241,35 @@ func _execute_plausible_spawn(rule: SpawnRule, pos: Vector2) -> void:
 			print("EcologicalSpawn: [", rule.scene_path.get_file().get_basename(), "] 正在地下挖掘...")
 			# 注意：await 期间 pending_spawns 保持增加，阻止新的 spawn_cycle 触发
 			await get_tree().create_timer(1.0).timeout
-			_spawn_mob(rule.scene_path, pos)
+			_spawn_group(rule.scene_path, pos, spawn_count, false)
 			
 		"falling":
 			# 从高处跳下：用于史莱姆等，初始位置略高
-			var fall_pos = pos + Vector2(0, -60)
-			_spawn_mob(rule.scene_path, fall_pos)
+			_spawn_group(rule.scene_path, pos + Vector2(0, -60), spawn_count, false)
 			
 		"emerging":
 			# 伪装显现：用于蚁狮
-			_spawn_mob(rule.scene_path, pos)
+			_spawn_group(rule.scene_path, pos, spawn_count, false)
 			
 		_:
 			# 默认生成
-			_spawn_mob(rule.scene_path, pos)
+			var spawn_pos = pos
+			if rule.scene_path.contains("demon_eye"):
+				# 恶魔眼属于飞行单位，默认生成点上移，避免贴地出生。
+				spawn_pos += Vector2(0, -180)
+			_spawn_group(rule.scene_path, spawn_pos, spawn_count, rule.scene_path.contains("eye") or rule.scene_path.contains("bat"))
 			
 	# 生成完成后减少 pending 计数（此时 _spawn_mob 已经将实体放入树中，active_mobs 应该增加了）
-	_decrement_pending(rule.scene_path)
+	for _i in range(spawn_count):
+		_decrement_pending(rule.scene_path)
+
+func _spawn_group(path: String, origin: Vector2, count: int, aerial: bool) -> void:
+	for index in range(count):
+		var offset_x = randf_range(-80.0, 80.0) + (index * 24.0)
+		var offset_y = randf_range(-24.0, 24.0)
+		if aerial:
+			offset_y -= randf_range(40.0, 120.0)
+		_spawn_mob(path, origin + Vector2(offset_x, offset_y))
 
 func _analyze_context(pos: Vector2) -> Dictionary:
 	var ctx = {}
@@ -247,11 +299,26 @@ func _analyze_context(pos: Vector2) -> Dictionary:
 				ctx["biome"] = _map_biome(b)
 	
 	ctx["time"] = "Day"
-	var sm = get_node_or_null("/root/SettlementManager")
-	if sm and sm.is_night: 
-		ctx["time"] = "Night"
+	var chron = get_node_or_null("/root/Chronometer")
+	if chron and chron.has_method("get_time_phase"):
+		ctx["time"] = "Night" if chron.get_time_phase() == "Night" else "Day"
+	else:
+		var sm = get_node_or_null("/root/SettlementManager")
+		if sm and sm.is_night:
+			ctx["time"] = "Night"
 	
 	ctx["has_wall"] = _has_background_wall(pos)
+	ctx["feature_tag"] = "Any"
+	ctx["cave_region"] = "Surface"
+	ctx["cave_reachable"] = true
+	ctx["cave_openness"] = 1.0
+	if wg and wg.has_method("get_surface_feature_tag_at_pos"):
+		ctx["feature_tag"] = wg.get_surface_feature_tag_at_pos(pos)
+	if wg and wg.has_method("get_cave_region_info_at_pos"):
+		var cave_info = wg.get_cave_region_info_at_pos(pos)
+		ctx["cave_region"] = cave_info.get("region", "Surface")
+		ctx["cave_reachable"] = cave_info.get("reachable", true)
+		ctx["cave_openness"] = cave_info.get("openness", 1.0)
 	return ctx
 
 func _map_biome(val: int) -> String:
@@ -277,6 +344,10 @@ func _is_rule_valid(rule: SpawnRule, ctx: Dictionary) -> bool:
 	if not rule.zones.has(ctx["zone"]): return false
 	if not rule.biomes.has("Any") and not rule.biomes.has(ctx["biome"]): return false
 	if not rule.time_constraints.has("Any") and not rule.time_constraints.has(ctx["time"]): return false
+	if not rule.feature_tags.has("Any") and not rule.feature_tags.has(ctx["feature_tag"]): return false
+	if not rule.cave_regions.has("Any") and not rule.cave_regions.has(ctx["cave_region"]): return false
+	if ctx["cave_openness"] < rule.min_openness: return false
+	if rule.requires_reachable_cave and not ctx["cave_reachable"]: return false
 	
 	if rule.requires_no_wall and ctx["has_wall"]:
 		if ctx["zone"] == Zone.SURFACE or ctx["zone"] == Zone.SPACE: return false
@@ -361,23 +432,27 @@ func _spawn_mob(path: String, pos: Vector2) -> void:
 		# 防止因为模板资源（.tres）在内存中被旧实体修改，导致新实体“继承”残血。
 		mob.npc_data.health = mob.npc_data.max_health
 			
-		mob.npc_data.alignment = "Hostile"		
+		mob.npc_data.alignment = "Hostile"
+		mob.npc_data.npc_type = "Hostile"
 		# 根据NPC类型设置自定义display_name
 		if path.contains("zombie"):
-			mob.npc_data.display_name = "NPC_ZOMBIE_SOLDIER"
+			mob.npc_data.display_name = "荒原追兵"
 		elif path.contains("skeleton"):
-			mob.npc_data.display_name = "NPC_SKELETON_CAVEMAN"
-		
-		# 强制添加到敌对NPC组，以便密度检查生效
-		if not mob.is_in_group("hostile_npcs"):
-			mob.add_to_group("hostile_npcs")
+			mob.npc_data.display_name = "洞窟骷髅"
+		elif path.contains("bog_slime"):
+			mob.npc_data.display_name = "沼泽史莱姆"
+		elif path.contains("cave_bat"):
+			mob.npc_data.display_name = "洞穴蝙蝠"
+		elif path.contains("frost_bat"):
+			mob.npc_data.display_name = "霜咬蝙蝠"
+		elif path.contains("slime"):
+			mob.npc_data.display_name = "林地史莱姆"
+		elif path.contains("demon_eye"):
+			mob.npc_data.display_name = "恶魔之眼"
 			
 		# 确保血条显示正确同步
 		if mob.has_method("_update_hp_bar"):
 			mob._update_hp_bar()
-	else:
-		# Just force add to group
-		mob.add_to_group("hostile_npcs")
 	
 	var entities = get_tree().current_scene.find_child("Entities", true, false)
 	if entities:
@@ -386,3 +461,6 @@ func _spawn_mob(path: String, pos: Vector2) -> void:
 	else:
 		get_tree().current_scene.add_child(mob)
 		print("NPCSpawner: Spawned ", mob.name, " in Root.")
+
+	if mob.has_method("refresh_runtime_groups"):
+		mob.refresh_runtime_groups()

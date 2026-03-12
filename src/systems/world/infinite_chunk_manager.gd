@@ -22,16 +22,32 @@ const TransformHelper = preload("res://src/utils/transform_helper.gd")
 signal chunk_loaded(coord: Vector2i)
 signal chunk_unloaded(coord: Vector2i)
 
+var _loading_queue: Dictionary = {}
+var _pending_chunk_requests: Array = []
+
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	set_process(true)
 	# 默认路径初始化，实际应由 SaveManager 设置
 	_ensure_save_dir()
+
+func _process(_delta: float) -> void:
+	if _pending_chunk_requests.is_empty():
+		return
+
+	var coord = _pending_chunk_requests.pop_front()
+	if not _loading_queue.has(coord):
+		return
+
+	_build_chunk_on_main_thread(coord, current_session_id)
 	
 func restart() -> void:
 	print("InfiniteChunkManager: Restarting world state...")
 	current_session_id += 1 # 增加 Session ID 以使旧的异步任务失效
+	_clear_loaded_world_visuals()
 	loaded_chunks.clear()
 	_loading_queue.clear()
+	_pending_chunk_requests.clear()
 	
 	# Fix: Explicitly destroy old entity containers (since they are on Main scene, not WorldGenerator)
 	for container in chunk_entity_containers.values():
@@ -48,7 +64,7 @@ func restart() -> void:
 	# 重置最后玩家位置，强制立刻更新
 	update_player_vicinity(Vector2(0, -999999)) # Force update on next frame
 
-func set_save_root(path_root: String) -> void:
+func set_save_root(path_root: String, preserve_current_data: bool = false) -> void:
 	# 确保路径以斜杠结尾
 	var final_path = path_root
 	if not final_path.ends_with("/"):
@@ -61,13 +77,18 @@ func set_save_root(path_root: String) -> void:
 	_ensure_save_dir()
 	print("InfiniteChunkManager: 存档路径已切换至 ", active_save_root)
 	
-	# 显式保存旧路径下的数据（如果需要，或者由 SaveManager 统一触发）
-	# save_all_deltas()
-	
-	# 切换存档时清空缓存
+	if preserve_current_data:
+		return
+
+	_clear_loaded_world_visuals()
+	for container in chunk_entity_containers.values():
+		if is_instance_valid(container):
+			container.queue_free()
+	chunk_entity_containers.clear()
 	world_delta_data.clear()
 	loaded_chunks.clear()
 	_loading_queue.clear()
+	_pending_chunk_requests.clear()
 	
 	# 预加载新路径下的修改数据
 	_preload_all_deltas()
@@ -116,6 +137,17 @@ func _ensure_save_dir() -> void:
 
 func _get_save_path(coord: Vector2i) -> String:
 	return active_save_root + "chunk_%d_%d.tres" % [coord.x, coord.y]
+
+func _parse_delta_local_pos_key(key: Variant) -> Variant:
+	if key is Vector2i:
+		return key
+	if key is Vector2:
+		return Vector2i(int(key.x), int(key.y))
+	if key is String:
+		var parts = key.split(",")
+		if parts.size() == 2:
+			return Vector2i(int(parts[0]), int(parts[1]))
+	return null
 
 ## 获取世界坐标所属的区块坐标
 func get_chunk_coord(world_pos: Vector2) -> Vector2i:
@@ -175,38 +207,34 @@ func update_player_vicinity(player_pos: Vector2) -> void:
 		if not loaded_chunks.has(coord) and not _loading_queue.has(coord):
 			_request_chunk_load(coord)
 
-var _loading_queue: Dictionary = {}
-
 func _request_chunk_load(coord: Vector2i) -> void:
 	_loading_queue[coord] = true
-	WorkerThreadPool.add_task(_async_load_task.bind(coord, current_session_id))
+	_pending_chunk_requests.append(coord)
 
-func _async_load_task(coord: Vector2i, session_id: int) -> void:
-	# 如果 Session ID 不匹配，说明是上一局残留的任务，直接退出
+func _build_chunk_on_main_thread(coord: Vector2i, session_id: int) -> void:
+	# 彻底移除工作线程中的 SceneTree/Node 访问，改为主线程逐块构建。
 	if session_id != current_session_id:
-		return
-		
-	var generator = get_tree().get_first_node_in_group("world_generator")
-	if not is_instance_valid(generator): 
 		_loading_queue.erase(coord)
 		return
-		
+	if loaded_chunks.has(coord) or chunk_entity_containers.has(coord):
+		_loading_queue.erase(coord)
+		return
+
+	var generator = get_tree().get_first_node_in_group("world_generator")
+	if not is_instance_valid(generator):
+		_loading_queue.erase(coord)
+		return
+
 	var cells = generator.generate_chunk_cells(coord)
 	var spawned_entities = []
-	
-	# 记录原始地表高度（用于树木生成避开建筑遮挡）
+
 	var natural_ground_y = []
 	for x in range(64):
 		natural_ground_y.append(_get_top_tile_y(cells, x))
-	
-	# --- 插入特定结构 (Wang Tile / POI) ---
+
 	_apply_structures(coord, cells, spawned_entities)
-	
-	# --- 插入树木 (仅地表 Chunk) ---
 	_apply_trees(coord, cells, natural_ground_y)
-	
-	# 回到主线程应用结果 (TileMap 修改必须在主线程)
-	call_deferred("_finalize_chunk_load", coord, cells, spawned_entities)
+	_finalize_chunk_load(coord, cells, spawned_entities)
 
 func _get_top_tile_y(cells: Dictionary, local_x: int) -> int:
 	# 在 Layer 0 中寻找该 X 坐标的“真正的”地面 (非空且上方为空)
@@ -624,13 +652,12 @@ func _finalize_chunk_load(coord: Vector2i, cells: Dictionary, new_entities: Arra
 	_apply_cells_to_layers(coord, cells, chunk)
 	_spawn_chunk_entities(coord, chunk) 
 	
-	# 显式刷新 TileMapLayer 属性 (根据图层类型决定碰撞)
+	# 显式刷新 TileMapLayer 属性，背景层不应参与实体碰撞。
 	var gen = get_tree().get_first_node_in_group("world_generator")
 	if gen:
 		if gen.layer_0: gen.layer_0.collision_enabled = true
-		if gen.layer_1: gen.layer_1.collision_enabled = true
-		# Layer 2 是背景墙图层，不应开启物理碰撞
-		if gen.layer_2: gen.layer_2.collision_enabled = false
+		if gen.layer_1: gen.layer_1.collision_enabled = not bool(gen.layer_1.get_meta("background_only", false))
+		if gen.layer_2: gen.layer_2.collision_enabled = not bool(gen.layer_2.get_meta("background_only", false))
 	
 	_spawn_chunk_particles(coord, cells) 
 	
@@ -698,10 +725,15 @@ func find_safe_ground(start_pos: Vector2, max_depth: float = 1200.0) -> Variant:
 	return null # 下方全是虚空
 
 func _is_solid_at_map(gen, coord: Vector2i) -> bool:
-	if gen.layer_0.get_cell_source_id(coord) != -1: return true
-	if gen.layer_1 and gen.layer_1.get_cell_source_id(coord) != -1: return true
-	if gen.layer_2 and gen.layer_2.get_cell_source_id(coord) != -1: return true
+	if _is_physical_tile_present(gen.layer_0, coord): return true
+	if _is_physical_tile_present(gen.layer_1, coord): return true
+	if _is_physical_tile_present(gen.layer_2, coord): return true
 	return false
+
+func _is_physical_tile_present(layer: TileMapLayer, coord: Vector2i) -> bool:
+	if not layer or not layer.collision_enabled:
+		return false
+	return layer.get_cell_source_id(coord) != -1
 
 func _spawn_chunk_entities(coord: Vector2i, chunk: WorldChunk) -> void:
 	if chunk.entities.is_empty(): return
@@ -851,6 +883,34 @@ func register_placed_entity(world_pos: Vector2, scene_path: String, custom_data:
 	if chunk_entity_containers.has(c_coord):
 		_instantiate_entity(chunk_entity_containers[c_coord], entity_info)
 
+func _collect_render_layers() -> Array:
+	var generator = get_tree().get_first_node_in_group("world_generator")
+	var layers = [
+		get_tree().get_first_node_in_group("world_tiles"),
+		LayerManager.get_layer(1) if LayerManager else null,
+		LayerManager.get_layer(2) if LayerManager else null
+	]
+
+	if generator:
+		layers.append(generator.tree_layer_0)
+		layers.append(generator.tree_layer_1)
+		layers.append(generator.tree_layer_2)
+
+	return layers
+
+func _clear_chunk_region(coord: Vector2i) -> void:
+	var origin = coord * CHUNK_SIZE
+	for layer in _collect_render_layers():
+		if not layer:
+			continue
+		for x in range(CHUNK_SIZE):
+			for y in range(CHUNK_SIZE):
+				layer.set_cell(origin + Vector2i(x, y), -1)
+
+func _clear_loaded_world_visuals() -> void:
+	for coord in loaded_chunks.keys():
+		_clear_chunk_region(coord)
+
 ## 在 Tile 被破坏时生成大量碎片粒子
 func spawn_impact_particles(world_pos: Vector2, color: Color) -> void:
 	var particles = CPUParticles2D.new()
@@ -940,10 +1000,9 @@ func _apply_cells_to_layers(chunk_coord: Vector2i, cells: Dictionary, chunk: Wor
 			
 		# 2. 应用玩家修改 (Delta)
 		for key in chunk_deltas:
-			# 解析字符串键为 Vector2i
-			var parts = key.split(",")
-			if parts.size() != 2: continue
-			var local_pos = Vector2i(int(parts[0]), int(parts[1]))
+			var local_pos = _parse_delta_local_pos_key(key)
+			if not (local_pos is Vector2i):
+				continue
 			
 			var map_pos = origin + local_pos
 			var delta = chunk_deltas[key]
@@ -965,7 +1024,7 @@ func _unload_chunk(coord: Vector2i) -> void:
 	# 1. 如果有修改，保存到磁盘并释放内存
 	if world_delta_data.has(coord):
 		var chunk = world_delta_data[coord]
-		var has_changes = false
+		var has_changes = not chunk.entities.is_empty()
 		for l in [0,1,2]:
 			if not chunk.deltas.get(l, {}).is_empty():
 				has_changes = true
@@ -987,26 +1046,6 @@ func _unload_chunk(coord: Vector2i) -> void:
 	loaded_chunks.erase(coord)
 
 	# 2. 清除 TileMapLayer 上的对应区域以释放渲染资源
-	var generator = get_tree().get_first_node_in_group("world_generator")
-	var layers = [
-		get_tree().get_first_node_in_group("world_tiles"),
-		LayerManager.get_layer(1) if LayerManager else null,
-		LayerManager.get_layer(2) if LayerManager else null
-	]
-	
-	if generator:
-		layers.append(generator.tree_layer_0)
-		layers.append(generator.tree_layer_1)
-		layers.append(generator.tree_layer_2)
-	
-	var origin = coord * CHUNK_SIZE
-	for layer in layers:
-		if not layer: continue
-		# 极速清理：由于 Godot 4 TileMapLayer.set_cell 是内部哈希操作，手动循环是标准做法
-		# 未来如果 TileMapLayer 增加 clear_region 将更优
-		for x in range(CHUNK_SIZE):
-			for y in range(CHUNK_SIZE):
-				layer.set_cell(origin + Vector2i(x, y), -1)
+	_clear_chunk_region(coord)
 				
-	loaded_chunks.erase(coord)
 	chunk_unloaded.emit(coord)

@@ -107,9 +107,20 @@ func load_world_metadata(metadata: Dictionary) -> void:
 	incoming["topology_version"] = int(incoming.get("topology_version", TOPOLOGY_VERSION))
 	incoming["horizontal_circumference_in_chunks"] = int(incoming.get("horizontal_circumference_in_chunks", preset_info.get("circumference_chunks", 384)))
 	incoming["world_size_preset"] = String(preset_info.get("id", DEFAULT_WORLD_SIZE_PRESET))
-	incoming["spawn_anchor_chunk"] = int(incoming.get("spawn_anchor_chunk", int(incoming["horizontal_circumference_in_chunks"]) / 4))
+	var circumference_chunks := int(incoming["horizontal_circumference_in_chunks"])
+	var seam_buffer_chunks := int(incoming.get("seam_buffer_chunks", preset_info.get("seam_buffer_chunks", 20)))
+	var default_anchor_chunk := int(circumference_chunks / 4)
+	var incoming_anchor_chunk := int(incoming.get("spawn_anchor_chunk", default_anchor_chunk))
+	var min_anchor_chunk := maxi(1, seam_buffer_chunks)
+	var max_anchor_chunk := circumference_chunks - seam_buffer_chunks - 1
+	if max_anchor_chunk < min_anchor_chunk:
+		min_anchor_chunk = 1
+		max_anchor_chunk = maxi(1, circumference_chunks - 1)
+	if incoming_anchor_chunk < min_anchor_chunk or incoming_anchor_chunk > max_anchor_chunk:
+		incoming_anchor_chunk = clampi(default_anchor_chunk, min_anchor_chunk, max_anchor_chunk)
+	incoming["spawn_anchor_chunk"] = incoming_anchor_chunk
 	incoming["spawn_safe_radius_chunks"] = int(incoming.get("spawn_safe_radius_chunks", preset_info.get("spawn_safe_radius_chunks", 16)))
-	incoming["seam_buffer_chunks"] = int(incoming.get("seam_buffer_chunks", preset_info.get("seam_buffer_chunks", 20)))
+	incoming["seam_buffer_chunks"] = seam_buffer_chunks
 	incoming["world_plan_revision"] = int(incoming.get("world_plan_revision", 1))
 
 	current_metadata = incoming

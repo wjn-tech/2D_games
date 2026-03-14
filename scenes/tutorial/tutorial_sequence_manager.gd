@@ -10,6 +10,7 @@ const WALL_SCENE = preload("res://scenes/tutorial/breakable_wall.tscn")
 const DEBRIS_SCENE = preload("res://scenes/vfx/ship_debris.tscn")
 const WIND_LINES_SCENE = preload("res://scenes/vfx/falling_wind_lines.tscn")
 const SHIELD_SCENE = preload("res://scenes/vfx/mage_shield.tscn")
+const STARTUP_PLAYER_OFFSET := Vector2(-200, -50)
 
 var _fall_duration: float = 10.0
 var _fall_timer: float = 0.0
@@ -55,6 +56,9 @@ var tracker: ObjectiveTracker
 var _shake_amplitude: float = 0.0
 var _original_cam_offset: Vector2 = Vector2.ZERO
 var _movement_start_pos: Vector2 = Vector2.ZERO
+var _tutorial_runtime_active: bool = false
+var _pending_tutorial_activation: bool = false
+var _pending_tutorial_step: int = 0
 
 func _ready() -> void:
 	# 显式隐藏，等待数据初始化
@@ -65,7 +69,38 @@ func _ready() -> void:
 	if EventBus:
 		EventBus.player_data_refreshed.connect(_on_data_ready)
 
+func _is_gameplay_ready_for_tutorial() -> bool:
+	if not GameManager:
+		return true
+	return int(GameManager.current_state) == int(GameManager.State.PLAYING)
+
+func _activate_tutorial_runtime(saved_step: int) -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	visible = true
+	_tutorial_runtime_active = true
+	_align_tutorial_origin_to_world_anchor()
+
+	# 使用 cast 或直接赋值 (GDScript 2.0 能够处理 int -> enum)
+	current_step = saved_step as Step
+
+	# 2. 初始化逻辑 (原 _ready 的剩余部分)
+	_init_tutorial_elements()
+
+func _on_game_manager_state_changed(new_state: int) -> void:
+	if int(new_state) != int(GameManager.State.PLAYING):
+		return
+	if GameManager and GameManager.state_changed.is_connected(_on_game_manager_state_changed):
+		GameManager.state_changed.disconnect(_on_game_manager_state_changed)
+	if not _pending_tutorial_activation:
+		return
+	_pending_tutorial_activation = false
+	_activate_tutorial_runtime(_pending_tutorial_step)
+
 func _on_data_ready() -> void:
+	if _tutorial_runtime_active:
+		return
+	if EventBus and EventBus.player_data_refreshed.is_connected(_on_data_ready):
+		EventBus.player_data_refreshed.disconnect(_on_data_ready)
 	# 1. 验证是否运行教程
 	
 	# 首先获取玩家数据状态
@@ -101,17 +136,51 @@ func _on_data_ready() -> void:
 				saved_step = GameState.player_data.tutorial_step if GameState.player_data else 0
 
 	if not tutorial_active and not is_tutorial_scene_file:
+		_tutorial_runtime_active = false
 		queue_free()
 		return
-		
-	process_mode = Node.PROCESS_MODE_ALWAYS
-	visible = true
-	
-	# 使用 cast 或直接赋值 (GDScript 2.0 能够处理 int -> enum)
-	current_step = saved_step as Step
-	
-	# 2. 初始化逻辑 (原 _ready 的剩余部分)
-	_init_tutorial_elements()
+
+	if not _is_gameplay_ready_for_tutorial():
+		_pending_tutorial_activation = true
+		_pending_tutorial_step = saved_step
+		if GameManager and not GameManager.state_changed.is_connected(_on_game_manager_state_changed):
+			GameManager.state_changed.connect(_on_game_manager_state_changed)
+		return
+
+	_activate_tutorial_runtime(saved_step)
+
+func should_override_startup_spawn() -> bool:
+	if _tutorial_runtime_active:
+		return current_step != Step.COMPLETED
+	return _pending_tutorial_activation
+
+func get_startup_spawn_position() -> Vector2:
+	return _get_tutorial_world_origin() + STARTUP_PLAYER_OFFSET
+
+func _get_tutorial_world_origin() -> Vector2:
+	var origin := global_position
+	if WorldTopology and WorldTopology.has_method("is_planetary") and WorldTopology.is_planetary():
+		var anchor_tile := 0
+		var circumference := 0
+		if WorldTopology.has_method("get_circumference_chunks"):
+			circumference = int(WorldTopology.get_circumference_chunks())
+		if WorldTopology.has_method("get_spawn_anchor_tile"):
+			anchor_tile = int(WorldTopology.get_spawn_anchor_tile())
+
+		# 元数据缺失，或锚点贴近世界缝边时，回退到星球 1/4 周长附近。
+		var total_tiles := circumference * 64
+		var seam_margin_tiles := 64
+		var near_left_seam := anchor_tile < seam_margin_tiles
+		var near_right_seam := total_tiles > 0 and anchor_tile >= total_tiles - seam_margin_tiles
+		if (anchor_tile <= 0 or near_left_seam or near_right_seam) and circumference > 0:
+			anchor_tile = int(circumference / 4) * 64 + 32
+
+		origin.x = float(anchor_tile * 16)
+	return origin
+
+func _align_tutorial_origin_to_world_anchor() -> void:
+	var anchored_origin := _get_tutorial_world_origin()
+	global_position = anchored_origin
 
 func _init_tutorial_elements() -> void:
 	# 找到合适的主角 (优先使用场景中已有的 Player，避免 TutorialSpaceship 自带的 Player 造成双主角冲突)
@@ -129,12 +198,7 @@ func _init_tutorial_elements() -> void:
 		
 	# Teleport Player to Ship
 	if player:
-		# If we are in Main scene, the spaceship is at (0, -50000) by default, 
-		# but let's force the manager position just in case or use local offsets.
-		# The Manager is the root of the spaceship scene, so its children (Wall, Mage) are local.
-		# But in Main.tscn, the instance is at (0, -50000).
-		# We should move the player relative to the manager.
-		player.global_position = self.global_position + Vector2(-200, -50)
+		player.global_position = get_startup_spawn_position()
 		player.velocity = Vector2.ZERO
 		
 	# 清除 UIManager 的黑屏淡入

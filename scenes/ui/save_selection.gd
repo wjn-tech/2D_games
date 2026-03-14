@@ -89,13 +89,23 @@ func _on_confirm_overwrite() -> void:
 		pending_slot_id = -1
 
 func _perform_save(slot_id: int) -> void:
-	SaveManager.save_game(slot_id)
+	var ok := SaveManager.save_game(slot_id)
+	if not ok:
+		UIManager.show_floating_text("存档失败：请重试或更换栏位", Vector2(100, 100), Color.RED)
+		refresh_ui()
+		return
+
 	UIManager.show_floating_text("存档成功！", Vector2(100, 100), Color.GREEN)
-	
+	if is_instance_valid(confirmation_dialog):
+		confirmation_dialog.hide()
+
+	# 先调度状态切换，再关闭窗口。
+	# SaveSelection 在 close_window 后可能被 queue_free，不能在本节点协程里等待后再切状态。
+	GameManager.call_deferred("change_state", GameManager.State.START_MENU)
+
 	# 关闭所有相关窗口并返回主菜单
 	UIManager.close_window("SaveSelection")
-	UIManager.close_window("PauseMenu") 
-	GameManager.change_state(GameManager.State.START_MENU)
+	UIManager.close_window("PauseMenu")
 	
 func _perform_load(slot_id: int) -> void:
 	# 使用 GameManager 托管的加载流程，确保场景正确切换和状态重置

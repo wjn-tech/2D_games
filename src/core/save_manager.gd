@@ -6,6 +6,10 @@ extends Node
 const SAVE_ROOT = "user://saves/"
 const DATA_FILENAME = "data.dat"
 const THUMBNAIL_FILENAME = "preview.jpg"
+const MAX_HOSTILES_TO_SAVE := 256
+const ENABLE_SAVE_THUMBNAIL := false
+const MAX_PICKUPS_TO_SAVE := 512
+const MAX_PERSIST_NODES_TO_SAVE := 512
 
 # 临时存储从文件恢复的玩家数据，用于场景重载后同步
 var _cached_player_data: Dictionary = {}
@@ -14,6 +18,7 @@ var _cached_player_data: Dictionary = {}
 var save_metadata: Dictionary = {}
 var current_slot_id: int = -1
 var auto_save_timer: Timer
+var _is_saving: bool = false
 
 func _ready() -> void:
 	_ensure_root_dir()
@@ -71,13 +76,26 @@ func get_slot_info(slot_id: int) -> Dictionary:
 
 # --- 核心保存逻辑 ---
 
-func save_game(slot_id: int) -> void:
-	current_slot_id = slot_id
+func save_game(slot_id: int = -1) -> bool:
+	if _is_saving:
+		push_warning("SaveManager: save_game re-entry detected, skipping duplicate call.")
+		return false
+	_is_saving = true
+
+	var target_slot := slot_id
+	if target_slot < 0:
+		target_slot = current_slot_id
+	if target_slot < 1:
+		push_error("SaveManager: 无有效存档槽位，保存已取消。")
+		_is_saving = false
+		return false
+
+	current_slot_id = target_slot
 	# Reset autosave timer on manual save
 	if auto_save_timer and not auto_save_timer.is_stopped():
 		auto_save_timer.start()
 		
-	var slot_dir = _get_slot_dir(slot_id)
+	var slot_dir = _get_slot_dir(target_slot)
 	if not DirAccess.dir_exists_absolute(slot_dir):
 		DirAccess.make_dir_recursive_absolute(slot_dir)
 	
@@ -93,6 +111,7 @@ func save_game(slot_id: int) -> void:
 		"timestamp": Time.get_unix_time_from_system(),
 		"scene_path": get_tree().current_scene.scene_file_path, # 保存当前场景路径
 		"game_time": GameState.current_time,
+		"world_metadata": _get_world_metadata(),
 		"player": _pack_player_data(),
 		"inventory": _pack_inventory(),
 		"buildings": _pack_buildings(),
@@ -107,17 +126,19 @@ func save_game(slot_id: int) -> void:
 	}
 	
 	# 3. 写入数据文件 (Atomic & Compressed)
-	var final_path = _get_data_path(slot_id)
+	var final_path = _get_data_path(target_slot)
 	
-	# Capture Thumbnail
-	_capture_screenshot(slot_id)
+	# Capture thumbnail is optional; disabling avoids save-frame GPU stalls on heavy scenes.
+	if ENABLE_SAVE_THUMBNAIL:
+		_capture_screenshot(target_slot)
 
 	if not _write_atomic_compressed(final_path, data):
 		push_error("SaveManager: Failed to save game data atomically.")
-		return
+		_is_saving = false
+		return false
 		
 	# 4. 更新元数据
-	var key = "slot_%d" % slot_id
+	var key = "slot_%d" % target_slot
 	var p_name = "Unknown"
 	var p_gen = 1
 	var p_lineage = "unknown"
@@ -132,11 +153,15 @@ func save_game(slot_id: int) -> void:
 		"player_name": p_name,
 		"generation": p_gen,
 		"lineage_id": p_lineage,
-		"display_time": Time.get_datetime_string_from_system()
+		"display_time": Time.get_datetime_string_from_system(),
+		"topology_mode": String(data.world_metadata.get("topology_mode", "legacy_infinite")),
+		"world_size_preset": String(data.world_metadata.get("world_size_preset", "legacy"))
 	}
 	_save_metadata_to_disk()
 	
-	print("SaveManager: 存档 %d 保存成功 (Binary/Atomic)" % slot_id)
+	print("SaveManager: 存档 %d 保存成功 (Binary/Atomic)" % target_slot)
+	_is_saving = false
+	return true
 
 func _write_atomic_compressed(path: String, data: Variant) -> bool:
 	var tmp_path = path + ".tmp"
@@ -287,6 +312,9 @@ func load_game(slot_id: int) -> bool:
 		# when initializing the WorldGenerator later.
 		GameState.set_meta("pending_new_seed", data.world_seed)
 		print("SaveManager: Loaded World Seed: ", data.world_seed)
+
+	if data.has("world_metadata"):
+		GameState.set_meta("pending_world_metadata", data.world_metadata)
 	
 	if data.has("scene_path"):
 		GameState.set_meta("pending_scene_path", data.scene_path)
@@ -381,6 +409,8 @@ func _pack_pickups() -> Array:
 	var list = []
 	var nodes = get_tree().get_nodes_in_group('pickups')
 	for node in nodes:
+		if list.size() >= MAX_PICKUPS_TO_SAVE:
+			break
 		if node.has_method('get_save_data'):
 			list.append(node.get_save_data())
 	return list
@@ -417,6 +447,8 @@ func _pack_persist_group() -> Dictionary:
 	var gathered = {}
 	var nodes = get_tree().get_nodes_in_group('persist')
 	for node in nodes:
+		if gathered.size() >= MAX_PERSIST_NODES_TO_SAVE:
+			break
 		if node.has_method('get_save_data'):
 			gathered[str(node.get_path())] = node.get_save_data()
 	return gathered
@@ -443,10 +475,18 @@ func _get_world_seed() -> int:
 		return world_gen.seed_value
 	return 0
 
+func _get_world_metadata() -> Dictionary:
+	if WorldTopology and WorldTopology.has_method("get_save_metadata"):
+		return WorldTopology.get_save_metadata()
+	return {}
+
 func _pack_hostiles() -> Array:
 	var list = []
 	var mobs = get_tree().get_nodes_in_group("hostile_npcs")
+	var saved_count := 0
 	for mob in mobs:
+		if saved_count >= MAX_HOSTILES_TO_SAVE:
+			break
 		if mob.scene_file_path.is_empty(): continue
 		if mob.get("health") != null and mob.health <= 0: continue # Don't save dead
 		
@@ -469,10 +509,11 @@ func _pack_hostiles() -> Array:
 			data["hp"] = mob.npc_data.health
 			data["max_hp"] = mob.npc_data.max_health
 			data["display_name"] = mob.npc_data.display_name
-			# 存入完整的 CharacterData 字典表示，确保属性（如 age, growth_stage, npc_type）不丢失
-			data["character_full_data"] = _resource_to_dict(mob.npc_data)
+			# 仅保存关键字段，避免反射全量属性导致保存卡顿。
+			data["character_full_data"] = _pack_character_data_for_save(mob.npc_data)
 			
 		list.append(data)
+		saved_count += 1
 	return list
 
 func _unpack_hostiles(list: Array) -> void:
@@ -540,8 +581,51 @@ func _dict_to_resource(dict: Dictionary, res: Resource) -> void:
 func _pack_descendants() -> Array:
 	var list = []
 	for d in LineageManager.descendants:
-		list.append(_resource_to_dict(d))
+		list.append(_pack_character_data_for_save(d))
 	return list
+
+func _pack_character_data_for_save(data: CharacterData) -> Dictionary:
+	if data == null:
+		return {}
+	return {
+		"display_name": data.display_name,
+		"gender": data.gender,
+		"personality": data.personality,
+		"alignment": data.alignment,
+		"npc_type": data.npc_type,
+		"behavior_tree_path": data.behavior_tree_path,
+		"happiness": data.happiness,
+		"preferred_biome": data.preferred_biome,
+		"loved_neighbors": data.loved_neighbors.duplicate(true),
+		"hated_neighbors": data.hated_neighbors.duplicate(true),
+		"stat_levels": data.stat_levels.duplicate(true),
+		"attributes": data.attributes.duplicate(true),
+		"mutations": data.mutations.duplicate(true),
+		"spouse_id": data.spouse_id,
+		"generation": data.generation,
+		"age": data.age,
+		"growth_stage": data.growth_stage,
+		"imprint_quality": data.imprint_quality,
+		"intrinsic_spell_pool": data.intrinsic_spell_pool.duplicate(true),
+		"uuid": data.uuid,
+		"affinity_map": data.affinity_map.duplicate(true),
+		"home_pos": data.home_pos,
+		"is_settled": data.is_settled,
+		"pylon_unlocked": data.pylon_unlocked,
+		"tutorial_completed": data.tutorial_completed,
+		"tutorial_step": data.tutorial_step,
+		"health": data.health,
+		"mana": data.mana,
+		"max_life_span": data.max_life_span,
+		"life_span": data.life_span,
+		"current_age": data.current_age,
+		"level": data.level,
+		"experience": data.experience,
+		"stat_points": data.stat_points,
+		"loyalty": data.loyalty,
+		"role": data.role,
+		"children_ids": data.children_ids.duplicate(true)
+	}
 
 func _unpack_descendants(list: Array) -> void:
 	# 仅作为保险，如果场景中已经加载了（通过 _unpack_hostiles），此处不应重复

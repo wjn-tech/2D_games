@@ -58,6 +58,7 @@ var _debug_lock_warned: bool = false # 防止刷屏的调试变量
 var _terrain_recovery_timer: float = 0.0
 var _last_safe_ground_position: Vector2 = Vector2.ZERO
 var _has_safe_ground_position: bool = false
+var _last_streaming_chunk_coord: Variant = null
 
 func set_gravity_enabled(enabled: bool) -> void:
 	_gravity_enabled = enabled
@@ -527,7 +528,10 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	# --- 无限地图更新 ---
 	if InfiniteChunkManager and Engine.get_frames_drawn() % 10 == 0:
-		InfiniteChunkManager.update_player_vicinity(global_position)
+		var current_chunk := InfiniteChunkManager.get_chunk_coord(global_position)
+		if _last_streaming_chunk_coord == null or current_chunk != _last_streaming_chunk_coord:
+			InfiniteChunkManager.update_player_vicinity(global_position)
+			_last_streaming_chunk_coord = current_chunk
 		if MinimapManager:
 			MinimapManager.reveal_area(global_position, 30) # 约 1.5 个屏幕半径的探索范围
 
@@ -551,6 +555,7 @@ func _physics_process(delta: float) -> void:
 		_mitigate_fast_fall_chunk_gaps()
 		move_and_slide()
 		_recover_from_terrain_embed()
+		_apply_planetary_wraparound()
 		return
 		
 	# --- 动作处理 ---
@@ -687,6 +692,28 @@ func _physics_process(delta: float) -> void:
 		_handle_step_up()
 
 	_recover_from_long_freefall()
+	_apply_planetary_wraparound()
+
+func _apply_planetary_wraparound() -> void:
+	if not WorldTopology or not WorldTopology.has_method("is_planetary") or not WorldTopology.is_planetary():
+		return
+	if not WorldTopology.has_method("wrap_tile_x"):
+		return
+
+	var tile_x := int(floor(global_position.x / 16.0))
+	var wrapped_tile_x := int(WorldTopology.wrap_tile_x(tile_x))
+	if wrapped_tile_x == tile_x:
+		return
+
+	var local_offset := global_position.x - float(tile_x * 16)
+	var wrapped_world_x := float(wrapped_tile_x * 16) + local_offset
+	var delta_x := wrapped_world_x - global_position.x
+	global_position.x = wrapped_world_x
+	if _has_safe_ground_position:
+		_last_safe_ground_position.x += delta_x
+
+	# 强制下一帧刷新邻域，避免 wrap 后仍沿用旧区块缓存判定。
+	_last_streaming_chunk_coord = null
 
 func _attempt_execution() -> void:
 	var enemies = get_tree().get_nodes_in_group("npcs")

@@ -6,6 +6,17 @@ extends Node
 const CHUNK_SIZE = 64
 const TILE_SIZE = 16
 const LOAD_RADIUS = 2 # 加载半径（区块单位）
+const ENABLE_TILE_HOUSE_STRUCTURES := false
+const FULL_PREGEN_MIN_CHUNK_Y := -2
+const FULL_PREGEN_SURFACE_BASELINE_TILES := 320
+const FULL_PREGEN_DEPTH_MARGIN_TILES := 384
+const FULL_PREGEN_CHUNKS_PER_FRAME := 16
+const STRUCTURE_SURFACE_SCAN_MIN_CHUNK_Y := 2
+const STRUCTURE_SURFACE_SCAN_MAX_CHUNK_Y := 8
+const BURIED_RUINS_MIN_CHUNK_Y := 7
+const BURIED_RUINS_MAX_CHUNK_Y := 18
+const TREE_PASS_MIN_CHUNK_Y := 4
+const TREE_PASS_MAX_CHUNK_Y := 6
 
 var active_save_root: String = "user://saves/world_deltas/"
 
@@ -15,6 +26,12 @@ var loaded_chunks: Dictionary = {}
 var chunk_entity_containers: Dictionary = {}
 # 所有的 Delta 数据（即使区块被卸载也保留）: { Vector2i: WorldChunk }
 var world_delta_data: Dictionary = {}
+# 脏区块集合：仅这些区块会在手动存档时落盘，避免全量重写卡死。
+var dirty_chunk_coords: Dictionary = {}
+# 区块显示坐标映射：canonical key -> 当前用于渲染的 display chunk coord。
+var chunk_display_coords: Dictionary = {}
+# 加载队列显示坐标：canonical key -> 待加载时的 display chunk coord。
+var _loading_display_coords: Dictionary = {}
 
 var current_session_id: int = 0
 const TransformHelper = preload("res://src/utils/transform_helper.gd")
@@ -24,6 +41,10 @@ signal chunk_unloaded(coord: Vector2i)
 
 var _loading_queue: Dictionary = {}
 var _pending_chunk_requests: Array = []
+var _enrichment_queue: Dictionary = {}
+var _pending_enrichment_requests: Array = []
+var _pregenerated_chunk_payloads: Dictionary = {}
+var _pregen_cache_key: String = ""
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -32,22 +53,269 @@ func _ready() -> void:
 	_ensure_save_dir()
 
 func _process(_delta: float) -> void:
-	if _pending_chunk_requests.is_empty():
+	if not _pending_chunk_requests.is_empty():
+		var coord = _pending_chunk_requests.pop_front()
+		if _loading_queue.has(coord):
+			_build_chunk_on_main_thread(coord, current_session_id)
 		return
 
-	var coord = _pending_chunk_requests.pop_front()
-	if not _loading_queue.has(coord):
+	if _pending_enrichment_requests.is_empty():
 		return
 
-	_build_chunk_on_main_thread(coord, current_session_id)
+	var enrich_coord = _pending_enrichment_requests.pop_front()
+	if not _enrichment_queue.has(enrich_coord):
+		return
+	_enrichment_queue.erase(enrich_coord)
+	_build_chunk_enrichment_on_main_thread(enrich_coord, current_session_id)
+
+func _get_world_topology() -> Node:
+	return get_node_or_null("/root/WorldTopology")
+
+func _canonicalize_chunk_coord(coord: Vector2i) -> Vector2i:
+	var world_topology := _get_world_topology()
+	if world_topology and world_topology.has_method("canonical_chunk_coord"):
+		return world_topology.canonical_chunk_coord(coord)
+	return coord
+
+func canonicalize_chunk_coord(coord: Vector2i) -> Vector2i:
+	return _canonicalize_chunk_coord(coord)
+
+func _get_raw_chunk_coord(world_pos: Vector2) -> Vector2i:
+	var tile_pos = Vector2i((world_pos / TILE_SIZE).floor())
+	return Vector2i((Vector2(tile_pos) / CHUNK_SIZE).floor())
+
+func get_display_chunk_coord(world_pos: Vector2) -> Vector2i:
+	return _get_raw_chunk_coord(world_pos)
+
+func resolve_nearest_display_coord(canonical_coord: Vector2i, reference_display_coord: Vector2i) -> Vector2i:
+	var world_topology := _get_world_topology()
+	if not world_topology or not world_topology.has_method("is_planetary") or not world_topology.is_planetary():
+		return canonical_coord
+
+	var circumference := 0
+	if world_topology.has_method("get_circumference_chunks"):
+		circumference = int(world_topology.get_circumference_chunks())
+	if circumference <= 0:
+		return canonical_coord
+
+	var k := int(round(float(reference_display_coord.x - canonical_coord.x) / float(circumference)))
+	return Vector2i(canonical_coord.x + k * circumference, canonical_coord.y)
+
+func _resolve_display_chunk_coord(canonical_coord: Vector2i) -> Vector2i:
+	if chunk_display_coords.has(canonical_coord):
+		return chunk_display_coords[canonical_coord]
+	if _loading_display_coords.has(canonical_coord):
+		return _loading_display_coords[canonical_coord]
+	return canonical_coord
+
+func _compute_finite_world_pregen_max_chunk_y() -> int:
+	var finite_max_depth_tiles := 420
+	var world_topology := _get_world_topology()
+	if world_topology and world_topology.has_method("get_depth_bands"):
+		for band in world_topology.get_depth_bands():
+			if not (band is Dictionary):
+				continue
+			var band_max := float(band.get("max_depth", -1.0))
+			if band_max >= 0.0 and band_max < 999999.0:
+				finite_max_depth_tiles = maxi(finite_max_depth_tiles, int(ceil(band_max)))
+
+	var max_tile_y := FULL_PREGEN_SURFACE_BASELINE_TILES + finite_max_depth_tiles + FULL_PREGEN_DEPTH_MARGIN_TILES
+	return int(floor(float(max_tile_y) / float(CHUNK_SIZE)))
+
+func _build_full_pregen_cache_key() -> String:
+	var world_topology := _get_world_topology()
+	if not world_topology:
+		return ""
+	var metadata := {}
+	if world_topology.has_method("get_current_metadata"):
+		metadata = world_topology.get_current_metadata()
+	var circumference := int(metadata.get("horizontal_circumference_in_chunks", 0))
+	var seed := int(metadata.get("primary_seed", 0))
+	return "%s:%d:%d:%d:%d" % [
+		String(metadata.get("topology_mode", "legacy")),
+		seed,
+		circumference,
+		FULL_PREGEN_MIN_CHUNK_Y,
+		_compute_finite_world_pregen_max_chunk_y(),
+	]
+
+func _extract_pregenerated_payload(coord: Vector2i) -> Dictionary:
+	var canonical := _canonicalize_chunk_coord(coord)
+	var payload = _pregenerated_chunk_payloads.get(canonical, {})
+	if payload is Dictionary:
+		return payload
+	return {}
+
+func _chunk_requires_structure_pass(chunk_y: int) -> bool:
+	if ENABLE_TILE_HOUSE_STRUCTURES and chunk_y >= STRUCTURE_SURFACE_SCAN_MIN_CHUNK_Y and chunk_y <= STRUCTURE_SURFACE_SCAN_MAX_CHUNK_Y:
+		return true
+	if chunk_y >= BURIED_RUINS_MIN_CHUNK_Y and chunk_y <= BURIED_RUINS_MAX_CHUNK_Y:
+		return true
+	return false
+
+func _chunk_requires_tree_pass(chunk_y: int) -> bool:
+	return chunk_y >= TREE_PASS_MIN_CHUNK_Y and chunk_y <= TREE_PASS_MAX_CHUNK_Y
+
+func _decorate_generated_chunk(coord: Vector2i, cells: Dictionary, spawned_entities: Array) -> void:
+	if _chunk_requires_structure_pass(coord.y):
+		_apply_structures(coord, cells, spawned_entities)
+
+	if _chunk_requires_tree_pass(coord.y):
+		var natural_ground_y: Array = []
+		for local_x in range(CHUNK_SIZE):
+			natural_ground_y.append(_get_top_tile_y(cells, local_x))
+		_apply_trees(coord, cells, natural_ground_y)
+
+func pregenerate_finite_world(progress_callback: Callable = Callable(), max_chunks: int = -1, max_seconds: float = 0.0) -> Dictionary:
+	var world_topology := _get_world_topology()
+	if not world_topology or not world_topology.has_method("is_planetary") or not world_topology.is_planetary():
+		return {
+			"performed": false,
+			"reason": "legacy_mode",
+			"total": 0,
+			"done": 0,
+		}
+
+	if not world_topology.has_method("get_circumference_chunks"):
+		return {
+			"performed": false,
+			"reason": "missing_topology_interface",
+			"total": 0,
+			"done": 0,
+		}
+
+	var circumference := int(world_topology.get_circumference_chunks())
+	if circumference <= 0:
+		return {
+			"performed": false,
+			"reason": "invalid_circumference",
+			"total": 0,
+			"done": 0,
+		}
+
+	var generator = get_tree().get_first_node_in_group("world_generator")
+	if not is_instance_valid(generator):
+		return {
+			"performed": false,
+			"reason": "missing_world_generator",
+			"total": 0,
+			"done": 0,
+		}
+
+	var cache_key := _build_full_pregen_cache_key()
+	if _pregen_cache_key == cache_key and not _pregenerated_chunk_payloads.is_empty():
+		if progress_callback.is_valid():
+			progress_callback.call(_pregenerated_chunk_payloads.size(), _pregenerated_chunk_payloads.size())
+		return {
+			"performed": false,
+			"reason": "already_cached",
+			"total": _pregenerated_chunk_payloads.size(),
+			"done": _pregenerated_chunk_payloads.size(),
+			"max_chunk_y": _compute_finite_world_pregen_max_chunk_y(),
+		}
+
+	var max_chunk_y := _compute_finite_world_pregen_max_chunk_y()
+	var full_total := circumference * (max_chunk_y - FULL_PREGEN_MIN_CHUNK_Y + 1)
+	var spawn_anchor := 0
+	if world_topology.has_method("get_spawn_anchor_chunk"):
+		spawn_anchor = int(world_topology.get_spawn_anchor_chunk())
+
+	var ordered_x: Array = []
+	var seen_x := {}
+	for dist in range(circumference):
+		var left_x := posmod(spawn_anchor - dist, circumference)
+		if not seen_x.has(left_x):
+			seen_x[left_x] = true
+			ordered_x.append(left_x)
+
+		var right_x := posmod(spawn_anchor + dist, circumference)
+		if not seen_x.has(right_x):
+			seen_x[right_x] = true
+			ordered_x.append(right_x)
+
+		if ordered_x.size() >= circumference:
+			break
+
+	var coords: Array = []
+	for y in range(FULL_PREGEN_MIN_CHUNK_Y, max_chunk_y + 1):
+		for x in ordered_x:
+			coords.append(Vector2i(x, y))
+			if max_chunks > 0 and coords.size() >= max_chunks:
+				break
+		if max_chunks > 0 and coords.size() >= max_chunks:
+			break
+
+	var truncated_by_chunk_budget := max_chunks > 0 and coords.size() < full_total
+
+	_pregenerated_chunk_payloads.clear()
+	_pregen_cache_key = ""
+
+	var total := coords.size()
+	var done := 0
+	var start_msec := Time.get_ticks_msec()
+	var reason := "completed"
+	while done < total:
+		if max_seconds > 0.0:
+			var elapsed_sec := float(Time.get_ticks_msec() - start_msec) / 1000.0
+			if elapsed_sec >= max_seconds:
+				reason = "time_budget_exhausted"
+				break
+
+		var batch_end := mini(done + FULL_PREGEN_CHUNKS_PER_FRAME, total)
+		for idx in range(done, batch_end):
+			if max_seconds > 0.0:
+				var elapsed_inner_sec := float(Time.get_ticks_msec() - start_msec) / 1000.0
+				if elapsed_inner_sec >= max_seconds:
+					reason = "time_budget_exhausted"
+					batch_end = idx
+					break
+
+			var coord: Vector2i = coords[idx]
+			var cells = generator.generate_chunk_cells(coord)
+			var spawned_entities: Array = []
+			_decorate_generated_chunk(coord, cells, spawned_entities)
+			_pregenerated_chunk_payloads[coord] = {
+				"cells": cells,
+				"entities": spawned_entities,
+			}
+
+		done = batch_end
+		if progress_callback.is_valid():
+			progress_callback.call(done, total)
+		if done >= total or reason == "time_budget_exhausted":
+			break
+		await get_tree().process_frame
+
+	if reason == "completed" and truncated_by_chunk_budget:
+		reason = "chunk_budget_capped"
+
+	if reason == "completed" and not truncated_by_chunk_budget:
+		_pregen_cache_key = cache_key
+
+	return {
+		"performed": done > 0,
+		"reason": reason,
+		"full_total": full_total,
+		"total": total,
+		"done": done,
+		"truncated_by_chunk_budget": truncated_by_chunk_budget,
+		"max_chunk_y": max_chunk_y,
+	}
+
+func clear_pregenerated_cache() -> void:
+	_pregenerated_chunk_payloads.clear()
+	_pregen_cache_key = ""
 	
-func restart() -> void:
+func restart(queue_initial_vicinity_load: bool = true) -> void:
 	print("InfiniteChunkManager: Restarting world state...")
 	current_session_id += 1 # 增加 Session ID 以使旧的异步任务失效
 	_clear_loaded_world_visuals()
 	loaded_chunks.clear()
 	_loading_queue.clear()
 	_pending_chunk_requests.clear()
+	_enrichment_queue.clear()
+	_pending_enrichment_requests.clear()
+	clear_pregenerated_cache()
 	
 	# Fix: Explicitly destroy old entity containers (since they are on Main scene, not WorldGenerator)
 	for container in chunk_entity_containers.values():
@@ -57,12 +325,16 @@ func restart() -> void:
 	
 	# 如果是新游戏，我们必须清空之前保存的所有区块 Delta
 	world_delta_data.clear()
+	dirty_chunk_coords.clear()
+	chunk_display_coords.clear()
+	_loading_display_coords.clear()
 	
 	# 删除危险的 _wipe_save_data_debug() 调用，防止存档被误删
 	print("InfiniteChunkManager: restart() called, memory deltas cleared.")
 	
-	# 重置最后玩家位置，强制立刻更新
-	update_player_vicinity(Vector2(0, -999999)) # Force update on next frame
+	# 仅在需要时触发首批邻域加载，避免主菜单阶段产生隐式世界生成卡顿。
+	if queue_initial_vicinity_load:
+		update_player_vicinity(Vector2(0, -999999)) # Force update on next frame
 
 func set_save_root(path_root: String, preserve_current_data: bool = false) -> void:
 	# 确保路径以斜杠结尾
@@ -86,9 +358,14 @@ func set_save_root(path_root: String, preserve_current_data: bool = false) -> vo
 			container.queue_free()
 	chunk_entity_containers.clear()
 	world_delta_data.clear()
+	dirty_chunk_coords.clear()
+	chunk_display_coords.clear()
+	_loading_display_coords.clear()
 	loaded_chunks.clear()
 	_loading_queue.clear()
 	_pending_chunk_requests.clear()
+	_enrichment_queue.clear()
+	_pending_enrichment_requests.clear()
 	
 	# 预加载新路径下的修改数据
 	_preload_all_deltas()
@@ -112,11 +389,20 @@ func _preload_all_deltas() -> void:
 		print("InfiniteChunkManager: 预加载了 %d 个区块修改数据。" % world_delta_data.size())
 
 func save_all_deltas() -> void:
-	for coord in world_delta_data:
+	if dirty_chunk_coords.is_empty():
+		print("InfiniteChunkManager: 无脏区块，跳过全量写盘。")
+		return
+
+	var dirty_list := dirty_chunk_coords.keys()
+	for coord in dirty_list:
+		if not world_delta_data.has(coord):
+			continue
 		var chunk = world_delta_data[coord]
 		var path = _get_save_path(coord)
 		ResourceSaver.save(chunk, path)
-	print("InfiniteChunkManager: 所有区块修改已保存。")
+
+	dirty_chunk_coords.clear()
+	print("InfiniteChunkManager: 已保存 %d 个脏区块修改。" % dirty_list.size())
 
 func _wipe_save_data_debug() -> void:
 	# 简单暴力的清理
@@ -135,6 +421,28 @@ func _ensure_save_dir() -> void:
 	if not DirAccess.dir_exists_absolute(active_save_root):
 		DirAccess.make_dir_recursive_absolute(active_save_root)
 
+func clear_save_root_data(path_root: String = "") -> void:
+	var target_root := active_save_root if path_root == "" else path_root
+	if not target_root.ends_with("/"):
+		target_root += "/"
+	if not DirAccess.dir_exists_absolute(target_root):
+		return
+
+	var dir := DirAccess.open(target_root)
+	if not dir:
+		return
+
+	dir.list_dir_begin()
+	var file_name := dir.get_next()
+	while file_name != "":
+		if not dir.current_is_dir() and file_name.begins_with("chunk_") and file_name.ends_with(".tres"):
+			dir.remove(file_name)
+		file_name = dir.get_next()
+	dir.list_dir_end()
+
+	if target_root == active_save_root:
+		dirty_chunk_coords.clear()
+
 func _get_save_path(coord: Vector2i) -> String:
 	return active_save_root + "chunk_%d_%d.tres" % [coord.x, coord.y]
 
@@ -151,8 +459,8 @@ func _parse_delta_local_pos_key(key: Variant) -> Variant:
 
 ## 获取世界坐标所属的区块坐标
 func get_chunk_coord(world_pos: Vector2) -> Vector2i:
-	var tile_pos = Vector2i((world_pos / TILE_SIZE).floor())
-	return Vector2i((Vector2(tile_pos) / CHUNK_SIZE).floor())
+	var raw_coord := _get_raw_chunk_coord(world_pos)
+	return _canonicalize_chunk_coord(raw_coord)
 
 ## 获取区块内局部坐标
 func get_local_tile_pos(world_pos: Vector2) -> Vector2i:
@@ -177,6 +485,7 @@ func record_delta(world_pos: Vector2, layer_idx: int, source_id: int, atlas_coor
 			world_delta_data[c_coord].coord = c_coord
 	
 	world_delta_data[c_coord].add_delta(layer_idx, l_pos, source_id, atlas_coords)
+	dirty_chunk_coords[c_coord] = true
 	
 	# 同步更新小地图
 	if MinimapManager and MinimapManager.has_method("update_tile_at_pos"):
@@ -184,14 +493,23 @@ func record_delta(world_pos: Vector2, layer_idx: int, source_id: int, atlas_coor
 
 ## 更新玩家周边的区块加载状态
 func update_player_vicinity(player_pos: Vector2) -> void:
-	var needed_chunks = []
+	var needed_chunks: Array = []
+	var needed_display_by_canonical: Dictionary = {}
 	
-	# 增加对 0 点附近的检查，并确保玩家位置发生显著变化再更新
-	var center_chunk = get_chunk_coord(player_pos)
+	# 渲染邻域按 display 坐标展开，再折叠为 canonical key，避免缝边左侧区块被绘制到世界另一端。
+	var center_chunk = _get_raw_chunk_coord(player_pos)
 	
 	for x in range(center_chunk.x - LOAD_RADIUS, center_chunk.x + LOAD_RADIUS + 1):
 		for y in range(center_chunk.y - LOAD_RADIUS, center_chunk.y + LOAD_RADIUS + 1):
-			needed_chunks.append(Vector2i(x, y))
+			var display_coord := Vector2i(x, y)
+			var canonical := _canonicalize_chunk_coord(display_coord)
+			if needed_display_by_canonical.has(canonical):
+				var current_display: Vector2i = needed_display_by_canonical[canonical]
+				if absi(display_coord.x - center_chunk.x) < absi(current_display.x - center_chunk.x):
+					needed_display_by_canonical[canonical] = display_coord
+				continue
+			needed_display_by_canonical[canonical] = display_coord
+			needed_chunks.append(canonical)
 	
 	# 卸载不再需要的区块
 	var to_unload = []
@@ -204,37 +522,91 @@ func update_player_vicinity(player_pos: Vector2) -> void:
 		
 	# 加载新区块
 	for coord in needed_chunks:
-		if not loaded_chunks.has(coord) and not _loading_queue.has(coord):
-			_request_chunk_load(coord)
+		var display_coord: Vector2i = needed_display_by_canonical.get(coord, coord)
+		_loading_display_coords[coord] = display_coord
 
-func _request_chunk_load(coord: Vector2i) -> void:
+		if loaded_chunks.has(coord):
+			var existing_display := _resolve_display_chunk_coord(coord)
+			if existing_display != display_coord:
+				_unload_chunk(coord)
+				_request_chunk_load(coord, display_coord)
+			continue
+
+		if not _loading_queue.has(coord):
+			_request_chunk_load(coord, display_coord)
+
+func _request_chunk_load(coord: Vector2i, display_coord: Variant = null) -> void:
+	coord = _canonicalize_chunk_coord(coord)
+	if display_coord == null:
+		display_coord = coord
+	_loading_display_coords[coord] = display_coord
 	_loading_queue[coord] = true
 	_pending_chunk_requests.append(coord)
 
+func request_chunk_load(coord: Vector2i, display_coord: Variant = null) -> void:
+	coord = _canonicalize_chunk_coord(coord)
+	if loaded_chunks.has(coord) or _loading_queue.has(coord):
+		return
+	if display_coord == null:
+		display_coord = coord
+	_request_chunk_load(coord, display_coord)
+
+func _request_chunk_enrichment(coord: Vector2i) -> void:
+	coord = _canonicalize_chunk_coord(coord)
+	if _enrichment_queue.has(coord):
+		return
+	_enrichment_queue[coord] = true
+	_pending_enrichment_requests.append(coord)
+
 func _build_chunk_on_main_thread(coord: Vector2i, session_id: int) -> void:
+	coord = _canonicalize_chunk_coord(coord)
+	var display_coord: Vector2i = _loading_display_coords.get(coord, chunk_display_coords.get(coord, coord))
 	# 彻底移除工作线程中的 SceneTree/Node 访问，改为主线程逐块构建。
 	if session_id != current_session_id:
 		_loading_queue.erase(coord)
+		_loading_display_coords.erase(coord)
 		return
 	if loaded_chunks.has(coord) or chunk_entity_containers.has(coord):
 		_loading_queue.erase(coord)
+		_loading_display_coords.erase(coord)
 		return
 
 	var generator = get_tree().get_first_node_in_group("world_generator")
 	if not is_instance_valid(generator):
 		_loading_queue.erase(coord)
+		_loading_display_coords.erase(coord)
 		return
 
+	var pregenerated_payload := _extract_pregenerated_payload(coord)
+	if not pregenerated_payload.is_empty():
+		var pregen_cells = pregenerated_payload.get("cells", {0: {}, 1: {}, 2: {}})
+		var pregen_entities: Array = pregenerated_payload.get("entities", [])
+		_finalize_chunk_load(coord, pregen_cells, pregen_entities, false, display_coord)
+		return
+
+	# 阶段 1：先生成可通行地形与核心洞穴，保证区块尽快可玩。
+	var critical_cells = generator.generate_chunk_cells(coord, true)
+	_finalize_chunk_load(coord, critical_cells, [], false, display_coord)
+	_request_chunk_enrichment(coord)
+
+func _build_chunk_enrichment_on_main_thread(coord: Vector2i, session_id: int) -> void:
+	coord = _canonicalize_chunk_coord(coord)
+	if session_id != current_session_id:
+		return
+	if not loaded_chunks.has(coord):
+		return
+	if not _extract_pregenerated_payload(coord).is_empty():
+		return
+
+	var generator = get_tree().get_first_node_in_group("world_generator")
+	if not is_instance_valid(generator):
+		return
+
+	# 阶段 2：补齐次要内容（矿物、地表装饰、树木和结构）。
 	var cells = generator.generate_chunk_cells(coord)
 	var spawned_entities = []
-
-	var natural_ground_y = []
-	for x in range(64):
-		natural_ground_y.append(_get_top_tile_y(cells, x))
-
-	_apply_structures(coord, cells, spawned_entities)
-	_apply_trees(coord, cells, natural_ground_y)
-	_finalize_chunk_load(coord, cells, spawned_entities)
+	_decorate_generated_chunk(coord, cells, spawned_entities)
+	_apply_chunk_enrichment(coord, cells, spawned_entities)
 
 func _get_top_tile_y(cells: Dictionary, local_x: int) -> int:
 	# 在 Layer 0 中寻找该 X 坐标的“真正的”地面 (非空且上方为空)
@@ -261,29 +633,54 @@ func get_chunk_hash(c_coord: Vector2i) -> int:
 	var y = c_coord.y + 67890 + (seed_salt / 9999)
 	return abs((x * 73856093) ^ (y * 19349663) ^ 5381 ^ seed_salt)
 
+func _get_surface_structure_score(chunk_x: int) -> float:
+	var hash_probe := get_chunk_hash(Vector2i(chunk_x, 5))
+	var hash_component := float((hash_probe >> 5) & 1023) / 1023.0
+	var noise_component := 0.5
+	var generator = get_tree().get_first_node_in_group("world_generator")
+	if generator and generator.has_variable("noise_surface_feature"):
+		noise_component = (generator.noise_surface_feature.get_noise_1d(float(chunk_x) * 0.41 + 27.0) + 1.0) * 0.5
+	return hash_component * 0.46 + noise_component * 0.54
+
+func _is_surface_structure_anchor(chunk_x: int) -> bool:
+	var score := _get_surface_structure_score(chunk_x)
+	if score < 0.86:
+		return false
+	if score <= _get_surface_structure_score(chunk_x - 1):
+		return false
+	if score < _get_surface_structure_score(chunk_x + 1):
+		return false
+	return true
+
 func _get_chunk_world_origin(c_coord: Vector2i) -> Vector2:
 	return Vector2(c_coord.x * CHUNK_SIZE * TILE_SIZE, c_coord.y * CHUNK_SIZE * TILE_SIZE)
 
 func _apply_structures(coord: Vector2i, chunk_data: Dictionary, entities_out: Array) -> void:
+	var allow_surface_structures := ENABLE_TILE_HOUSE_STRUCTURES and coord.y >= STRUCTURE_SURFACE_SCAN_MIN_CHUNK_Y and coord.y <= STRUCTURE_SURFACE_SCAN_MAX_CHUNK_Y
+	var allow_buried_ruins := coord.y >= BURIED_RUINS_MIN_CHUNK_Y and coord.y <= BURIED_RUINS_MAX_CHUNK_Y
+	if not allow_surface_structures and not allow_buried_ruins:
+		return
+
 	var generator = get_tree().get_first_node_in_group("world_generator")
 	if not generator: return
 
 	chunk_data["_coord"] = coord
-	var is_surface_chunk = coord.y >= 4 and coord.y <= 7
-	
-	for dx in range(-2, 3): # 扩大检测范围，确保较宽的房屋能完整跨区块
-		var check_coord = coord + Vector2i(dx, 0)
-		var hash_val = get_chunk_hash(check_coord)
-		
-		if is_surface_chunk and hash_val % 12 == 0:
+
+	if allow_surface_structures:
+		for dx in range(-2, 3): # 扩大检测范围，确保较宽的房屋能完整跨区块
+			var check_coord = coord + Vector2i(dx, 0)
+			var hash_val = get_chunk_hash(check_coord)
+			if not _is_surface_structure_anchor(check_coord.x):
+				continue
+
 			var center_x_local = hash_val % 30 + 15
 			# 严格使用整数像素偏差
 			var global_house_x_tiles = check_coord.x * 64 + center_x_local
-			
+
 			# 安全保护：在世界原点附近 (Spawn Point) ±120 格范围内禁止生成结构，防止出生点被房子卡住
 			if abs(global_house_x_tiles) < 120:
 				continue
-			
+
 			# 高度扫描：扫描房子宽度的地面高度，取全宽度内的最高点（Y值最小）作为基准
 			# 防止房子门口被埋在地下
 			var house_half_width = 18 # 约 35/2
@@ -292,52 +689,49 @@ func _apply_structures(coord: Vector2i, chunk_data: Dictionary, entities_out: Ar
 				var gy = _get_stable_ground_y(scan_x)
 				if gy < min_y_in_range:
 					min_y_in_range = gy
-			
+
 			# 稍微抬高一格，确保不切土
 			var global_base_y = min_y_in_range
-			
+			var base_chunk_y = int(floor(float(global_base_y) / 64.0))
+
+			# 只在靠近地基所在的区块带生成，避免高空区块出现孤立屋顶碎片
+			# 房屋上方约 21 格，下方可能因地基补齐再延伸 10-20 格，预留 2 个 chunk 的带宽
+			if abs(coord.y - base_chunk_y) > 2:
+				continue
+
 			var local_x = global_house_x_tiles - (coord.x * 64)
 			var local_y = global_base_y - (coord.y * 64)
-			
+
 			# 只要房屋的一部分可能在该区块内，就调用生成逻辑
 			# 房屋宽度约 35，高度约 20
 			if local_x > -40 and local_x < 100 and local_y > -40 and local_y < 100:
 				_generate_tile_house(chunk_data, Vector2i(local_x, local_y), entities_out)
 
-		# 彻底移除随机矿井生成，防止地平线出现垂直空洞大坑
-		# if dx == 0 and hash_val % 100 == 0:
-		# 	_apply_shaft(chunk_data, hash_val)
+			# 彻底移除随机矿井生成，防止地平线出现垂直空洞大坑
+			# if dx == 0 and hash_val % 100 == 0:
+			# 	_apply_shaft(chunk_data, hash_val)
 
 	# 情况 3: 埋没遗迹
-	if coord.y > 6 and get_chunk_hash(coord) % 15 == 0:
+	if allow_buried_ruins and get_chunk_hash(coord) % 15 == 0:
 		_apply_ruins(coord, chunk_data, get_chunk_hash(coord))
 
 func _get_stable_ground_y(global_x: int) -> int:
 	var generator = get_tree().get_first_node_in_group("world_generator")
 	if not generator: return 300
-	
-	# 重复生成器中的平坦化逻辑
-	var spawn_x = 0
-	var dist_to_spawn_x = abs(global_x - spawn_x)
-	var spawn_flat_weight = clamp(float(dist_to_spawn_x) / 64.0, 0.0, 1.0)
-	
-	var biome_amp = 0.0
-	var primary_biome = generator.get_biome_at(global_x, 0) # 传入 0 获取地表生态
-	
-	# 简化：直接使用主要生态的参数 (既然现在是 2D 自然切分，不需要线性混合高度)
-	if generator.biome_params.has(primary_biome):
-		biome_amp = generator.biome_params[primary_biome]["amp"]
-	else:
-		biome_amp = 60.0
-	
-	var cont_val = generator.noise_continental.get_noise_1d(global_x)
-	var blended_cont_val = lerp(0.0, cont_val, spawn_flat_weight)
-	
-	# 严格同步 generator.gd: var surface_base = 300.0 + (blended_cont_val * biome_amp)
-	# 瓦片 Y 是 global_y > surface_base。
-	# 例如 surface_base = 300.0，则 301 为第一个实心。
-	# 我们返回 301 作为房屋底座所在高度
-	var surface_base = 300.0 + (blended_cont_val * biome_amp)
+
+	# 始终复用 WorldGenerator 的当前地表高度逻辑，避免与 terrain 迭代脱节导致漂浮结构。
+	var surface_base = 300.0
+	if generator.has_method("get_surface_height_at"):
+		surface_base = generator.get_surface_height_at(global_x)
+	elif generator.has_method("get_biome_at") and generator.has_variable("noise_continental"):
+		# 兼容兜底：尽量保持旧行为，防止方法缺失时报错。
+		var primary_biome = generator.get_biome_at(global_x, 0)
+		var biome_amp = 60.0
+		if generator.biome_params.has(primary_biome):
+			biome_amp = generator.biome_params[primary_biome]["amp"]
+		var cont_val = generator.noise_continental.get_noise_1d(global_x)
+		surface_base = 300.0 + (cont_val * biome_amp)
+
 	return int(floor(surface_base)) + 1
 
 func _apply_shaft(chunk_data: Dictionary, hash_val: int) -> void:
@@ -613,7 +1007,38 @@ func _generate_tree_at(cells: Dictionary, local_pos: Vector2i, rng: RandomNumber
 			# Minimalist: Reuse single leaf tile for entire canopy
 			cells[tree_layer_idx][p] = {"source": sid, "atlas": canopy_tile}
 
-func _finalize_chunk_load(coord: Vector2i, cells: Dictionary, new_entities: Array = []) -> void:
+func _build_entity_spawn_key(ent: Dictionary) -> String:
+	return "%s_%d_%d" % [ent.scene_path, int(round(ent.pos.x)), int(round(ent.pos.y))]
+
+func _append_new_entities_to_chunk(chunk: WorldChunk, new_entities: Array) -> Array:
+	if new_entities.is_empty():
+		return []
+
+	var seen_keys := {}
+	for ent in chunk.entities:
+		seen_keys[_build_entity_spawn_key(ent)] = true
+
+	var accepted: Array = []
+	for ent in new_entities:
+		var key := _build_entity_spawn_key(ent)
+		if seen_keys.has(key):
+			continue
+		seen_keys[key] = true
+		accepted.append(ent)
+
+	if not accepted.is_empty():
+		chunk.entities.append_array(accepted)
+	return accepted
+
+func _finalize_chunk_load(coord: Vector2i, cells: Dictionary, new_entities: Array = [], force_immediate_refresh: bool = false, display_coord: Variant = null) -> void:
+	var resolved_display: Vector2i
+	if display_coord == null:
+		resolved_display = _loading_display_coords.get(coord, chunk_display_coords.get(coord, coord))
+	else:
+		resolved_display = display_coord
+	chunk_display_coords[coord] = resolved_display
+	_loading_display_coords.erase(coord)
+
 	# 如果是异步任务触发的，清理队列。如果是强制同步加载的，可能不在队列中
 	if _loading_queue.has(coord):
 		_loading_queue.erase(coord)
@@ -633,23 +1058,12 @@ func _finalize_chunk_load(coord: Vector2i, cells: Dictionary, new_entities: Arra
 	else:
 		chunk = WorldChunk.new()
 		chunk.coord = coord
-		
-		# 严格去重：如果多个结构种子在同一坐标产生了相同的实体，仅保留一个
-		var unique_entities = []
-		var seen_keys = {}
-		for ent in new_entities:
-			# 使用四舍五入后的整数坐标作为键，防止微小浮点误差导致去重失效
-			var key = "%s_%d_%d" % [ent.scene_path, int(round(ent.pos.x)), int(round(ent.pos.y))]
-			if not seen_keys.has(key):
-				unique_entities.append(ent)
-				seen_keys[key] = true
-		
-		# 将去重后的新生成的实体加入 Chunk
-		chunk.entities.append_array(unique_entities)
+
+	_append_new_entities_to_chunk(chunk, new_entities)
 	
 	loaded_chunks[coord] = chunk
 	
-	_apply_cells_to_layers(coord, cells, chunk)
+	_apply_cells_to_layers(coord, cells, chunk, force_immediate_refresh)
 	_spawn_chunk_entities(coord, chunk) 
 	
 	# 显式刷新 TileMapLayer 属性，背景层不应参与实体碰撞。
@@ -666,27 +1080,55 @@ func _finalize_chunk_load(coord: Vector2i, cells: Dictionary, new_entities: Arra
 		
 	chunk_loaded.emit(coord)
 
+func _apply_chunk_enrichment(coord: Vector2i, cells: Dictionary, new_entities: Array) -> void:
+	if not loaded_chunks.has(coord):
+		return
+
+	var chunk: WorldChunk = loaded_chunks[coord]
+	_apply_cells_to_layers(coord, cells, chunk, false)
+
+	var accepted_entities := _append_new_entities_to_chunk(chunk, new_entities)
+	if not accepted_entities.is_empty():
+		var container = chunk_entity_containers.get(coord)
+		if not is_instance_valid(container):
+			container = Node2D.new()
+			container.name = "Entities_%d_%d" % [coord.x, coord.y]
+			get_tree().current_scene.add_child(container)
+			chunk_entity_containers[coord] = container
+
+		for ent in accepted_entities:
+			_instantiate_entity(container, ent)
+
+	if MinimapManager:
+		MinimapManager.update_from_chunk(coord, cells, chunk)
+
 ## 强制同步加载指定位置的区块 (用于传送等紧急情况)
 func force_load_at_world_pos(world_pos: Vector2) -> void:
-	var coord = get_chunk_coord(world_pos)
+	var display_coord := _get_raw_chunk_coord(world_pos)
+	var coord = _canonicalize_chunk_coord(display_coord)
 	if loaded_chunks.has(coord): return
 	
 	print("InfiniteChunkManager: SYNC forcing load for chunk ", coord)
 	var generator = get_tree().get_first_node_in_group("world_generator")
 	if not generator: return
+
+	var pregenerated_payload := _extract_pregenerated_payload(coord)
+	if not pregenerated_payload.is_empty():
+		# 传送/救援路径需要同帧可碰撞，保留强制图层内部刷新。
+		_finalize_chunk_load(
+			coord,
+			pregenerated_payload.get("cells", {0: {}, 1: {}, 2: {}}),
+			pregenerated_payload.get("entities", []),
+			true,
+			display_coord
+		)
+		return
 	
-	var cells = generator.generate_chunk_cells(coord)
-	var spawned_entities = []
-	
-	var natural_ground_y = []
-	for x in range(64):
-		natural_ground_y.append(_get_top_tile_y(cells, x))
-		
-	_apply_structures(coord, cells, spawned_entities)
-	_apply_trees(coord, cells, natural_ground_y)
-	
-	# 同步调用最终应用
-	_finalize_chunk_load(coord, cells, spawned_entities)
+	# 传送等紧急路径同样优先保证可行走核心层，次要补充放到下一帧。
+	var critical_cells = generator.generate_chunk_cells(coord, true)
+	# 传送/救援路径需要同帧可碰撞，保留强制图层内部刷新。
+	_finalize_chunk_load(coord, critical_cells, [], true, display_coord)
+	_request_chunk_enrichment(coord)
 
 ## 寻找安全的地面位置 (用于防止掉入虚空)
 ## 返回有效的 Global Position (Vector2) 或 null (未找到)
@@ -878,6 +1320,7 @@ func register_placed_entity(world_pos: Vector2, scene_path: String, custom_data:
 		"data": custom_data
 	}
 	world_delta_data[c_coord].entities.append(entity_info)
+	dirty_chunk_coords[c_coord] = true
 	
 	# 如果当前区块已加载，立即实例化（通过容器）
 	if chunk_entity_containers.has(c_coord):
@@ -899,7 +1342,8 @@ func _collect_render_layers() -> Array:
 	return layers
 
 func _clear_chunk_region(coord: Vector2i) -> void:
-	var origin = coord * CHUNK_SIZE
+	var display_coord := _resolve_display_chunk_coord(coord)
+	var origin = display_coord * CHUNK_SIZE
 	for layer in _collect_render_layers():
 		if not layer:
 			continue
@@ -941,7 +1385,7 @@ func _load_chunk(_coord: Vector2i) -> void:
 	# 弃用同步加载版本
 	pass
 
-func _apply_cells_to_layers(chunk_coord: Vector2i, cells: Dictionary, chunk: WorldChunk) -> void:
+func _apply_cells_to_layers(chunk_coord: Vector2i, cells: Dictionary, chunk: WorldChunk, force_immediate_refresh: bool = false) -> void:
 	var generator = get_tree().get_first_node_in_group("world_generator")
 	
 	# 改良的图层获取逻辑：如果 LayerManager 尚未就绪，直接从 WorldGenerator 获取引用
@@ -963,7 +1407,8 @@ func _apply_cells_to_layers(chunk_coord: Vector2i, cells: Dictionary, chunk: Wor
 		12: generator.tree_layer_2 if generator else null
 	}
 	
-	var origin = chunk_coord * CHUNK_SIZE
+	var display_chunk_coord := _resolve_display_chunk_coord(chunk_coord)
+	var origin = display_chunk_coord * CHUNK_SIZE
 	
 	# 修改：不仅遍历 cells.keys()，还要确保遍历所有可能的逻辑图层，以便应用玩家 Delta
 	var all_relevant_layers = cells.keys()
@@ -1013,14 +1458,17 @@ func _apply_cells_to_layers(chunk_coord: Vector2i, cells: Dictionary, chunk: Wor
 			else:
 				layer.set_cell(map_pos, delta.get("source", -1), delta.get("atlas", Vector2i(-1, -1)))
 	
-	# --- 强制物理重刷 ---
-	# 在传送后的同步加载中，此举至关重要，它强制本帧生成物理形状
-	for layer_idx in layers:
-		var layer = layers[layer_idx]
-		if layer is TileMapLayer:
-			layer.update_internals() # 触发 Godot 内部重绘与物理刷新
+	# 仅在强同步路径下强制刷新，避免普通流式加载时每块都触发昂贵的内部重建导致卡顿。
+	if force_immediate_refresh:
+		for layer_idx in layers:
+			var layer = layers[layer_idx]
+			if layer is TileMapLayer:
+				layer.update_internals() # 触发 Godot 内部重绘与物理刷新
 
 func _unload_chunk(coord: Vector2i) -> void:
+	_enrichment_queue.erase(coord)
+	_pending_enrichment_requests.erase(coord)
+
 	# 1. 如果有修改，保存到磁盘并释放内存
 	if world_delta_data.has(coord):
 		var chunk = world_delta_data[coord]
@@ -1030,8 +1478,9 @@ func _unload_chunk(coord: Vector2i) -> void:
 				has_changes = true
 				break
 		
-		if has_changes:
+		if has_changes and dirty_chunk_coords.has(coord):
 			ResourceSaver.save(chunk, _get_save_path(coord))
+			dirty_chunk_coords.erase(coord)
 		
 		world_delta_data.erase(coord)
 
@@ -1047,5 +1496,7 @@ func _unload_chunk(coord: Vector2i) -> void:
 
 	# 2. 清除 TileMapLayer 上的对应区域以释放渲染资源
 	_clear_chunk_region(coord)
+	chunk_display_coords.erase(coord)
+	_loading_display_coords.erase(coord)
 				
 	chunk_unloaded.emit(coord)

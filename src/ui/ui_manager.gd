@@ -14,6 +14,13 @@ signal window_closed(window_name: String)
 var active_windows: Dictionary = {}
 var blocking_windows: Array = [] # 存储正在拦截输入的窗口名称
 var highlight_overlay: Node = null
+var loading_overlay: Control = null
+var loading_title_label: Label = null
+var loading_stage_label: Label = null
+var loading_status_label: Label = null
+var loading_error_label: Label = null
+var loading_progress_bar: ProgressBar = null
+var loading_progress_tween: Tween = null
 
 var is_ui_focused: bool = false:
 	set(value):
@@ -165,6 +172,179 @@ func play_fade(to_black: bool, duration: float = 0.5) -> Signal:
 	tween.tween_property(fade_node, "color:a", target_alpha, duration)
 	return tween.finished
 
+func show_loading_overlay(title: String = "世界加载中", stage_text: String = "", progress: float = 0.0, status_text: String = "") -> void:
+	_ensure_loading_overlay()
+	if not is_instance_valid(loading_overlay):
+		return
+	loading_overlay.visible = true
+	loading_overlay.modulate.a = 1.0
+	if is_instance_valid(loading_title_label):
+		loading_title_label.text = title
+	if is_instance_valid(loading_error_label):
+		loading_error_label.visible = false
+	update_loading_overlay(progress, stage_text, status_text)
+
+func update_loading_overlay(progress: float, stage_text: String = "", status_text: String = "") -> void:
+	_ensure_loading_overlay()
+	if not is_instance_valid(loading_overlay):
+		return
+	loading_overlay.visible = true
+	if is_instance_valid(loading_stage_label) and stage_text != "":
+		loading_stage_label.text = stage_text
+	if is_instance_valid(loading_status_label) and status_text != "":
+		loading_status_label.text = status_text
+	if is_instance_valid(loading_progress_bar):
+		var target_value := clampf(progress, 0.0, 1.0) * 100.0
+		if is_instance_valid(loading_progress_tween):
+			loading_progress_tween.kill()
+		loading_progress_tween = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+		loading_progress_tween.tween_property(loading_progress_bar, "value", target_value, 0.12)
+
+func show_loading_failure(message: String) -> void:
+	_ensure_loading_overlay()
+	if not is_instance_valid(loading_overlay):
+		return
+	loading_overlay.visible = true
+	loading_overlay.modulate.a = 1.0
+	if is_instance_valid(loading_stage_label):
+		loading_stage_label.text = "加载失败"
+	if is_instance_valid(loading_status_label):
+		loading_status_label.text = message
+	if is_instance_valid(loading_error_label):
+		loading_error_label.visible = true
+		loading_error_label.text = "正在返回主菜单..."
+
+func hide_loading_overlay(duration: float = 0.2) -> Signal:
+	_ensure_loading_overlay()
+	if not is_instance_valid(loading_overlay) or not loading_overlay.visible:
+		return get_tree().create_timer(0.0).timeout
+	var tween = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	tween.tween_property(loading_overlay, "modulate:a", 0.0, duration)
+	tween.tween_callback(_finalize_loading_overlay_hide)
+	return tween.finished
+
+func dismiss_loading_overlay() -> void:
+	if not is_instance_valid(loading_overlay):
+		return
+	if is_instance_valid(loading_progress_tween):
+		loading_progress_tween.kill()
+	_finalize_loading_overlay_hide()
+
+func _ensure_loading_overlay() -> void:
+	if is_instance_valid(loading_overlay):
+		return
+
+	var root := get_tree().root
+	var loading_layer = root.get_node_or_null("GlobalLoadingLayer")
+	if not loading_layer:
+		var canvas := CanvasLayer.new()
+		canvas.name = "GlobalLoadingLayer"
+		canvas.layer = 129
+		canvas.process_mode = Node.PROCESS_MODE_ALWAYS
+		root.add_child(canvas)
+		loading_layer = canvas
+
+	var overlay := Control.new()
+	overlay.name = "LoadingOverlay"
+	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.process_mode = Node.PROCESS_MODE_ALWAYS
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	loading_layer.add_child(overlay)
+
+	var background := ColorRect.new()
+	background.name = "Background"
+	background.color = Color(0.03, 0.05, 0.09, 0.92)
+	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	background.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.add_child(background)
+
+	var panel := PanelContainer.new()
+	panel.name = "Panel"
+	panel.anchor_left = 0.5
+	panel.anchor_top = 0.5
+	panel.anchor_right = 0.5
+	panel.anchor_bottom = 0.5
+	panel.offset_left = -260
+	panel.offset_top = -120
+	panel.offset_right = 260
+	panel.offset_bottom = 120
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.08, 0.12, 0.18, 0.96)
+	panel_style.border_color = Color(0.36, 0.62, 0.86, 0.9)
+	panel_style.border_width_left = 2
+	panel_style.border_width_top = 2
+	panel_style.border_width_right = 2
+	panel_style.border_width_bottom = 2
+	panel_style.corner_radius_top_left = 10
+	panel_style.corner_radius_top_right = 10
+	panel_style.corner_radius_bottom_left = 10
+	panel_style.corner_radius_bottom_right = 10
+	panel_style.content_margin_left = 24
+	panel_style.content_margin_top = 24
+	panel_style.content_margin_right = 24
+	panel_style.content_margin_bottom = 24
+	panel.add_theme_stylebox_override("panel", panel_style)
+	overlay.add_child(panel)
+
+	var content := VBoxContainer.new()
+	content.name = "Content"
+	content.add_theme_constant_override("separation", 12)
+	panel.add_child(content)
+
+	var title := Label.new()
+	title.name = "TitleLabel"
+	title.text = "世界加载中"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 28)
+	content.add_child(title)
+
+	var stage := Label.new()
+	stage.name = "StageLabel"
+	stage.text = "正在准备场景"
+	stage.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stage.add_theme_font_size_override("font_size", 20)
+	content.add_child(stage)
+
+	var status := Label.new()
+	status.name = "StatusLabel"
+	status.text = "请稍候..."
+	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	content.add_child(status)
+
+	var progress_bar := ProgressBar.new()
+	progress_bar.name = "ProgressBar"
+	progress_bar.min_value = 0.0
+	progress_bar.max_value = 100.0
+	progress_bar.value = 0.0
+	progress_bar.custom_minimum_size = Vector2(420, 22)
+	progress_bar.show_percentage = true
+	content.add_child(progress_bar)
+
+	var error_label := Label.new()
+	error_label.name = "ErrorLabel"
+	error_label.visible = false
+	error_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	error_label.add_theme_color_override("font_color", Color(1.0, 0.55, 0.55))
+	content.add_child(error_label)
+
+	loading_overlay = overlay
+	loading_title_label = title
+	loading_stage_label = stage
+	loading_status_label = status
+	loading_error_label = error_label
+	loading_progress_bar = progress_bar
+	loading_overlay.visible = false
+
+func _finalize_loading_overlay_hide() -> void:
+	if not is_instance_valid(loading_overlay):
+		return
+	loading_overlay.visible = false
+	loading_overlay.modulate.a = 1.0
+	if is_instance_valid(loading_error_label):
+		loading_error_label.visible = false
+
 ## 显示漂浮文字
 func show_floating_text(text_content: String, global_pos: Vector2, color: Color = Color.WHITE) -> void:
 	var label = Label.new()
@@ -233,11 +413,17 @@ func close_window(window_name: String) -> void:
 	# 播放关闭动画
 	var tween = _play_close_animation(window)
 	if tween:
-		await tween.finished
-	
-	# 再次检查窗口有效性，因为 await 期间可能发生场景重载或销毁
+		# 修改：不再在此处 await，避免长期阻塞导致后续逻辑顺序混乱。
+		# 改为在回调中处理真正的节点清理。
+		tween.finished.connect(func(): _on_window_close_animation_finished(window, window_name))
+	else:
+		_on_window_close_animation_finished(window, window_name)
+
+func _on_window_close_animation_finished(window: Control, window_name: String) -> void:
+	# 再次检查窗口有效性，因为动画期间可能发生场景重载或销毁
 	if not is_instance_valid(window):
-		active_windows.erase(window_name)
+		if active_windows.has(window_name):
+			active_windows.erase(window_name)
 		return
 		
 	if window_name == "InventoryWindow":
@@ -272,14 +458,14 @@ func _play_open_animation(window: Node) -> void:
 	window.scale = Vector2(0.8, 0.8)
 	window.modulate.a = 0
 	
-	var tween = create_tween().set_parallel(true).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	var tween = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS).set_parallel(true).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tween.tween_property(window, "scale", Vector2.ONE, 0.3)
 	tween.tween_property(window, "modulate:a", 1.0, 0.2)
 
 func _play_close_animation(window: Node) -> Tween:
 	if not window is Control: return null
 	
-	var tween = create_tween().set_parallel(true).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	var tween = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS).set_parallel(true).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tween.tween_property(window, "scale", Vector2(0.8, 0.8), 0.2)
 	tween.tween_property(window, "modulate:a", 0.0, 0.2)
 	return tween

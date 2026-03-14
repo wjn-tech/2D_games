@@ -13,6 +13,11 @@ The exploration layer SHALL make major biomes feel different through determinist
 - **THEN** the player encounters clearly distinct relief profiles such as flatter corridors, rolling terrain, stronger hill or ridge segments, or basin-like lowlands instead of a near-uniform low-amplitude surface
 - **AND** those profiles remain compatible with the owning biome or macro region identity
 
+#### Scenario: Macro surface transitions do not read as hard terrain cuts
+- **WHEN** adjacent macro surface regions transition in a representative deterministic world
+- **THEN** the terrain still reads as naturally shaped landform change rather than a near-vertical band split or abruptly reassigned flat strip
+- **AND** the transition remains compatible with the surrounding biome and world-plan identity
+
 ### Requirement: Terrain Richness SHALL Reinforce Exploration Decisions
 The terrain system SHALL place content in ways that encourage route choice instead of only visual noise, including landforms and entrances that suggest meaningful traversal or reward differences.
 
@@ -70,6 +75,11 @@ The world generation system SHALL expose deterministic surface-to-underground en
 - **THEN** they appear often enough to support exploration discovery without fragmenting the entire surface into constant holes
 - **AND** spacing, density, and placement remain deterministic for the same seed and world metadata
 
+#### Scenario: Entrance cadence does not expose a fixed generator rhythm
+- **WHEN** players traverse long representative surface stretches in the same deterministic world
+- **THEN** entrances do not appear in an obvious fixed-interval cadence that reads as a constant spacing template
+- **AND** deterministic placement remains stable without looking mechanically periodic
+
 ### Requirement: Terrain Identity SHALL Not Depend on Full Tileset Replacement
 The exploration layer SHALL remain readable through landform shape, material-family reuse, background or decorator variation, and limited accent assets rather than requiring every new terrain identity to ship with a full unique base tileset.
 
@@ -77,3 +87,11 @@ The exploration layer SHALL remain readable through landform shape, material-fam
 - **WHEN** representative surface regions are generated using mostly shared base terrain materials
 - **THEN** players can still distinguish plains, hill belts, ridge segments, basins, and entrance-bearing regions through silhouette, layering, and terrain cues
 - **AND** any newly added accent or transition tiles remain supplemental rather than the sole carrier of region identity
+
+### Requirement: Surface Region Boundaries SHALL Avoid One-Column Hard Seams
+The world generation system SHALL keep major surface and near-surface region boundaries readable without collapsing into single-column or equivalently abrupt hard seams.
+
+#### Scenario: Surface and shallow underground boundaries are transition-shaped
+- **WHEN** adjacent macro regions or biome regimes meet in representative deterministic seeds
+- **THEN** the boundary presents a transition width or equivalent local breakup zone instead of a one-column vertical wall split
+- **AND** the transition remains compatible with deterministic regeneration and chunk seam continuity

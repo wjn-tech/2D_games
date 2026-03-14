@@ -8,6 +8,7 @@ signal poi_discovered(poi_name: String)
 @onready var player = get_tree().get_first_node_in_group("player")
 
 var discovered_pois: Array = []
+var _last_reveal_center: Vector2i = Vector2i(2147483647, 2147483647)
 
 func _ready():
 	if not fog_enabled:
@@ -31,6 +32,9 @@ func _process(_delta):
 		return
 		
 	var pos = local_to_map(to_local(player.global_position))
+	if pos == _last_reveal_center:
+		return
+	_last_reveal_center = pos
 	_reveal_area(pos)
 
 func _reveal_area(center: Vector2i):

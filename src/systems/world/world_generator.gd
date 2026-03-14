@@ -137,6 +137,18 @@ const SURFACE_FEATURE_FROST_SPIRE := "FrostSpire"
 const SURFACE_FEATURE_MUD_MOUND := "MudMound"
 const SURFACE_FEATURE_GRASS_KNOLL := "GrassKnoll"
 
+const SURFACE_ENTRANCE_NONE := "none"
+const SURFACE_ENTRANCE_GENTLE_MOUTH := "gentle_mouth"
+const SURFACE_ENTRANCE_RAVINE_CUT := "ravine_cut"
+const SURFACE_ENTRANCE_PIT_FUNNEL := "pit_funnel"
+const SURFACE_ENTRANCE_HILLSIDE_CUT := "hillside_cut"
+
+const RELIEF_PROFILE_STARTER_FLAT := "starter_flat"
+const RELIEF_PROFILE_ROLLING := "rolling"
+const RELIEF_PROFILE_RIDGE := "ridge"
+const RELIEF_PROFILE_BASIN := "basin"
+const RELIEF_PROFILE_MOUNTAIN := "mountain"
+
 # 2D 噪声缩放因子 (1.0 表示直接使用噪声频率)
 @export var biome_noise_scale: float = 1.0 
 
@@ -201,6 +213,20 @@ var biome_params = {
 }
 
 var pois: Dictionary = {} # {Vector2i: String}
+var _surface_biome_cache: Dictionary = {}
+var _surface_height_cache: Dictionary = {}
+var _surface_relief_profile_cache: Dictionary = {}
+var _surface_transition_context_cache: Dictionary = {}
+var _surface_column_context_cache: Dictionary = {}
+var _mountain_breach_zone_cache: Dictionary = {}
+
+func _clear_generation_caches() -> void:
+	_surface_biome_cache.clear()
+	_surface_height_cache.clear()
+	_surface_relief_profile_cache.clear()
+	_surface_transition_context_cache.clear()
+	_surface_column_context_cache.clear()
+	_mountain_breach_zone_cache.clear()
 
 func _ready() -> void:
 	add_to_group("world_generator")
@@ -209,7 +235,8 @@ func _ready() -> void:
 	randomize()
 	if seed_value == 0:
 		seed_value = randi()
-	
+
+	_clear_generation_caches()
 	_setup_noises()
 	
 	# 确保所有图层强制共享同一个 TileSet 资源
@@ -260,6 +287,8 @@ func _ready() -> void:
 	check_tileset_ids()
 
 func _setup_noises() -> void:
+	_clear_generation_caches()
+
 	# 1. 大陆骨架 (极低频) - 决定基础海拔与陆地分布
 	noise_continental.seed = seed_value
 	noise_continental.frequency = 0.001
@@ -452,50 +481,870 @@ func _is_in_structure_forbidden_zone(gx: int, gy: int) -> bool:
 
 ## 获取指定位置的生物群系 (2D 噪声 + 深度分层)
 func get_biome_at(global_x: int, global_y: int) -> BiomeType:
-	# 1. 采样 2D 气候噪声 (温度与湿度)
-	# 使用较低的 Y 轴权重，使生态区在垂直方向拉伸，更像地层
-	var temp = noise_temperature.get_noise_2d(global_x, global_y * 0.5)
-	var moist = noise_moisture.get_noise_2d(global_x, global_y * 0.5)
-	
-	# 2. 采样深度专用噪声 (决定地下区域的物性变化)
-	var depth_val = noise_continental.get_noise_2d(global_x * 2.0, global_y * 2.0)
-	
-	# 3. 基础地表生态判定
-	var surface_biome = BiomeType.FOREST
-	
-	if temp < -0.2:
-		surface_biome = BiomeType.TUNDRA
-	elif temp > 0.3:
-		if moist < -0.1:
-			surface_biome = BiomeType.DESERT
-		elif moist > 0.2:
-			surface_biome = BiomeType.SWAMP
-		else:
-			surface_biome = BiomeType.PLAINS
+	var surface_biome := _get_surface_biome_from_climate(global_x, global_y)
+	var surface_base := 300.0 + noise_continental.get_noise_1d(global_x) * 42.0
+	var transition_context := _build_surface_transition_context(global_x, surface_biome)
+	return _get_column_biome_at_depth(global_x, global_y, surface_base, surface_biome, transition_context)
+
+func _classify_surface_biome_from_climate(temp: float, moist: float) -> BiomeType:
+	if temp < -0.28:
+		return BiomeType.TUNDRA
+	if temp > 0.36:
+		if moist < -0.16:
+			return BiomeType.DESERT
+		if moist > 0.24:
+			return BiomeType.SWAMP
+		return BiomeType.PLAINS
+	if moist < -0.08:
+		return BiomeType.PLAINS
+	if moist > 0.34 and temp > 0.05:
+		return BiomeType.SWAMP
+	return BiomeType.FOREST
+
+func _sample_smoothed_surface_climate(global_x: int, global_y: int) -> Dictionary:
+	var offsets := [-160, -96, -48, 0, 48, 96, 160]
+	var weights := [0.06, 0.12, 0.18, 0.28, 0.18, 0.12, 0.06]
+	var temp_acc := 0.0
+	var moist_acc := 0.0
+	for i in range(offsets.size()):
+		var sample_x := global_x + int(offsets[i])
+		var w := float(weights[i])
+		temp_acc += noise_temperature.get_noise_2d(sample_x, global_y * 0.35) * w
+		moist_acc += noise_moisture.get_noise_2d(sample_x, global_y * 0.35) * w
+
+	# 低频偏置让生态带更连续，不会短距离来回跳。
+	temp_acc += noise_surface_feature.get_noise_1d(global_x * 0.014 + 27.0) * 0.07
+	moist_acc += noise_cave_region.get_noise_1d(global_x * 0.012 - 41.0) * 0.08
+	return {
+		"temp": temp_acc,
+		"moist": moist_acc,
+	}
+
+func _get_surface_band_biome(band_index: int, global_y: int) -> BiomeType:
+	var band_size := 160
+	var center_x := band_index * band_size + int(band_size * 0.5)
+	var climate := _sample_smoothed_surface_climate(center_x, global_y)
+	return _classify_surface_biome_from_climate(float(climate.get("temp", 0.0)), float(climate.get("moist", 0.0)))
+
+func _get_surface_biome_from_climate(global_x: int, global_y: int) -> BiomeType:
+	var cache_key := Vector2i(global_x, global_y)
+	if _surface_biome_cache.has(cache_key):
+		return int(_surface_biome_cache[cache_key])
+
+	var band_size := 160
+	var band_index := int(floor(float(global_x) / float(band_size)))
+	var primary := _get_surface_band_biome(band_index, global_y)
+	var left_biome := _get_surface_band_biome(band_index - 1, global_y)
+	var right_biome := _get_surface_band_biome(band_index + 1, global_y)
+
+	var local_x := float(global_x - band_index * band_size)
+	var boundary_warp := noise_surface_feature.get_noise_1d(global_x * 0.052 + 31.0) * 14.0
+	var left_zone := 34.0 + boundary_warp * 0.25
+	var right_zone := float(band_size) - 34.0 + boundary_warp * 0.25
+
+	if left_biome != primary and local_x < left_zone:
+		var left_t := clampf((left_zone - local_x) / maxf(left_zone, 1.0), 0.0, 1.0)
+		var left_gate := (noise_tunnel.get_noise_2d(global_x * 0.083 + 17.0, global_y * 0.061 - 13.0) + 1.0) * 0.5
+		if left_gate < left_t:
+			_surface_biome_cache[cache_key] = left_biome
+			return left_biome
+
+	if right_biome != primary and local_x > right_zone:
+		var right_t := clampf((local_x - right_zone) / maxf(float(band_size) - right_zone, 1.0), 0.0, 1.0)
+		var right_gate := (noise_tunnel.get_noise_2d(global_x * 0.079 - 29.0, global_y * 0.059 + 23.0) + 1.0) * 0.5
+		if right_gate < right_t:
+			_surface_biome_cache[cache_key] = right_biome
+			return right_biome
+
+	_surface_biome_cache[cache_key] = primary
+	return primary
+
+func _get_world_topology() -> Node:
+	return get_node_or_null("/root/WorldTopology")
+
+func _is_spawn_safe_tile_x(global_x: int) -> bool:
+	var world_topology = _get_world_topology()
+	if world_topology and world_topology.has_method("is_spawn_safe_tile_x"):
+		return world_topology.is_spawn_safe_tile_x(global_x)
+	return absi(global_x) < 20
+
+func _get_surface_biome_name(surface_biome: BiomeType) -> String:
+	match surface_biome:
+		BiomeType.PLAINS:
+			return "plains"
+		BiomeType.DESERT:
+			return "desert"
+		BiomeType.TUNDRA:
+			return "tundra"
+		BiomeType.SWAMP:
+			return "swamp"
+		_:
+			return "forest"
+
+func _select_surface_relief_profile(global_x: int, surface_biome: BiomeType) -> String:
+	var cache_key := Vector2i(global_x, int(surface_biome))
+	if _surface_relief_profile_cache.has(cache_key):
+		return String(_surface_relief_profile_cache[cache_key])
+
+	if _is_spawn_safe_tile_x(global_x):
+		_surface_relief_profile_cache[cache_key] = RELIEF_PROFILE_STARTER_FLAT
+		return RELIEF_PROFILE_STARTER_FLAT
+	var band_index := int(floor(float(global_x) / 192.0))
+
+	var world_topology = _get_world_topology()
+	var biome_name := _get_surface_biome_name(surface_biome)
+	var region_type := "major"
+	if world_topology and world_topology.has_method("get_surface_region_for_tile_x"):
+		var region: Dictionary = world_topology.get_surface_region_for_tile_x(global_x)
+		if not region.is_empty():
+			if bool(region.get("spawn_safe", false)):
+				_surface_relief_profile_cache[cache_key] = RELIEF_PROFILE_STARTER_FLAT
+				return RELIEF_PROFILE_STARTER_FLAT
+			biome_name = String(region.get("biome", biome_name))
+			region_type = String(region.get("region_type", "major"))
+
+	if region_type == "transition":
+		_surface_relief_profile_cache[cache_key] = RELIEF_PROFILE_ROLLING
+		return RELIEF_PROFILE_ROLLING
+
+	# 使用更大的宏观区段进行 profile 选择，确保玩家长距离探索能明显遇到不同地形。
+	var band_hash := _hash01(band_index, 1913)
+	var band_temp := (noise_temperature.get_noise_1d(float(band_index) * 0.41 + 37.0) + 1.0) * 0.5
+	var band_moist := (noise_moisture.get_noise_1d(float(band_index) * 0.33 - 61.0) + 1.0) * 0.5
+	var selector := band_hash * 0.46 + band_temp * 0.36 + band_moist * 0.18
+
+	var selected_profile := RELIEF_PROFILE_ROLLING
+	if biome_name != "swamp" and selector > 0.64:
+		selected_profile = RELIEF_PROFILE_MOUNTAIN
+	elif selector < 0.20:
+		selected_profile = RELIEF_PROFILE_BASIN
 	else:
-		if moist < 0.0:
-			surface_biome = BiomeType.PLAINS
+		match biome_name:
+			"swamp":
+				selected_profile = RELIEF_PROFILE_BASIN if selector > 0.2 else RELIEF_PROFILE_ROLLING
+			"tundra":
+				selected_profile = RELIEF_PROFILE_RIDGE if selector > 0.38 else RELIEF_PROFILE_ROLLING
+			"desert":
+				selected_profile = RELIEF_PROFILE_ROLLING if selector > 0.44 else RELIEF_PROFILE_BASIN
+			"plains":
+				selected_profile = RELIEF_PROFILE_RIDGE if selector > 0.56 else RELIEF_PROFILE_ROLLING
+			_:
+				selected_profile = RELIEF_PROFILE_RIDGE if selector > 0.48 else RELIEF_PROFILE_ROLLING
+
+	_surface_relief_profile_cache[cache_key] = selected_profile
+	return selected_profile
+
+func _compute_macro_relief_delta(global_x: int, profile: String, biome_amp: float) -> float:
+	var continental := noise_continental.get_noise_1d(global_x)
+	var tunnel_ridge := absf(noise_tunnel.get_noise_1d(global_x))
+	match profile:
+		RELIEF_PROFILE_STARTER_FLAT:
+			return continental * biome_amp * 0.12
+		RELIEF_PROFILE_MOUNTAIN:
+			var massif_gate := clampf((noise_temperature.get_noise_1d(global_x * 0.015 + 311.0) + 1.0) * 0.5, 0.0, 1.0)
+			var massif := pow(massif_gate, 1.62) * (biome_amp * 1.32 + 42.0)
+			var shoulder_gate := clampf((noise_moisture.get_noise_1d(global_x * 0.022 - 211.0) + 1.0) * 0.5, 0.0, 1.0)
+			var shoulder := pow(shoulder_gate, 1.34) * 26.0
+			var ridge_variation := continental * biome_amp * 0.32
+			var crown_breakup := noise_surface_feature.get_noise_1d(global_x * 0.08 + 211.0) * 4.5
+			return -massif - shoulder + ridge_variation + crown_breakup + 14.0
+		RELIEF_PROFILE_RIDGE:
+			var ridge_shape := signf(continental) * pow(absf(continental), 0.65)
+			return ridge_shape * biome_amp * 0.95 + tunnel_ridge * 18.0 - 8.0
+		RELIEF_PROFILE_BASIN:
+			return -absf(continental) * biome_amp * 0.65 + 6.0
+		_:
+			return continental * biome_amp * 0.55
+
+func _compute_biome_relief_delta(global_x: int, profile: String, surface_biome: BiomeType, biome_amp: float) -> float:
+	var climate_wave := noise_moisture.get_noise_1d(global_x)
+	var biome_scale := 1.0
+	match surface_biome:
+		BiomeType.DESERT:
+			biome_scale = 0.72
+		BiomeType.TUNDRA:
+			biome_scale = 1.12
+		BiomeType.SWAMP:
+			biome_scale = 0.58
+		BiomeType.PLAINS:
+			biome_scale = 0.86
+		_:
+			biome_scale = 1.0
+
+	var profile_scale := 0.16
+	if profile == RELIEF_PROFILE_RIDGE:
+		profile_scale = 0.22
+	elif profile == RELIEF_PROFILE_MOUNTAIN:
+		profile_scale = 0.28
+	elif profile == RELIEF_PROFILE_BASIN:
+		profile_scale = 0.12
+	return climate_wave * biome_amp * biome_scale * profile_scale
+
+func _compute_local_relief_delta(global_x: int, profile: String) -> float:
+	var detail := noise_surface_feature.get_noise_1d(global_x)
+	var breakup := noise_cave_region.get_noise_1d(global_x * 2)
+	var detail_amp := 4.0
+	if profile == RELIEF_PROFILE_STARTER_FLAT:
+		detail_amp = 2.0
+	elif profile == RELIEF_PROFILE_MOUNTAIN:
+		detail_amp = 2.6
+	elif profile == RELIEF_PROFILE_RIDGE:
+		detail_amp = 5.5
+	return detail * detail_amp + breakup * 2.0
+
+func _get_surface_height_raw_for_biome(global_x: int, surface_biome: BiomeType) -> float:
+	var b_params = biome_params.get(surface_biome, biome_params[BiomeType.FOREST])
+	var biome_amp := float(b_params["amp"])
+	var profile := _select_surface_relief_profile(global_x, surface_biome)
+	var macro_delta := _compute_macro_relief_delta(global_x, profile, biome_amp)
+	var biome_delta := _compute_biome_relief_delta(global_x, profile, surface_biome, biome_amp)
+	var local_delta := _compute_local_relief_delta(global_x, profile)
+	var shaped_height := 300.0 + macro_delta + biome_delta + local_delta
+	return _apply_spawn_relief_clamp(global_x, shaped_height)
+
+func _build_surface_shape_metrics(global_x: int) -> Dictionary:
+	var left_x := global_x - 8
+	var right_x := global_x + 8
+	var left_biome := _get_surface_biome_from_climate(left_x, 0)
+	var center_biome := _get_surface_biome_from_climate(global_x, 0)
+	var right_biome := _get_surface_biome_from_climate(right_x, 0)
+	var left_h := _get_surface_height_for_biome(left_x, left_biome)
+	var center_h := _get_surface_height_for_biome(global_x, center_biome)
+	var right_h := _get_surface_height_for_biome(right_x, right_biome)
+	var left_near_h := _get_surface_height_for_biome(global_x - 4, _get_surface_biome_from_climate(global_x - 4, 0))
+	var right_near_h := _get_surface_height_for_biome(global_x + 4, _get_surface_biome_from_climate(global_x + 4, 0))
+	var slope := (right_h - left_h) / 16.0
+	var relief_span := maxf(absf(center_h - left_h), absf(center_h - right_h))
+	var ruggedness := absf(right_h - center_h) + absf(center_h - left_h)
+	var slope_left := (center_h - left_near_h) / 4.0
+	var slope_right := (right_near_h - center_h) / 4.0
+	var crestness := center_h - (left_h + right_h) * 0.5
+	var same_direction_slope := signf(slope_left) == signf(slope_right) and absf(slope_left) > 0.08 and absf(slope_right) > 0.08
+	return {
+		"slope": slope,
+		"relief_span": relief_span,
+		"ruggedness": ruggedness,
+		"left_h": left_h,
+		"center_h": center_h,
+		"right_h": right_h,
+		"slope_left": slope_left,
+		"slope_right": slope_right,
+		"crestness": crestness,
+		"same_direction_slope": same_direction_slope,
+	}
+
+func _apply_spawn_relief_clamp(global_x: int, shaped_height: float) -> float:
+	var world_topology = _get_world_topology()
+	var spawn_anchor_tile := 0
+	var clamp_radius := 96.0
+	var dist := float(absi(global_x - spawn_anchor_tile))
+
+	if world_topology:
+		if world_topology.has_method("get_spawn_anchor_tile"):
+			spawn_anchor_tile = int(world_topology.get_spawn_anchor_tile())
+		if world_topology.has_method("get_spawn_safe_radius_chunks"):
+			clamp_radius = maxf(clamp_radius, float(world_topology.get_spawn_safe_radius_chunks() * 64 + 64))
+		if world_topology.has_method("shortest_wrapped_tile_distance"):
+			dist = float(world_topology.shortest_wrapped_tile_distance(global_x, spawn_anchor_tile))
 		else:
-			surface_biome = BiomeType.FOREST
-	
-	# 4. 深度分层判定
-	var surface_base = 300.0
-	var layer_noise = noise_continental.get_noise_1d(global_x) * 50.0
-	var underground_threshold = surface_base + 100.0 + layer_noise
-	
-	if global_y > underground_threshold:
-		# --- 核心修改：真正的 2D 地下分层逻辑 ---
-		# 如果是 Tundra，且深度极深或深度噪声触发，切换到特定的地下形态
-		var current_b_data = biome_params[surface_biome]
-		var ug_biome = current_b_data.underground_biome
-		
-		# 额外的垂直微扰：如果 moist 极高，即使是在地下也能形成局部的地下沼泽/洞窟
-		if moist > 0.4 and global_y > underground_threshold + 200:
-			return BiomeType.UNDERGROUND_SWAMP
-			
-		return ug_biome
-	else:
+			dist = float(absi(global_x - spawn_anchor_tile))
+
+	var flat_weight := clampf(dist / clamp_radius, 0.0, 1.0)
+	var flat_target := 300.0 + noise_continental.get_noise_1d(global_x) * 8.0
+	return lerpf(flat_target, shaped_height, flat_weight)
+
+func _get_surface_height_for_biome(global_x: int, surface_biome: BiomeType) -> float:
+	var cache_key := Vector2i(global_x, int(surface_biome))
+	if _surface_height_cache.has(cache_key):
+		return float(_surface_height_cache[cache_key])
+
+	var raw_h := _get_surface_height_raw_for_biome(global_x, surface_biome)
+	var left_x1 := global_x - 2
+	var right_x1 := global_x + 2
+	var left_x2 := global_x - 6
+	var right_x2 := global_x + 6
+	var left_h1 := _get_surface_height_raw_for_biome(left_x1, _get_surface_biome_from_climate(left_x1, 0))
+	var right_h1 := _get_surface_height_raw_for_biome(right_x1, _get_surface_biome_from_climate(right_x1, 0))
+	var left_h2 := _get_surface_height_raw_for_biome(left_x2, _get_surface_biome_from_climate(left_x2, 0))
+	var right_h2 := _get_surface_height_raw_for_biome(right_x2, _get_surface_biome_from_climate(right_x2, 0))
+	var profile := _select_surface_relief_profile(global_x, surface_biome)
+	var smooth := raw_h * 0.56 + (left_h1 + right_h1) * 0.18 + (left_h2 + right_h2) * 0.04
+	var neighborhood := (left_h1 + right_h1) * 0.5
+	var blend := 0.06 if profile == RELIEF_PROFILE_MOUNTAIN else 0.20
+	var smoothed_height := lerpf(smooth, neighborhood, blend)
+	_surface_height_cache[cache_key] = smoothed_height
+	return smoothed_height
+
+func _build_surface_transition_context(global_x: int, surface_biome: BiomeType) -> Dictionary:
+	var cache_key := Vector2i(global_x, int(surface_biome))
+	if _surface_transition_context_cache.has(cache_key):
+		return _surface_transition_context_cache[cache_key]
+
+	var max_probe := 96
+	var nearest_dist := max_probe + 1
+	var secondary := surface_biome
+	var nearest_dir := 0
+	for offset in range(8, max_probe + 1, 8):
+		var left_biome := _get_surface_biome_from_climate(global_x - offset, 0)
+		if left_biome != surface_biome and offset < nearest_dist:
+			nearest_dist = offset
+			secondary = left_biome
+			nearest_dir = -1
+		var right_biome := _get_surface_biome_from_climate(global_x + offset, 0)
+		if right_biome != surface_biome and offset < nearest_dist:
+			nearest_dist = offset
+			secondary = right_biome
+			nearest_dir = 1
+
+	if secondary == surface_biome:
+		var no_transition := {
+			"has_transition": false,
+			"secondary_surface_biome": surface_biome,
+			"blend": 0.0,
+			"nearest_dist": float(max_probe),
+			"nearest_dir": 0,
+		}
+		_surface_transition_context_cache[cache_key] = no_transition
+		return no_transition
+
+	var dist_weight := clampf(1.0 - float(nearest_dist) / float(max_probe), 0.0, 1.0)
+	var wobble := (noise_surface_feature.get_noise_1d(global_x * 0.43 + 211.0) + 1.0) * 0.5
+	var blend := clampf(dist_weight * 0.66 + wobble * 0.34, 0.0, 1.0)
+	var transition := {
+		"has_transition": true,
+		"secondary_surface_biome": secondary,
+		"blend": blend,
+		"nearest_dist": float(nearest_dist),
+		"nearest_dir": nearest_dir,
+	}
+	_surface_transition_context_cache[cache_key] = transition
+	return transition
+
+func _get_column_biome_at_depth(global_x: int, global_y: int, surface_base: float, surface_biome: BiomeType, transition_context: Dictionary = {}) -> BiomeType:
+	var depth_noise := noise_continental.get_noise_1d(global_x + 71) * 18.0
+	var underground_threshold := surface_base + 100.0 + depth_noise
+	if global_y <= underground_threshold:
+		if bool(transition_context.get("has_transition", false)):
+			var transition_blend := float(transition_context.get("blend", 0.0))
+			var proximity := clampf(1.0 - float(transition_context.get("nearest_dist", 96.0)) / 96.0, 0.0, 1.0)
+			var surface_mix := clampf(transition_blend * 0.36 + proximity * 0.25, 0.0, 0.58)
+			if surface_mix > 0.0:
+				var seam_warp := noise_tunnel.get_noise_2d(global_x * 0.041 + 23.0, global_y * 0.037 - 19.0) * 7.0
+				var warped_x := global_x + seam_warp
+				var surface_gate := (noise_temperature.get_noise_2d(warped_x * 0.14 + 91.0, global_y * 0.19 - 73.0) + 1.0) * 0.5
+				if surface_gate < surface_mix:
+					return int(transition_context.get("secondary_surface_biome", surface_biome))
 		return surface_biome
+
+	var moist = noise_moisture.get_noise_2d(global_x, global_y * 0.5)
+	var current_b_data = biome_params[surface_biome]
+	var ug_biome: BiomeType = current_b_data.underground_biome
+
+	if bool(transition_context.get("has_transition", false)):
+		var secondary_surface: BiomeType = int(transition_context.get("secondary_surface_biome", surface_biome))
+		var secondary_b_data = biome_params.get(secondary_surface, current_b_data)
+		var secondary_ug_biome: BiomeType = secondary_b_data.underground_biome
+		if secondary_ug_biome != ug_biome:
+			var transition_blend := float(transition_context.get("blend", 0.0))
+			var proximity := clampf(1.0 - float(transition_context.get("nearest_dist", 96.0)) / 96.0, 0.0, 1.0)
+			var transition_mix := clampf(transition_blend * 0.74 + proximity * 0.24, 0.0, 0.94)
+			var seam_warp := noise_tunnel.get_noise_2d(global_x * 0.033 - 17.0, global_y * 0.021 + 29.0) * 9.0
+			var warped_x := global_x + seam_warp
+			var boundary_noise := (noise_cave_region.get_noise_2d(warped_x * 0.19 + 151.0, global_y * 0.11 - 89.0) + 1.0) * 0.5
+			if boundary_noise < transition_mix:
+				ug_biome = secondary_ug_biome
+
+	if moist > 0.4 and global_y > underground_threshold + 200.0:
+		return BiomeType.UNDERGROUND_SWAMP
+	return ug_biome
+
+func _make_surface_entrance_none() -> Dictionary:
+	return {
+		"type": SURFACE_ENTRANCE_NONE,
+		"center_x": 0.0,
+		"lip_y": 0.0,
+		"width": 0.0,
+		"depth": 0.0,
+		"flare": 0.0,
+	}
+
+func _select_surface_entrance_type(relief_profile: String, biome_name: String, selector: float, is_spawn_safe: bool) -> String:
+	if is_spawn_safe:
+		return SURFACE_ENTRANCE_NONE
+	if relief_profile == RELIEF_PROFILE_BASIN or biome_name == "swamp":
+		return SURFACE_ENTRANCE_NONE
+
+	if relief_profile == RELIEF_PROFILE_MOUNTAIN:
+		if selector > 0.78:
+			return SURFACE_ENTRANCE_HILLSIDE_CUT
+		if selector > 0.70:
+			return SURFACE_ENTRANCE_RAVINE_CUT
+		return SURFACE_ENTRANCE_NONE
+
+	if relief_profile == RELIEF_PROFILE_RIDGE:
+		if selector > 0.82:
+			return SURFACE_ENTRANCE_HILLSIDE_CUT
+		if selector > 0.76:
+			return SURFACE_ENTRANCE_RAVINE_CUT
+		return SURFACE_ENTRANCE_NONE
+
+	if biome_name == "desert":
+		return SURFACE_ENTRANCE_RAVINE_CUT if selector > 0.86 else SURFACE_ENTRANCE_NONE
+
+	# 平原/滚动丘陵优先给“可读的小入口”，而不是满地漏斗坑。
+	if selector > 0.86:
+		return SURFACE_ENTRANCE_RAVINE_CUT
+	if selector > 0.72:
+		return SURFACE_ENTRANCE_GENTLE_MOUTH
+	return SURFACE_ENTRANCE_NONE
+
+func _get_surface_entrance_info(global_x: int, surface_base: float, relief_profile: String, surface_biome: BiomeType, is_spawn_safe: bool, lane_y: float, shape_metrics: Dictionary) -> Dictionary:
+	var biome_name := _get_surface_biome_name(surface_biome)
+	var best := _make_surface_entrance_none()
+	var best_dist := 1000000.0
+	var slope_mag := absf(float(shape_metrics.get("slope", 0.0)))
+	var ruggedness := float(shape_metrics.get("ruggedness", 0.0))
+	var relief_span := float(shape_metrics.get("relief_span", 0.0))
+	var crestness := float(shape_metrics.get("crestness", 0.0))
+	var slope_left := float(shape_metrics.get("slope_left", 0.0))
+	var slope_right := float(shape_metrics.get("slope_right", 0.0))
+	var left_h_metric := float(shape_metrics.get("left_h", surface_base))
+	var right_h_metric := float(shape_metrics.get("right_h", surface_base))
+	var same_direction_slope := bool(shape_metrics.get("same_direction_slope", false))
+	var is_peak_top := crestness < -3.2 and signf(slope_left) != signf(slope_right)
+	var slope_balance := absf(absf(slope_left) - absf(slope_right))
+	var can_hillside_cut := same_direction_slope and slope_mag > 0.22 and ruggedness > 4.8 and slope_balance > 0.08 and not is_peak_top
+	var allow_any_entrance := not is_spawn_safe and (relief_span > 2.0 or ruggedness > 3.0 or slope_mag > 0.10)
+	if not allow_any_entrance:
+		return best
+	var families := [
+		{"spacing": 196, "selector_salt": 701, "center_salt": 709, "warp_scale": 0.31, "jitter_scale": 0.34},
+		{"spacing": 288, "selector_salt": 811, "center_salt": 823, "warp_scale": 0.23, "jitter_scale": 0.30},
+	]
+
+	for family in families:
+		var spacing := int(family.get("spacing", 168))
+		var selector_salt := int(family.get("selector_salt", 701))
+		var center_salt := int(family.get("center_salt", 709))
+		var warp_scale := float(family.get("warp_scale", 0.33))
+		var jitter_scale := float(family.get("jitter_scale", 0.45))
+		var band_index := int(floor(float(global_x) / float(spacing)))
+
+		for offset in range(-2, 3):
+			var idx := band_index + offset
+			var idx_f := float(idx)
+			var selector_hash := _hash01(idx, selector_salt)
+			var selector_noise := (noise_temperature.get_noise_1d(idx_f * 0.53 + float(selector_salt) * 0.11) + 1.0) * 0.5
+			var selector := selector_hash * 0.58 + selector_noise * 0.42
+			var entrance_type := _select_surface_entrance_type(relief_profile, biome_name, selector, is_spawn_safe)
+			if entrance_type == SURFACE_ENTRANCE_NONE:
+				continue
+			if entrance_type == SURFACE_ENTRANCE_HILLSIDE_CUT and not can_hillside_cut:
+				continue
+			if entrance_type == SURFACE_ENTRANCE_GENTLE_MOUTH and (slope_mag < 0.10 and relief_span < 2.8):
+				continue
+			if entrance_type == SURFACE_ENTRANCE_RAVINE_CUT and slope_mag < 0.12 and ruggedness < 4.2:
+				continue
+			if not is_spawn_safe and is_peak_top:
+				continue
+
+			var base_center := float(idx * spacing) + float(spacing) * 0.5
+			var center_warp := noise_surface_feature.get_noise_1d(idx_f * warp_scale + float(selector_salt) * 0.17) * float(spacing) * 0.28
+			var center_jitter := (_hash01(idx, center_salt) - 0.5) * float(spacing) * jitter_scale
+			var center_x := base_center + center_warp + center_jitter
+			var cadence_break := (noise_moisture.get_noise_1d(center_x * 0.021 + float(selector_salt)) + 1.0) * 0.5
+			if cadence_break < 0.34:
+				continue
+
+			var width := 0.0
+			var depth := 0.0
+			var flare := 0.0
+			match entrance_type:
+				SURFACE_ENTRANCE_GENTLE_MOUTH:
+					width = 6.0 + _hash01(idx, center_salt + 10) * 2.2
+					depth = 9.0 + _hash01(idx, center_salt + 18) * 6.0
+					flare = 2.4
+				SURFACE_ENTRANCE_RAVINE_CUT:
+					width = 5.6 + _hash01(idx, center_salt + 24) * 2.4
+					depth = 15.0 + _hash01(idx, center_salt + 31) * 11.0
+					flare = 2.3
+				SURFACE_ENTRANCE_HILLSIDE_CUT:
+					width = 3.7 + _hash01(idx, center_salt + 52) * 1.8
+					depth = 12.0 + _hash01(idx, center_salt + 59) * 8.0
+					flare = 1.1
+				SURFACE_ENTRANCE_PIT_FUNNEL:
+					width = 5.0 + _hash01(idx, center_salt + 37) * 3.0
+					depth = 18.0 + _hash01(idx, center_salt + 44) * 10.0
+					flare = 6.0
+
+			var dist := absf(float(global_x) - center_x)
+			if dist <= width + flare and dist < best_dist:
+				var side_bias := _hash01(idx, center_salt + 61) * 2.0 - 1.0
+				if entrance_type == SURFACE_ENTRANCE_HILLSIDE_CUT:
+					side_bias = -1.0 if left_h_metric < right_h_metric else 1.0
+				var route_entry_x := center_x
+				var route_exit_x := center_x
+				var route_lane_y := lane_y + _hash01(idx, center_salt + 67) * 2.2
+				var route_floor := maxf(
+					route_lane_y - 2.0,
+					surface_base + depth + 10.0 + _hash01(idx, center_salt + 51) * 12.0
+				)
+				route_floor = minf(route_floor, route_lane_y + 4.0)
+				route_floor = maxf(route_floor, surface_base + depth + 8.0)
+				var route_width := maxf(2.6, width * 0.34)
+				match entrance_type:
+					SURFACE_ENTRANCE_GENTLE_MOUTH:
+						route_entry_x = center_x + side_bias * (width * 0.42 + 0.8)
+						route_exit_x = route_entry_x + side_bias * (width * 0.56 + 1.4)
+						route_width = maxf(2.45, width * 0.27)
+					SURFACE_ENTRANCE_RAVINE_CUT:
+						route_entry_x = center_x + side_bias * (width * 0.51 + 1.0)
+						route_exit_x = center_x + side_bias * (width * 1.34 + 2.2)
+						route_width = maxf(2.35, width * 0.24)
+					SURFACE_ENTRANCE_HILLSIDE_CUT:
+						route_entry_x = center_x + side_bias * (width * 0.94 + 1.9)
+						route_exit_x = center_x + side_bias * (width * 1.92 + 3.4)
+						route_width = maxf(1.85, width * 0.18)
+					SURFACE_ENTRANCE_PIT_FUNNEL:
+						route_entry_x = center_x + side_bias * (width * 0.16)
+						route_exit_x = center_x + side_bias * (width * 0.42 + 1.5)
+						route_width = maxf(2.4, width * 0.26)
+				best = {
+					"type": entrance_type,
+					"center_x": center_x,
+					"lip_y": floor(surface_base),
+					"width": width,
+					"depth": depth,
+					"flare": flare,
+					"side_bias": side_bias,
+					"route_entry_x": route_entry_x,
+					"route_exit_x": route_exit_x,
+					"route_floor": route_floor,
+					"route_lane_y": route_lane_y,
+					"route_width": route_width,
+					"route_seed": idx * 997 + center_salt,
+				}
+				best_dist = dist
+	return best
+
+func _should_carve_surface_entrance(global_x: int, global_y: int, entrance_info: Dictionary) -> bool:
+	if entrance_info.is_empty() or String(entrance_info.get("type", SURFACE_ENTRANCE_NONE)) == SURFACE_ENTRANCE_NONE:
+		return false
+	var center_x := float(entrance_info.get("center_x", 0.0))
+	var dx := absf(float(global_x) - center_x)
+	var lip_y := float(entrance_info.get("lip_y", 0.0))
+	var width := float(entrance_info.get("width", 0.0))
+	var depth := float(entrance_info.get("depth", 0.0))
+	var flare := float(entrance_info.get("flare", 0.0))
+	var side_bias := float(entrance_info.get("side_bias", 0.0))
+	var route_entry_x := float(entrance_info.get("route_entry_x", center_x))
+	var route_width := float(entrance_info.get("route_width", 2.8))
+	var entrance_type := String(entrance_info.get("type", SURFACE_ENTRANCE_NONE))
+	var carve_floor := -INF
+	var signed_dx := float(global_x) - center_x
+
+	match entrance_type:
+		SURFACE_ENTRANCE_GENTLE_MOUTH:
+			if float(global_y) < lip_y - 1.0 or float(global_y) > lip_y + depth:
+				return false
+			var progress := clampf((float(global_y) - lip_y) / maxf(depth, 1.0), 0.0, 1.0)
+			var mouth_center := lerpf(route_entry_x, center_x, pow(progress, 0.76))
+			var open_side_scale := 1.06 if signf(signed_dx) == signf(side_bias) else 0.6
+			var half_width := lerpf(maxf(1.8, width * 0.34 + flare * 0.26 * open_side_scale), route_width + 0.95, progress)
+			var local_dx := absf(float(global_x) - mouth_center)
+			if local_dx <= half_width:
+				return true
+			var edge_noise := (noise_surface_feature.get_noise_2d(float(global_x) * 0.19, float(global_y) * 0.11 + 37.0) + 1.0) * 0.5
+			return local_dx <= half_width + 0.75 and edge_noise > 0.7
+		SURFACE_ENTRANCE_RAVINE_CUT:
+			if float(global_y) < lip_y - 1.0 or float(global_y) > lip_y + depth:
+				return false
+			var progress := clampf((float(global_y) - lip_y) / maxf(depth, 1.0), 0.0, 1.0)
+			var ravine_center := lerpf(route_entry_x, center_x + side_bias * 0.8, pow(progress, 0.58))
+			var wall_noise := noise_surface_feature.get_noise_2d(float(global_x) * 0.43, float(global_y) * 0.19 + 71.0) * 1.1
+			var half_width := lerpf(maxf(1.7, width * 0.29 + flare * 0.45), route_width + 0.9, progress) + wall_noise
+			var local_dx := absf(float(global_x) - ravine_center)
+			if local_dx <= half_width:
+				return true
+			return local_dx <= half_width + 0.55 and progress < 0.82
+		SURFACE_ENTRANCE_HILLSIDE_CUT:
+			if float(global_y) < lip_y - 1.0 or float(global_y) > lip_y + depth:
+				return false
+			var progress := clampf((float(global_y) - lip_y) / maxf(depth, 1.0), 0.0, 1.0)
+			var ledge_shift := side_bias * (width * 1.82 + 2.2)
+			var cut_center := lerpf(route_entry_x + ledge_shift, route_entry_x, pow(progress, 0.72))
+			var wall_bias := side_bias * (1.0 - progress) * 0.38
+			var local_dx := float(global_x) - (cut_center + wall_bias)
+			var half_width := lerpf(maxf(1.05, width * 0.18), route_width + 0.64, progress)
+			if progress < 0.24 and local_dx * side_bias > 0.0:
+				return false
+			if absf(local_dx) <= half_width:
+				return true
+			var edge_noise := (noise_cave_region.get_noise_2d(float(global_x) * 0.24 + 13.0, float(global_y) * 0.13 - 17.0) + 1.0) * 0.5
+			return absf(local_dx) <= half_width + 0.32 and edge_noise > 0.77
+		SURFACE_ENTRANCE_PIT_FUNNEL:
+			if dx > width + flare:
+				return false
+			var funnel_width := maxf(width * (0.35 + clampf((global_y - lip_y) / maxf(depth, 1.0), 0.0, 1.0) * 0.75), 1.0)
+			if dx > funnel_width:
+				return false
+			carve_floor = lip_y + depth - (dx / funnel_width) * 4.0
+		_:
+			return false
+
+	return float(global_y) <= carve_floor and float(global_y) >= lip_y - 1.0
+
+func _should_carve_entrance_route(global_x: int, global_y: int, entrance_info: Dictionary) -> bool:
+	if entrance_info.is_empty() or String(entrance_info.get("type", SURFACE_ENTRANCE_NONE)) == SURFACE_ENTRANCE_NONE:
+		return false
+
+	var lip_y := float(entrance_info.get("lip_y", 0.0))
+	var depth := float(entrance_info.get("depth", 0.0))
+	var route_floor := float(entrance_info.get("route_floor", lip_y))
+	if route_floor <= lip_y + 2.0:
+		return false
+	var route_start_y := lip_y + maxf(depth * 0.58, 6.0)
+	if float(global_y) <= route_start_y or float(global_y) > route_floor:
+		return false
+
+	var center_x := float(entrance_info.get("center_x", 0.0))
+	var route_entry_x := float(entrance_info.get("route_entry_x", center_x))
+	var route_exit_x := float(entrance_info.get("route_exit_x", center_x))
+	var route_seed := float(int(entrance_info.get("route_seed", 0)))
+	var route_width := float(entrance_info.get("route_width", 2.8))
+	var route_lane_y := float(entrance_info.get("route_lane_y", route_floor + 4.0))
+	var progress := clampf((float(global_y) - route_start_y) / maxf(route_floor - route_start_y, 1.0), 0.0, 1.0)
+	var eased := pow(progress, 0.82)
+	var meander := noise_cave_region.get_noise_2d(route_seed * 0.013 + progress * 2.7, progress * 6.1) * (0.8 + progress * 1.2)
+	var drift := noise_tunnel.get_noise_2d(route_seed * 0.007 - 17.0, progress * 4.3) * (0.5 + progress * 1.0)
+	var center := lerpf(route_entry_x, route_exit_x, eased) + meander + drift
+	var corridor_half := lerpf(route_width + 0.45, route_width + 0.18, progress)
+	var dx := absf(float(global_x) - center)
+	if dx <= corridor_half:
+		return true
+
+	# 为连接段添加柔化边缘，避免出现规则竖直井筒。
+	var edge_noise := (noise_surface_feature.get_noise_2d(float(global_x) * 0.22, float(global_y) * 0.17 + route_seed * 0.009) + 1.0) * 0.5
+	if dx <= corridor_half + 0.75 and edge_noise > 0.63:
+		return true
+
+	# 入口末段强制接驳主矿道，避免“通道挖下去但断开”。
+	if route_lane_y > route_floor + 1.0 and float(global_y) > route_floor and float(global_y) <= route_lane_y + 1.0:
+		var link_progress := clampf((float(global_y) - route_floor) / maxf(route_lane_y - route_floor, 1.0), 0.0, 1.0)
+		var link_center := route_exit_x + noise_tunnel.get_noise_2d(route_seed * 0.017 + link_progress * 3.1, link_progress * 4.7) * 0.85
+		var link_half := lerpf(maxf(1.9, route_width * 0.86), maxf(2.8, route_width + 0.8), link_progress)
+		if absf(float(global_x) - link_center) <= link_half:
+			return true
+
+	return false
+
+func _make_mountain_breach_none() -> Dictionary:
+	return {
+		"enabled": false,
+	}
+
+func _point_to_segment_distance(px: float, py: float, ax: float, ay: float, bx: float, by: float) -> Dictionary:
+	var abx := bx - ax
+	var aby := by - ay
+	var len_sq := maxf(abx * abx + aby * aby, 0.0001)
+	var apx := px - ax
+	var apy := py - ay
+	var t := clampf((apx * abx + apy * aby) / len_sq, 0.0, 1.0)
+	var qx := ax + abx * t
+	var qy := ay + aby * t
+	var dx := px - qx
+	var dy := py - qy
+	return {
+		"dist": sqrt(dx * dx + dy * dy),
+		"t": t,
+		"qx": qx,
+		"qy": qy,
+	}
+
+func _get_mountain_worm_breach_info(global_x: int, surface_base: float, relief_profile: String, _shape_metrics: Dictionary, lane_y: float, is_spawn_safe: bool) -> Dictionary:
+	if is_spawn_safe:
+		return _make_mountain_breach_none()
+	if relief_profile != RELIEF_PROFILE_MOUNTAIN and relief_profile != RELIEF_PROFILE_RIDGE:
+		return _make_mountain_breach_none()
+
+	# 每个 96 格山体区段共享同一条破口蠕虫，避免列级不一致导致“入口消失”。
+	var zone_index := int(floor(float(global_x) / 96.0))
+	var zone_key := "%s:%d" % [relief_profile, zone_index]
+	if _mountain_breach_zone_cache.has(zone_key):
+		return _mountain_breach_zone_cache[zone_key]
+
+	var zone_presence := _hash01(zone_index, 3721)
+	if relief_profile == RELIEF_PROFILE_MOUNTAIN and zone_presence < 0.78:
+		var no_mountain := _make_mountain_breach_none()
+		_mountain_breach_zone_cache[zone_key] = no_mountain
+		return no_mountain
+	if relief_profile == RELIEF_PROFILE_RIDGE and zone_presence < 0.90:
+		var no_ridge := _make_mountain_breach_none()
+		_mountain_breach_zone_cache[zone_key] = no_ridge
+		return no_ridge
+
+	var zone_start := zone_index * 96
+	var zone_end := zone_start + 95
+	var zone_low := 999999.0
+	var zone_high := -999999.0
+	for scan_x in range(zone_start + 6, zone_end - 6, 4):
+		var sb := _get_surface_biome_from_climate(scan_x, 0)
+		var sy := _get_surface_height_for_biome(scan_x, sb)
+		zone_low = minf(zone_low, sy)
+		zone_high = maxf(zone_high, sy)
+
+	var best_x := zone_start + 48
+	var best_slope := 0.0
+	var best_score := -1.0
+	for scan_x in range(zone_start + 8, zone_end - 8, 2):
+		var sb := _get_surface_biome_from_climate(scan_x, 0)
+		var sy := _get_surface_height_for_biome(scan_x, sb)
+		var l_biome := _get_surface_biome_from_climate(scan_x - 3, 0)
+		var r_biome := _get_surface_biome_from_climate(scan_x + 3, 0)
+		var left_y := _get_surface_height_for_biome(scan_x - 3, l_biome)
+		var right_y := _get_surface_height_for_biome(scan_x + 3, r_biome)
+		var slope := (right_y - left_y) / 6.0
+		var elev := sy - zone_low
+		var elev_norm := elev / maxf(zone_high - zone_low, 1.0)
+		var score := absf(slope) * 0.72 + elev_norm * 0.28
+		if score > best_score:
+			best_score = score
+			best_slope = slope
+			best_x = scan_x
+
+	if best_score < 0.28 or absf(best_slope) < 0.26:
+		var no_breach := _make_mountain_breach_none()
+		_mountain_breach_zone_cache[zone_key] = no_breach
+		return no_breach
+
+	var outside_dir := -signf(best_slope)
+	if outside_dir == 0.0:
+		outside_dir = -1.0 if _hash01(zone_index, 3917) < 0.5 else 1.0
+	var inward_dir := -outside_dir
+
+	var mouth_x := float(best_x) + outside_dir * (0.5 + _hash01(zone_index, 3743) * 0.9)
+	var mouth_tile_x := int(round(mouth_x))
+	var mouth_biome := _get_surface_biome_from_climate(mouth_tile_x, 0)
+	var mouth_y := _get_surface_height_for_biome(mouth_tile_x, mouth_biome)
+
+	# 蠕虫从山体内部向地表侧坡破口，再继续向主洞道收敛。
+	var turn_x := mouth_x + inward_dir * (3.4 + _hash01(zone_index, 3779) * 2.8)
+	var turn_y := mouth_y + 5.8 + _hash01(zone_index, 3787) * 3.2
+	var join_x := turn_x + inward_dir * (8.0 + _hash01(zone_index, 3793) * 6.0)
+	var mouth_lane_y := _get_cave_lane_y(mouth_tile_x, mouth_y)
+	var join_y := clampf(mouth_lane_y + _hash01(zone_index, 3811) * 3.2, mouth_y + 14.0, mouth_y + 42.0)
+	var route_floor := maxf(join_y + 2.0, mouth_lane_y + 1.0)
+
+	var mouth_radius := 1.45 + _hash01(zone_index, 3809) * 0.4
+	var neck_radius := 1.25 + _hash01(zone_index, 3821) * 0.3
+	var body_radius := 1.95 + _hash01(zone_index, 3851) * 0.7
+	var join_radius := 2.25 + _hash01(zone_index, 3863) * 0.7
+
+	var breach_info := {
+		"enabled": true,
+		"mouth_x": mouth_x,
+		"mouth_y": mouth_y,
+		"mouth_radius": mouth_radius,
+		"turn_x": turn_x,
+		"turn_y": turn_y,
+		"join_x": join_x,
+		"join_y": join_y,
+		"route_floor": route_floor,
+		"lane_y": mouth_lane_y,
+		"neck_radius": neck_radius,
+		"body_radius": body_radius,
+		"join_radius": join_radius,
+		"outside_dir": outside_dir,
+		"inward_dir": inward_dir,
+		"seed": zone_index * 901 + 383,
+	}
+	_mountain_breach_zone_cache[zone_key] = breach_info
+	return breach_info
+
+func _should_carve_mountain_worm_breach(global_x: int, global_y: int, breach_info: Dictionary) -> bool:
+	if breach_info.is_empty() or not bool(breach_info.get("enabled", false)):
+		return false
+
+	var mouth_y := float(breach_info.get("mouth_y", 0.0))
+	var route_floor := float(breach_info.get("route_floor", mouth_y))
+	if route_floor <= mouth_y + 4.0:
+		return false
+	if float(global_y) < mouth_y - 1.0 or float(global_y) > route_floor:
+		return false
+
+	var mouth_x := float(breach_info.get("mouth_x", 0.0))
+	var turn_x := float(breach_info.get("turn_x", mouth_x))
+	var turn_y := float(breach_info.get("turn_y", mouth_y + 5.0))
+	var join_x := float(breach_info.get("join_x", turn_x))
+	var join_y := float(breach_info.get("join_y", route_floor))
+	var lane_y := float(breach_info.get("lane_y", route_floor))
+	var mouth_radius := float(breach_info.get("mouth_radius", 1.8))
+	var join_radius := float(breach_info.get("join_radius", 2.2))
+	var inward_dir := float(breach_info.get("inward_dir", -1.0))
+	var seed_probe := float(int(breach_info.get("seed", 0)))
+
+	# 保证山体侧面至少有一个可见开口，不会被后续扰动完全抹掉。
+	if absf(float(global_y) - mouth_y) <= 1.6 and absf(float(global_x) - mouth_x) <= mouth_radius:
+		return true
+
+	var progress := clampf((float(global_y) - mouth_y + 1.0) / maxf(route_floor - mouth_y + 1.0, 1.0), 0.0, 1.0)
+	var seg1 := _point_to_segment_distance(float(global_x), float(global_y), mouth_x, mouth_y, turn_x, turn_y)
+	var seg2 := _point_to_segment_distance(float(global_x), float(global_y), turn_x, turn_y, join_x, join_y)
+
+	var neck_radius := float(breach_info.get("neck_radius", 1.15))
+	var body_radius := float(breach_info.get("body_radius", 2.2))
+	var seg1_radius := lerpf(mouth_radius * 0.82, neck_radius, float(seg1.get("t", 0.0)))
+	var seg2_radius := lerpf(neck_radius, body_radius, float(seg2.get("t", 0.0)))
+	var route_t := pow(progress, 0.78)
+	var edge_noise := noise_surface_feature.get_noise_2d(float(global_x) * 0.24 + 41.0, float(global_y) * 0.16 - 13.0 + seed_probe * 0.001)
+	var radius_noise := noise_cave_region.get_noise_2d(seed_probe * 0.009 + route_t * 3.1, float(global_y) * 0.12 - 17.0)
+	var detail := edge_noise * 0.16 + radius_noise * 0.22
+
+	# 入口上段保持向山体内侧单向推进，禁止沿地表横插。
+	if float(global_y) <= turn_y and (float(global_x) - mouth_x) * inward_dir < -0.08:
+		return false
+	if progress < 0.35:
+		if (float(global_x) - mouth_x) * inward_dir < -0.22:
+			return false
+		if float(global_y) < mouth_y + 1.0 and absf(float(global_x) - mouth_x) > mouth_radius:
+			return false
+
+	if float(seg1.get("dist", 999.0)) <= seg1_radius + detail:
+		return true
+	if float(seg2.get("dist", 999.0)) <= seg2_radius + detail:
+		return true
+
+	# 在主洞道深度提供联通保底空腔，避免“入口成了孤立羊肠道”。
+	if absf(float(global_y) - lane_y) <= join_radius and absf(float(global_x) - join_x) <= join_radius + 0.9:
+		return true
+	return false
+
+func _build_surface_column_context(global_x: int) -> Dictionary:
+	if _surface_column_context_cache.has(global_x):
+		return _surface_column_context_cache[global_x]
+
+	var surface_biome := _get_surface_biome_from_climate(global_x, 0)
+	var transition_context := _build_surface_transition_context(global_x, surface_biome)
+	var relief_profile := _select_surface_relief_profile(global_x, surface_biome)
+	var surface_base := _get_surface_height_for_biome(global_x, surface_biome)
+	var is_spawn_safe := _is_spawn_safe_tile_x(global_x)
+	var lane_y := _get_cave_lane_y(global_x, surface_base)
+	var shape_metrics := _build_surface_shape_metrics(global_x)
+	var entrance_info := _get_surface_entrance_info(global_x, surface_base, relief_profile, surface_biome, is_spawn_safe, lane_y, shape_metrics)
+	var mountain_breach_info := _get_mountain_worm_breach_info(global_x, surface_base, relief_profile, shape_metrics, lane_y, is_spawn_safe)
+	var context := {
+		"surface_biome": surface_biome,
+		"transition_context": transition_context,
+		"relief_profile": relief_profile,
+		"surface_base": surface_base,
+		"is_spawn_safe": is_spawn_safe,
+		"shape_metrics": shape_metrics,
+		"lane_y": lane_y,
+		"entrance_info": entrance_info,
+		"mountain_breach_info": mountain_breach_info,
+	}
+	_surface_column_context_cache[global_x] = context
+	return context
 
 ## 为了兼容旧接口，这里保留一个简化版 (处理像素坐标到瓦片坐标的转换)
 func get_biome_weights_at_pos(global_pos: Vector2) -> Dictionary:
@@ -512,51 +1361,83 @@ func get_biome_weights_at_pos(global_pos: Vector2) -> Dictionary:
 
 ## 新增：获取指定 X 轴位置的地表高度（瓦片单位）
 func get_surface_height_at(global_x: int) -> float:
-	var spawn_x = 0
-	var dist_to_spawn_x = abs(global_x - spawn_x)
-	var spawn_flat_weight = clamp(dist_to_spawn_x / 64.0, 0.0, 1.0)
-	
-	var surface_biome_type = get_biome_at(global_x, 0)
-	var b_params = biome_params.get(surface_biome_type, biome_params[BiomeType.FOREST])
-	var biome_amp = b_params["amp"]
-	
-	var cont_val = noise_continental.get_noise_1d(global_x)
-	var blended_cont_val = lerp(0.0, cont_val, spawn_flat_weight)
-	
-	return 300.0 + (blended_cont_val * biome_amp)
+	var surface_biome := _get_surface_biome_from_climate(global_x, 0)
+	return _get_surface_height_for_biome(global_x, surface_biome)
+
+func get_surface_relief_profile_at_tile(global_x: int) -> String:
+	var surface_biome := _get_surface_biome_from_climate(global_x, 0)
+	return _select_surface_relief_profile(global_x, surface_biome)
+
+func get_surface_relief_profile_at_pos(global_pos: Vector2) -> String:
+	var tile_x = int(global_pos.x / 16.0)
+	return get_surface_relief_profile_at_tile(tile_x)
+
+func _hash01(index: int, salt: int) -> float:
+	var n := index * 1103515245 + salt * 12345 + seed_value * 265443576
+	n = n ^ (n >> 13)
+	n = n * 1274126177
+	n = n ^ (n >> 16)
+	return float(n & 0x7fffffff) / 2147483647.0
 
 func _get_vertical_connector_distance(global_x: int) -> float:
-	var interval := 96
-	var seed_offset := posmod(seed_value, interval)
-	var remainder := posmod(global_x + seed_offset, interval)
-	return min(remainder, interval - remainder)
+	var anchor_a := (noise_cave_region.get_noise_1d(global_x * 0.19 + 33.0) + 1.0) * 0.5
+	var anchor_b := (noise_tunnel.get_noise_1d(global_x * 0.11 - 57.0) + 1.0) * 0.5
+	var anchor_c := (noise_surface_feature.get_noise_1d(global_x * 0.07 + 101.0) + 1.0) * 0.5
+	var anchor_strength := anchor_a * 0.50 + anchor_b * 0.32 + anchor_c * 0.18
+	return clampf((0.84 - anchor_strength) * 28.0, 0.0, 28.0)
 
-func _get_vertical_connector_depth_distance(depth: float) -> float:
-	var interval := 72.0
-	var seed_offset := float(posmod(seed_value / 3, int(interval)))
-	var remainder := fposmod(depth + seed_offset, interval)
-	return min(remainder, interval - remainder)
+func _get_vertical_connector_depth_distance(global_x: int, depth: float) -> float:
+	var depth_a := 44.0 + (noise_cave_region.get_noise_1d(global_x * 0.043 + 91.0) + 1.0) * 0.5 * 96.0
+	var depth_b := 128.0 + (noise_tunnel.get_noise_1d(global_x * 0.031 - 47.0) + 1.0) * 0.5 * 102.0
+	var depth_c := 198.0 + (noise_surface_feature.get_noise_1d(global_x * 0.027 + 19.0) + 1.0) * 0.5 * 56.0
+	var nearest := minf(absf(depth - depth_a), absf(depth - depth_b))
+	return minf(nearest, absf(depth - depth_c))
+
+func _should_place_vertical_connector(global_x: int, depth: float) -> bool:
+	# Keep sparse X anchors but remove strict Y-periodic repetition.
+	if depth <= 36.0 or depth >= 240.0:
+		return false
+	if _get_vertical_connector_distance(global_x) >= 4.0:
+		return false
+	if _get_vertical_connector_depth_distance(global_x, depth) >= 16.0:
+		return false
+
+	var depth_gate_primary := (noise_cave_region.get_noise_2d(global_x * 0.021 + 77.0, depth * 0.018) + 1.0) * 0.5
+	var depth_gate_secondary := (noise_tunnel.get_noise_2d(global_x * 0.015 - 41.0, depth * 0.026) + 1.0) * 0.5
+	var anti_stripe_gate := (noise_surface_feature.get_noise_2d(global_x * 0.041 + 19.0, depth * 0.017 - 23.0) + 1.0) * 0.5
+	return depth_gate_primary > 0.64 and depth_gate_secondary > 0.52 and anti_stripe_gate > 0.47
+
+func _get_cave_anchor_depth_at_x(global_x: int) -> float:
+	var base_depth := 58.0
+	var anchor_variation := noise_cave_region.get_noise_1d(global_x * 2) * 22.0
+	var branch_bias := noise_tunnel.get_noise_1d(global_x + 37) * 10.0
+	return base_depth + anchor_variation + branch_bias
 
 func _get_cave_lane_y(global_x: int, surface_base: float) -> float:
-	return surface_base + 54.0 + sin((float(global_x) * 0.05) + (float(seed_value % 2048) * 0.003)) * 12.0
+	var seed_phase := float(seed_value % 8192) * 0.0009
+	var macro := noise_cave_region.get_noise_1d(global_x * 0.63 + seed_phase) * 24.0
+	var mid := noise_tunnel.get_noise_1d(global_x * 1.27 - 41.0) * 11.5
+	var drift := noise_moisture.get_noise_1d(global_x * 0.29 + 173.0) * 8.0
+	var local_sway := noise_cave.get_noise_1d(global_x + 133) * 4.5
+	var lane_depth := 60.0 + macro + mid + drift + local_sway
+	var lane_y := surface_base + lane_depth
+	return clampf(lane_y, surface_base + 30.0, surface_base + 240.0)
 
-func get_cave_region_info_at_tile(global_x: int, global_y: int) -> Dictionary:
-	var surface_base = get_surface_height_at(global_x)
+func _get_cave_region_info_from_context(global_x: int, global_y: int, surface_base: float, relief_profile: String, lane_y: float) -> Dictionary:
 	var depth = global_y - surface_base
 	var info = {
 		"region": CAVE_REGION_SURFACE,
 		"reachable": true,
 		"openness": 1.0,
 		"depth": depth,
+		"relief_profile": relief_profile,
 	}
 
 	if depth < 28.0:
 		return info
 
-	var lane_y = _get_cave_lane_y(global_x, surface_base)
 	var lane_dist = abs(global_y - lane_y)
 	var connector_dist = _get_vertical_connector_distance(global_x)
-	var connector_depth_dist = _get_vertical_connector_depth_distance(depth)
 	var chamber_val = noise_cave_region.get_noise_2d(global_x * 0.025, global_y * 0.025)
 	var pocket_val = noise_cave_region.get_noise_2d(global_x * 0.055 + 120.0, global_y * 0.055 - 87.0)
 
@@ -564,7 +1445,7 @@ func get_cave_region_info_at_tile(global_x: int, global_y: int) -> Dictionary:
 	info["reachable"] = false
 	info["openness"] = 0.0
 
-	if depth > 36.0 and depth < 240.0 and connector_dist < 4.0 and connector_depth_dist < 10.0:
+	if _should_place_vertical_connector(global_x, depth):
 		info["region"] = CAVE_REGION_CONNECTOR
 		info["reachable"] = true
 		info["openness"] = 0.55
@@ -586,6 +1467,12 @@ func get_cave_region_info_at_tile(global_x: int, global_y: int) -> Dictionary:
 		info["openness"] = 0.18
 
 	return info
+
+func get_cave_region_info_at_tile(global_x: int, global_y: int) -> Dictionary:
+	var surface_base = get_surface_height_at(global_x)
+	var relief_profile := get_surface_relief_profile_at_tile(global_x)
+	var lane_y = _get_cave_lane_y(global_x, surface_base)
+	return _get_cave_region_info_from_context(global_x, global_y, surface_base, relief_profile, lane_y)
 
 func get_cave_region_info_at_pos(global_pos: Vector2) -> Dictionary:
 	var tile_x = int(global_pos.x / 16.0)
@@ -618,42 +1505,145 @@ func get_surface_feature_tag_at_pos(global_pos: Vector2) -> String:
 	var tile_y = int(global_pos.y / 16.0)
 	return get_surface_feature_tag_at_tile(tile_x, tile_y)
 
-func _should_carve_accessible_cave(global_x: int, global_y: int, surface_base: float, is_spawn_protected: bool) -> bool:
+func _get_surface_feature_tag_from_context(global_x: int, global_y: int, surface_y: int, biome: BiomeType) -> String:
+	if abs(global_y - surface_y) > 8:
+		return SURFACE_FEATURE_NONE
+	var feature_val = (noise_surface_feature.get_noise_2d(global_x, 0) + 1.0) * 0.5
+	match biome:
+		BiomeType.DESERT:
+			return SURFACE_FEATURE_DESERT_SPIRE if feature_val > 0.82 else SURFACE_FEATURE_NONE
+		BiomeType.TUNDRA:
+			return SURFACE_FEATURE_FROST_SPIRE if feature_val > 0.78 else SURFACE_FEATURE_NONE
+		BiomeType.SWAMP:
+			return SURFACE_FEATURE_MUD_MOUND if feature_val > 0.76 else SURFACE_FEATURE_NONE
+		BiomeType.PLAINS:
+			return SURFACE_FEATURE_GRASS_KNOLL if feature_val > 0.8 else SURFACE_FEATURE_NONE
+		BiomeType.FOREST:
+			return SURFACE_FEATURE_STONE_OUTCROP if feature_val > 0.77 else SURFACE_FEATURE_NONE
+		_:
+			return SURFACE_FEATURE_NONE
+
+func _get_cave_geology_radius_scale(surface_biome: BiomeType, relief_profile: String, depth: float) -> float:
+	var scale := 1.0
+	match surface_biome:
+		BiomeType.DESERT:
+			scale = 0.88
+		BiomeType.SWAMP:
+			scale = 1.12
+		BiomeType.TUNDRA:
+			scale = 0.93
+		BiomeType.PLAINS:
+			scale = 1.02
+		_:
+			scale = 1.0
+
+	if relief_profile == RELIEF_PROFILE_MOUNTAIN:
+		scale *= 0.9
+	elif relief_profile == RELIEF_PROFILE_BASIN:
+		scale *= 1.1
+
+	var depth_gain := clampf((depth - 80.0) / 220.0, 0.0, 1.0)
+	scale *= lerpf(1.0, 1.18, depth_gain)
+	return scale
+
+func _get_worm_lane_center_y(global_x: int, lane_y: float, depth: float) -> float:
+	var curve_a := noise_tunnel.get_noise_2d(global_x * 0.015 + 17.0, depth * 0.008 - 31.0) * 7.5
+	var curve_b := noise_cave_region.get_noise_2d(global_x * 0.028 - 53.0, depth * 0.014 + 11.0) * 4.2
+	var curve_c := noise_surface_feature.get_noise_2d(global_x * 0.009 + 191.0, depth * 0.004 - 73.0) * 2.1
+	return lane_y + curve_a + curve_b + curve_c
+
+func _get_worm_main_radius(global_x: int, depth: float, surface_biome: BiomeType, relief_profile: String) -> float:
+	var large := (noise_cave_region.get_noise_2d(global_x * 0.007 + 41.0, depth * 0.005 - 19.0) + 1.0) * 0.5
+	var medium := (noise_tunnel.get_noise_2d(global_x * 0.021 - 73.0, depth * 0.013 + 29.0) + 1.0) * 0.5
+	var radius := 3.8 + large * 4.2 + medium * 2.0
+	radius *= _get_cave_geology_radius_scale(surface_biome, relief_profile, depth)
+	return maxf(radius, 2.2)
+
+func _should_carve_worm_main(global_x: int, global_y: int, lane_y: float, depth: float, surface_biome: BiomeType, relief_profile: String) -> bool:
+	var center_y := _get_worm_lane_center_y(global_x, lane_y, depth)
+	var radius := _get_worm_main_radius(global_x, depth, surface_biome, relief_profile)
+	var dist := absf(float(global_y) - center_y)
+	if dist > radius + 1.2:
+		return false
+
+	var edge_t := clampf(1.0 - dist / maxf(radius, 0.001), 0.0, 1.0)
+	var wall_detail := noise_surface_feature.get_noise_2d(float(global_x) * 0.23 + 17.0, float(global_y) * 0.19 - 31.0) * (0.55 + edge_t * 0.45)
+	var threshold := radius + wall_detail * 1.1
+	return dist <= threshold
+
+func _should_carve_worm_branch(global_x: int, global_y: int, lane_y: float, depth: float, surface_biome: BiomeType, relief_profile: String) -> bool:
+	if depth < 42.0:
+		return false
+
+	var branch_gate := (noise_cave_region.get_noise_2d(global_x * 0.009 + 77.0, depth * 0.011 - 43.0) + 1.0) * 0.5
+	if branch_gate < 0.67:
+		return false
+
+	var dir_selector := noise_tunnel.get_noise_2d(global_x * 0.013 - 17.0, depth * 0.007 + 59.0)
+	var branch_dir := -1.0 if dir_selector < 0.0 else 1.0
+	var main_center := _get_worm_lane_center_y(global_x, lane_y, depth)
+	var lateral_strength := 8.0 + (noise_cave.get_noise_2d(global_x * 0.02 + 13.0, depth * 0.015) + 1.0) * 0.5 * 10.0
+	var growth := clampf((depth - 38.0) / 150.0, 0.0, 1.0)
+	var branch_center := main_center + branch_dir * lateral_strength * growth
+	var branch_radius := _get_worm_main_radius(global_x, depth, surface_biome, relief_profile) * 0.52
+
+	var dist := absf(float(global_y) - branch_center)
+	if dist > branch_radius + 0.9:
+		return false
+
+	var branch_detail := noise_surface_feature.get_noise_2d(float(global_x) * 0.29 + 91.0, float(global_y) * 0.27 - 27.0) * 0.7
+	return dist <= branch_radius + branch_detail
+
+func _should_carve_accessible_cave_with_context(global_x: int, global_y: int, surface_base: float, lane_y: float, cave_info: Dictionary, is_spawn_protected: bool, surface_biome: BiomeType) -> bool:
 	if is_spawn_protected:
 		return false
-
 	var depth = global_y - surface_base
-	if depth <= 15.0:
+	if depth <= 42.0:
 		return false
-
+	var relief_profile := String(cave_info.get("relief_profile", RELIEF_PROFILE_ROLLING))
 	var c_val = noise_cave.get_noise_2d(global_x, global_y)
 	var t_val = noise_tunnel.get_noise_2d(global_x, global_y)
 	var cave_thresh = 0.55 if depth < 80.0 else 0.48
 	var tunnel_thresh = 0.85
 	var noise_carve = c_val > cave_thresh or t_val > tunnel_thresh
-	var cave_info = get_cave_region_info_at_tile(global_x, global_y)
-	var lane_dist = abs(global_y - _get_cave_lane_y(global_x, surface_base))
+	var main_worm_carve := _should_carve_worm_main(global_x, global_y, lane_y, depth, surface_biome, relief_profile)
+	var branch_worm_carve := _should_carve_worm_branch(global_x, global_y, lane_y, depth, surface_biome, relief_profile)
+	var organic_carve := main_worm_carve or branch_worm_carve
+	var lane_dist = abs(global_y - lane_y)
 
+	# 浅层禁止随机噪声打孔，优先依赖入口和主矿道几何，避免“地上到处是坑”。
+	if depth < 78.0:
+		noise_carve = false
+	if depth < 64.0 and lane_dist > 6.0 and cave_info.get("region", CAVE_REGION_SOLID) != CAVE_REGION_CONNECTOR:
+		organic_carve = main_worm_carve and lane_dist <= 4.0
 	match cave_info["region"]:
 		CAVE_REGION_CONNECTOR:
 			return true
 		CAVE_REGION_OPEN_CAVERN:
-			return lane_dist <= 12.0 or noise_carve
+			return lane_dist <= 12.0 or organic_carve or noise_carve
 		CAVE_REGION_CHAMBER:
-			return lane_dist <= 8.0 or noise_carve
+			return lane_dist <= 8.0 or organic_carve or noise_carve
 		CAVE_REGION_TUNNEL:
-			return lane_dist <= 3.0 or noise_carve
+			return lane_dist <= 3.0 or main_worm_carve or (organic_carve and noise_carve)
 		CAVE_REGION_POCKET:
-			return noise_carve and cave_info["reachable"]
+			return (branch_worm_carve or noise_carve) and cave_info["reachable"]
 		_:
-			return noise_carve
+			return organic_carve or noise_carve
 
-func _apply_surface_features(coord: Vector2i, result: Dictionary, surface_cache: Array) -> void:
+func _should_carve_accessible_cave(global_x: int, global_y: int, surface_base: float, is_spawn_protected: bool) -> bool:
+	var lane_y = _get_cave_lane_y(global_x, surface_base)
+	var relief_profile := get_surface_relief_profile_at_tile(global_x)
+	var cave_info = _get_cave_region_info_from_context(global_x, global_y, surface_base, relief_profile, lane_y)
+	var surface_biome := _get_surface_biome_from_climate(global_x, 0)
+	return _should_carve_accessible_cave_with_context(global_x, global_y, surface_base, lane_y, cave_info, is_spawn_protected, surface_biome)
+
+func _apply_surface_features(coord: Vector2i, result: Dictionary, column_contexts: Array) -> void:
 	for x in range(3, 61):
 		var global_x = coord.x * 64 + x
-		var surface_base = surface_cache[x]
+		var column_context: Dictionary = column_contexts[x]
+		var surface_base = float(column_context.get("surface_base", 300.0))
 		var top_y = int(floor(surface_base))
-		var feature = get_surface_feature_tag_at_tile(global_x, top_y)
+		var feature = _get_surface_feature_tag_from_context(global_x, top_y, top_y, int(column_context.get("surface_biome", BiomeType.FOREST)))
 		if feature == SURFACE_FEATURE_NONE:
 			continue
 		if _is_in_structure_forbidden_zone(global_x, top_y):
@@ -678,29 +1668,23 @@ func _apply_surface_features(coord: Vector2i, result: Dictionary, surface_cache:
 					elif abs(ox) == 1 and (noise_surface_feature.get_noise_2d(global_x + ox, 20) > -0.2):
 						result[0][Vector2i(x + ox, top_y)] = {"source": tile_source_id, "atlas": stone_tile}
 
-func generate_chunk_cells(coord: Vector2i) -> Dictionary:
+func generate_chunk_cells(coord: Vector2i, critical_only: bool = false) -> Dictionary:
 	var result = { 0: {}, 1: {}, 2: {} }
 	var chunk_origin = coord * 64
-	var surface_cache: Array = []
+	var column_contexts: Array = []
 	
 	for x in range(64):
 		var global_x = chunk_origin.x + x
-		
-		# --- 强制平坦化与重生点保护 ---
-		var spawn_x = 0
-		var dist_to_spawn_x = abs(global_x - spawn_x)
-		var spawn_flat_weight = clamp(dist_to_spawn_x / 64.0, 0.0, 1.0)
-		
-		# 1. 基础海拔 (Surface Biome Only)
-		var surface_biome_type = get_biome_at(global_x, 0)
-		var b_params = biome_params[surface_biome_type]
-		var biome_amp = b_params["amp"]
-		
-		var cont_val = noise_continental.get_noise_1d(global_x)
-		var blended_cont_val = lerp(0.0, cont_val, spawn_flat_weight)
-		
-		var surface_base = 300.0 + (blended_cont_val * biome_amp)
-		surface_cache.append(surface_base)
+		var column_context := _build_surface_column_context(global_x)
+		var surface_base: float = column_context.get("surface_base", 300.0)
+		var is_spawn_safe_column: bool = column_context.get("is_spawn_safe", false)
+		var transition_context: Dictionary = column_context.get("transition_context", {})
+		var lane_y: float = column_context.get("lane_y", surface_base + 54.0)
+		var surface_biome: BiomeType = column_context.get("surface_biome", BiomeType.FOREST)
+		var relief_profile: String = column_context.get("relief_profile", RELIEF_PROFILE_ROLLING)
+		var entrance_info: Dictionary = column_context.get("entrance_info", _make_surface_entrance_none())
+		var mountain_breach_info: Dictionary = column_context.get("mountain_breach_info", _make_mountain_breach_none())
+		column_contexts.append(column_context)
 		
 		for y in range(64):
 			var global_y = chunk_origin.y + y
@@ -708,18 +1692,30 @@ func generate_chunk_cells(coord: Vector2i) -> Dictionary:
 			
 			# 2. 垂直填充逻辑
 			var is_solid = global_y > surface_base
+			var current_biome: BiomeType = surface_biome
+			var has_current_biome := false
+			var cave_info := {}
+			if is_solid:
+				current_biome = _get_column_biome_at_depth(global_x, global_y, surface_base, surface_biome, transition_context)
+				has_current_biome = true
+				if _should_carve_mountain_worm_breach(global_x, global_y, mountain_breach_info):
+					is_solid = false
+				elif _should_carve_surface_entrance(global_x, global_y, entrance_info):
+					is_solid = false
+				elif _should_carve_entrance_route(global_x, global_y, entrance_info):
+					is_solid = false
+				else:
+					cave_info = _get_cave_region_info_from_context(global_x, global_y, surface_base, relief_profile, lane_y)
 			
 			# 3. 深度洞穴
 			if is_solid:
 				var dist_from_surf = global_y - surface_base
-				var is_spawn_protected = dist_to_spawn_x < 20 and dist_from_surf < 40.0
+				var is_spawn_protected = is_spawn_safe_column and dist_from_surf < 40.0
 				
-				if _should_carve_accessible_cave(global_x, global_y, surface_base, is_spawn_protected):
+				if _should_carve_accessible_cave_with_context(global_x, global_y, surface_base, lane_y, cave_info, is_spawn_protected, surface_biome):
 					is_solid = false
 					
 			if is_solid:
-				# --- 核心修改：基于位置的生态判定 ---
-				var current_biome = get_biome_at(global_x, global_y)
 				var current_b_data = biome_params.get(current_biome, biome_params[BiomeType.FOREST])
 				
 				var depth = global_y - surface_base
@@ -740,9 +1736,10 @@ func generate_chunk_cells(coord: Vector2i) -> Dictionary:
 					# 尝试生成矿物 (仅在基础层为石头时)
 					# 注意：我们允许在沙石(Sandstone)或冰(Ice)中生成矿物，但通常矿物嵌在石头里
 					# 为了通用性，只要是"地下深处"的默认方块，都尝试替换为矿物
-					var mineral_tile = _get_mineral_at(global_x, global_y, depth)
-					if mineral_tile != Vector2i(-1, -1):
-						tile_data["atlas"] = mineral_tile
+					if not critical_only:
+						var mineral_tile = _get_mineral_at(global_x, global_y, depth)
+						if mineral_tile != Vector2i(-1, -1):
+							tile_data["atlas"] = mineral_tile
 				
 				# 强制将所有实心方块放在 Layer 0，确保玩家始终有物理碰撞
 				result[0][local_pos] = tile_data
@@ -750,7 +1747,10 @@ func generate_chunk_cells(coord: Vector2i) -> Dictionary:
 			# --- 背景墙逻辑：防止地下出现虚空 ---
 			# 只要是在地表以下，就在 Layer 1 (背景) 放置背景墙
 			if global_y > surface_base + 3.0:
-				var bg_biome = get_biome_at(global_x, global_y)
+				if not has_current_biome:
+					current_biome = _get_column_biome_at_depth(global_x, global_y, surface_base, surface_biome, transition_context)
+					has_current_biome = true
+				var bg_biome = current_biome
 				var bg_data = biome_params.get(bg_biome, biome_params[BiomeType.FOREST])
 				
 				# 在地下深处强制放置背景墙以填补洞穴
@@ -763,7 +1763,9 @@ func generate_chunk_cells(coord: Vector2i) -> Dictionary:
 					"atlas": bg_tile
 				}
 
-	_apply_surface_features(coord, result, surface_cache)
+	# 关键生成阶段只保留可通行地形与核心洞穴，次要地表装饰延后到 enrichment。
+	if not critical_only:
+		_apply_surface_features(coord, result, column_contexts)
 	return result
 
 func check_tileset_ids() -> void:
@@ -787,7 +1789,7 @@ func start_generation() -> void:
 	
 	# 重置无限区块管理器
 	if InfiniteChunkManager:
-		InfiniteChunkManager.restart()
+		InfiniteChunkManager.restart(false)
 		
 	# 彻底清空当前所有图层
 	if layer_0: layer_0.clear()
@@ -806,6 +1808,7 @@ func start_generation() -> void:
 			child.queue_free()
 	
 	pois.clear()
+	_clear_generation_caches()
 	
 	# 在无限地图模式下，我们不再调用全局生成函数
 	#generate_layer(0, layer_0)
@@ -1228,14 +2231,7 @@ func get_spawn_position() -> Vector2:
 	# 针对无限地图模式，固定在 0 附近生成
 	var spawn_x = 0
 	var global_x = spawn_x
-	
-	# 下面的混合逻辑必须与 generate_chunk_cells 中的一致
-	var dist_to_spawn_x = abs(global_x - spawn_x)
-	var spawn_flat_weight = clamp(dist_to_spawn_x / 64.0, 0.0, 1.0)
-	var cont_val = noise_continental.get_noise_1d(global_x)
-	var blended_cont_val = lerp(0.0, cont_val, spawn_flat_weight)
-	
-	var surface_limit = 300.0 + (blended_cont_val * 120.0)
+	var surface_limit = get_surface_height_at(global_x)
 	# 第一块实心砖块的索引
 	var first_solid_y = ceil(surface_limit) 
 	

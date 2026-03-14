@@ -13,6 +13,11 @@ The world generation system SHALL produce underground cave spaces using a topolo
 - **THEN** the cave network does not read as one clearly exposed sinusoidal or equivalently repetitive master line with occasional connectors
 - **AND** navigation quality is preserved through less obvious but still reachable backbone routing
 
+#### Scenario: Connector and branch patterns avoid fixed-interval stripe artifacts
+- **WHEN** representative underground cross-sections are reviewed in deterministic seeds
+- **THEN** connector and branch placement does not collapse into obvious stripe-like or fixed-depth repeated strokes
+- **AND** route reachability remains intact without reintroducing periodic visual rhythms
+
 ### Requirement: Underground Cave Networks SHALL Preserve Player Reachability
 The world generation system SHALL preserve practical underground reachability so cave diversity does not collapse into sealed pockets, excessive dead ends, disconnected vertical progression, or buried-only access.
 
@@ -46,6 +51,11 @@ The world generation system SHALL make underground progression feel layered by c
 - **WHEN** the player descends through representative underground depth bands in a deterministic world
 - **THEN** the surrounding space shows readable changes in cave openness, local material family, pocket frequency, mineral expectations, or equivalent regional cues
 - **AND** those changes feel like transitions between intended strata rather than abrupt random swaps
+
+#### Scenario: Representative underground views do not collapse into one uniform mass
+- **WHEN** representative shallow and mid-depth underground views are reviewed in the same deterministic world
+- **THEN** those views do not both read as one mostly uniform pale stone field with only sparse ore accents
+- **AND** players can distinguish the surrounding underground identity through geometry, layering, openness, background treatment, or equivalent regional cues
 
 #### Scenario: Surface macro regions influence the underground below them
 - **WHEN** underground chunks are generated beneath different major surface macro regions or biome arcs
@@ -102,3 +112,11 @@ The world generation system SHALL keep underground strata and archetype identity
 - **WHEN** representative underground strata and archetype families are generated using mostly shared stone or background material families
 - **THEN** players can still distinguish galleries, open caverns, compartment clusters, or equivalent underground region families through geometry, openness, layering, and localized cues
 - **AND** any new archetype-specific tiles remain optional readability enhancers rather than the only way to communicate region identity
+
+### Requirement: Underground Tile Layout SHALL Suppress Periodic Wrong-Tile Artifacts
+The world generation system SHALL suppress deterministic-but-visible wrong-tile artifact patterns such as isolated unsupported islands, repeated stripe bands, or one-column material walls that do not match the surrounding cave geometry.
+
+#### Scenario: Artifact suppression preserves deterministic cave readability
+- **WHEN** representative underground regions are generated and compared across reloads for the same seed
+- **THEN** obvious periodic wrong-tile artifacts are absent or reduced below readability-breaking levels
+- **AND** artifact suppression does not break determinism, chunk continuity, or intended cave traversal routes

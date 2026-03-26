@@ -5,7 +5,7 @@ class_name BTChaseTarget
 ## 持续向 Blackboard 中的 "target" 移动。
 ## 如果没有目标或目标失效，返回 FAILURE。
 
-@export var tolerance: float = 40.0 # 接近到多少距离视为“追上也攻击”
+@export var tolerance: float = -1.0 # 小于等于 0 时，跟随 BaseNPC.attack_range
 
 func _tick(delta: float) -> Status:
 	var npc: BaseNPC = agent as BaseNPC
@@ -17,9 +17,10 @@ func _tick(delta: float) -> Status:
 		return FAILURE
 	
 	var dist = npc.global_position.distance_to(target.global_position)
+	var effective_tolerance = tolerance if tolerance > 0.0 else npc.attack_range
 	
 	# 如果已经足够接近，进入攻击范围
-	if dist <= tolerance:
+	if dist <= effective_tolerance:
 		npc.stop_movement()
 		return SUCCESS
 		

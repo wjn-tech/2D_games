@@ -31,10 +31,9 @@ func _check_for_predators() -> void:
 		var predators = get_tree().get_nodes_in_group(group)
 		for p in predators:
 			if is_instance_valid(p) and global_position.distance_to(p.global_position) < detection_range:
-				bt_player.blackboard.set_var("target", p)
+				set_combat_target(p)
 				if hsm:
 					hsm.dispatch("enemy_detected")
-				return
 				return
 
 ## 该逻辑现在建议迁移到行为树任务中
@@ -47,7 +46,7 @@ func _check_for_prey() -> void:
 			var preys = get_tree().get_nodes_in_group(group)
 			for p in preys:
 				if is_instance_valid(p) and global_position.distance_to(p.global_position) < detection_range:
-					bt_player.blackboard.set_var("target", p)
+					set_combat_target(p)
 					if hsm:
 						hsm.dispatch("enemy_detected")
 					return

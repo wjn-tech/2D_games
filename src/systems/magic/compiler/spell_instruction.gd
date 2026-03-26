@@ -4,8 +4,8 @@ class_name SpellInstruction
 # Types
 const TYPE_PROJECTILE = "PROJECTILE"
 const TYPE_TRIGGER_TIMER = "TRIGGER_TIMER"
-const TYPE_TRIGGER_COLLISION = "TRIGGER_COLLISION"
-const TYPE_TRIGGER_DISAPPEAR = "TRIGGER_DISAPPEAR"
+const TYPE_TRIGGER_HIT = "TRIGGER_HIT" # Was COLLISION
+const TYPE_TRIGGER_EXPIRATION = "TRIGGER_EXPIRATION" # Was DISAPPEAR
 const TYPE_MODIFIER = "MODIFIER"
 const TYPE_LOGIC_BLOCK = "LOGIC_BLOCK"
 
@@ -26,6 +26,8 @@ var child_exec_immediate: bool = false # If true, execute child_tier at cast-tim
 func duplicate() -> SpellInstruction:
 	var copy = SpellInstruction.new()
 	copy.type = type
+	copy.child_mode = child_mode
+	copy.child_exec_immediate = child_exec_immediate
 	# Duplicate params and modifiers safely
 	if params is Dictionary:
 		copy.params = params.duplicate()
@@ -47,7 +49,6 @@ func duplicate() -> SpellInstruction:
 			else:
 				new_tier.instructions.append(sub)
 		copy.child_tier = new_tier
-		copy.child_exec_immediate = child_exec_immediate
 	else:
 		copy.child_tier = null
 	return copy

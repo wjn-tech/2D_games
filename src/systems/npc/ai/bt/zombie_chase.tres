@@ -1,0 +1,28 @@
+[gd_resource type="BehaviorTree" load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://src/systems/npc/ai/tasks/bt_chase_target.gd" id="1_chase"]
+[ext_resource type="Script" path="res://src/systems/npc/ai/tasks/bt_perform_attack.gd" id="2_attack"]
+
+[sub_resource type="BlackboardPlan" id="BlackboardPlan_1"]
+
+[sub_resource type="BTAction" id="BTAction_chase"]
+script = ExtResource("1_chase")
+tolerance = 44.0
+
+[sub_resource type="BTAction" id="BTAction_attack"]
+script = ExtResource("2_attack")
+damage = 15.0
+damage_type = "physical"
+windup_time = 0.32
+cooldown = 1.25
+hit_reach_bonus = 16.0
+
+[sub_resource type="BTSequence" id="BTSequence_main"]
+children = [SubResource("BTAction_chase"), SubResource("BTAction_attack")]
+
+[sub_resource type="BTSelector" id="BTSelector_root"]
+children = [SubResource("BTSequence_main")]
+
+[resource]
+blackboard_plan = SubResource("BlackboardPlan_1")
+root_task = SubResource("BTSelector_root")

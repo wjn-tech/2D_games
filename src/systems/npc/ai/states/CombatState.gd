@@ -14,6 +14,11 @@ func _setup() -> void:
 func _enter() -> void:
 	# npc.say("有敌袭！")
 	blackboard.set_var("behavior_mode", "combat")
+	var target = blackboard.get_var("target", null)
+	if not is_instance_valid(target) and npc and npc.has_method("get_combat_target"):
+		target = npc.get_combat_target()
+		if is_instance_valid(target):
+			blackboard.set_var("target", target)
 	
 	if npc.bt_player and state_behavior_tree:
 		npc.bt_player.behavior_tree = state_behavior_tree
@@ -25,16 +30,24 @@ func _exit() -> void:
 	blackboard.set_var("behavior_mode", "peaceful")
 
 func _update(delta: float) -> void:
-	var target = blackboard.get_var("target")
+	var target = blackboard.get_var("target", null)
+	if not is_instance_valid(target) and npc and npc.has_method("get_combat_target"):
+		target = npc.get_combat_target()
+		if is_instance_valid(target):
+			blackboard.set_var("target", target)
 	
 	# 如果目标消失或死亡
 	if not is_instance_valid(target):
+		if npc and npc.has_method("clear_combat_target"):
+			npc.clear_combat_target()
 		dispatch("threat_cleared")
 		return
 		
 	# 距离过远脱战
 	var dist = npc.global_position.distance_to(target.global_position)
 	if dist > npc.detection_range * 1.5:
+		if npc and npc.has_method("clear_combat_target"):
+			npc.clear_combat_target()
 		blackboard.set_var("target", null)
 		dispatch("threat_cleared")
 		return
@@ -75,7 +88,9 @@ func _perform_attack(target: Node2D) -> void:
 	# 	# Try play attack anim?
 	# 	# npc.animator.play("attack")
 	# 	pass
-		
-	if target.has_method("take_damage"):
+
+	if CombatManager:
+		CombatManager.deal_damage(npc, target, 10.0, "physical")
+	elif target.has_method("take_damage"):
 		target.take_damage(10.0) # Base damage
 

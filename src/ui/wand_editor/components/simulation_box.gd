@@ -31,4 +31,4 @@ func _run_sim():
 		
 	# Execute
 	# World Context is 'arena'
-	SpellProcessor.execute_tier(program.root_tier, spawn_point.position, Vector2.RIGHT, arena)
+	SpellProcessor.execute_tier(program.root_tier, spawn_point.position, Vector2.RIGHT, null, arena, [], true)

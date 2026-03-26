@@ -353,11 +353,35 @@ func _update_stats_display():
 			if child.name != "ManaTicker":
 				child.queue_free()
 		
+		var debug_plan = SpellProcessor.debug_build_cast_plan(current_wand)
+		var plan_valid = bool(debug_plan.get("is_valid", false))
+		var compile_errors: Array = debug_plan.get("errors", []) if debug_plan is Dictionary else []
 		var sim_stats = SpellProcessor.get_wand_stats(current_wand)
 		var sim_duration = sim_stats.get("duration", 0.0) if sim_stats is Dictionary else 0.0
 		var sim_dmg = sim_stats.get("total_damage", 0.0) if sim_stats is Dictionary else 0.0
 		var sim_projs = sim_stats.get("projectile_count", 0) if sim_stats is Dictionary else 0
 		var sim_mana = sim_stats.get("simulated_mana_usage", 0.0) if sim_stats is Dictionary else 0.0
+		var diag_label = ""
+		var diag_value = ""
+		var diag_color = Color("#66ff66")
+		if plan_valid:
+			sim_duration = float(debug_plan.get("max_fire_delay", sim_duration))
+			sim_mana = float(debug_plan.get("total_mana_cost", sim_mana))
+			sim_projs = debug_plan.get("emissions", []).size()
+			var cycle_mana = float(debug_plan.get("total_mana_cost", 0.0))
+			var current_mana = float(current_wand.current_mana)
+			if sim_projs <= 0:
+				diag_label = "预览异常:"
+				diag_value = "没有编译出可发射投射物"
+				diag_color = Color("#ff6666")
+			else:
+				diag_label = "需蓝 / 当前:"
+				diag_value = "%.0f / %.0f" % [cycle_mana, current_mana]
+				diag_color = Color("#66ff66") if current_mana >= cycle_mana else Color("#ff6666")
+		else:
+			diag_label = "编译失败:"
+			diag_value = str(compile_errors[0]) if not compile_errors.is_empty() else "未知错误"
+			diag_color = Color("#ff6666")
 		
 		stats_container.add_child(_create_stat_header("法杖详细属性"))
 		stats_container.add_child(_create_stat_row("res://assets/ui/icons/icon_level.svg", "等级:", str(embryo.level)))
@@ -373,6 +397,7 @@ func _update_stats_display():
 		stats_container.add_child(_create_stat_row("", "单次爆发法力:", "%.0f" % sim_mana, Color("#66aaff")))
 		stats_container.add_child(_create_stat_row("", "理论全额伤害:", "%.1f" % sim_dmg, Color("#ff4444")))
 		stats_container.add_child(_create_stat_row("", "投射物数量:", str(sim_projs), Color("#ccccff")))
+		stats_container.add_child(_create_stat_row("", diag_label, diag_value, diag_color))
 		
 		stats_container.add_child(_create_stat_header("实时状态"))
 		var block_count = current_wand.visual_grid.size()
@@ -430,6 +455,7 @@ func _input(event: InputEvent) -> void:
 
 func _on_visibility_changed():
 	if visible:
+		_setup_libraries() # Refresh unlocked spells
 		EventBus.wand_editor_opened.emit()
 		get_tree().paused = true # Diegetic UI Pause
 		_apply_sci_fi_theme() # Refresh theme
@@ -481,52 +507,58 @@ func _setup_libraries():
 	# --- Logic Library ---
 	# 1. Define all possible logic items
 	var logic_items = [
-		_create_mock_item("能量源", "generator", Color(0.2, 1.0, 0.4), {"mana_cost": 0, "delay": 0.05, "damage": 0}, null),
-		_create_mock_item("触发器 (法术释放)", "trigger", Color(1, 0.84, 0.0), {"mana_cost": 2, "trigger_type": "cast", "delay": 0.1}, null), 
-		_create_mock_item("触发器 (命中)", "trigger", Color(1, 0.5, 0.0), {"mana_cost": 5, "trigger_type": "collision", "delay": 0.0}, null),
-		_create_mock_item("触发器 (定时)", "trigger", Color(1, 0.8, 0.3), {"mana_cost": 5, "trigger_type": "timer", "duration": 0.5, "delay": 0.0}, null),
+		_create_mock_item(tr("generator"), "generator", Color(0.2, 1.0, 0.4), {"mana_cost": 0, "delay": 0.05, "damage": 0}, null),
+		_create_mock_item(tr("trigger") + " (释放)", "trigger", Color(1, 0.84, 0.0), {"mana_cost": 2, "trigger_type": "cast", "delay": 0.1}, null), 
+		_create_mock_item(tr("trigger") + " (命中)", "trigger", Color(1, 0.5, 0.0), {"mana_cost": 5, "trigger_type": "collision", "delay": 0.0}, null),
+		_create_mock_item(tr("trigger") + " (定时)", "trigger", Color(1, 0.8, 0.3), {"mana_cost": 5, "trigger_type": "timer", "duration": 0.5, "delay": 0.0}, null),
 		
-		_create_mock_item("火焰核心", "modifier_element", Color(0.8, 0.2, 0.2), {"mana_cost": 10, "element": "fire", "damage_add": 5, "delay": 0.1}, null),
-		_create_mock_item("寒冰核心", "modifier_element", Color(0.2, 0.6, 0.9), {"mana_cost": 10, "element": "ice", "damage_add": 2, "delay": 0.05}, null),
-		_create_mock_item("增幅器", "modifier_damage", Color(0.6, 0.6, 0.6), {"mana_cost": 15, "amount": 10, "delay": 0.05}, null),
-		_create_mock_item("伤害强化", "modifier_damage", Color(1.0, 0.2, 0.2), {"mana_cost": 25, "amount": 25, "delay": 0.15}, null),
-		_create_mock_item("穿透强化", "modifier_pierce", Color(0.8, 0.2, 0.8), {"mana_cost": 30, "pierce": 1, "delay": 0.1}, null),
-		_create_mock_item("速度修正", "modifier_speed", Color(0.2, 0.8, 0.6), {"mana_cost": 5, "speed_add": 200, "delay": -0.05}, null),
-		_create_mock_item("加速修正", "modifier_speed", Color(0.5, 1.0, 0.5), {"mana_cost": 10, "multiplier": 1.5, "delay": -0.01}, null),
-		_create_mock_item("充能修正", "modifier_delay", Color(0.4, 0.4, 0.4), {"mana_cost": 0, "recharge": -0.15, "delay": -0.05}, null),
+		_create_mock_item(tr("fire"), "modifier_element", Color(0.8, 0.2, 0.2), {"mana_cost": 10, "element": "fire", "damage_add": 5, "delay": 0.1}, null),
+		_create_mock_item(tr("ice"), "modifier_element", Color(0.2, 0.6, 0.9), {"mana_cost": 10, "element": "ice", "damage_add": 2, "delay": 0.05}, null),
+		_create_mock_item(tr("modifier_damage"), "modifier_damage", Color(0.6, 0.6, 0.6), {"mana_cost": 15, "amount": 10, "delay": 0.05}, null),
+		_create_mock_item(tr("modifier_damage"), "modifier_damage", Color(1.0, 0.2, 0.2), {"mana_cost": 25, "amount": 25, "delay": 0.15}, null),
+		_create_mock_item(tr("modifier_pierce"), "modifier_pierce", Color(0.8, 0.2, 0.8), {"mana_cost": 30, "pierce": 1, "delay": 0.1}, null),
+		_create_mock_item(tr("modifier_speed"), "modifier_speed", Color(0.2, 0.8, 0.6), {"mana_cost": 5, "speed_add": 200, "delay": -0.05}, null),
+		_create_mock_item(tr("modifier_speed"), "modifier_speed", Color(0.5, 1.0, 0.5), {"mana_cost": 10, "multiplier": 1.5, "delay": -0.01}, null),
+		_create_mock_item(tr("modifier_delay"), "modifier_delay", Color(0.4, 0.4, 0.4), {"mana_cost": 0, "recharge": -0.15, "delay": -0.05}, null),
 		_create_mock_item("增加法力", "modifier_add_mana", Color(0.0, 0.6, 1.0), {"mana_cost": -30, "delay": 0.05}, null),
 		
-		_create_mock_item("分流器", "splitter", Color(0.0, 0.9, 0.9), {"mana_cost": 2, "delay": 0.0}, null),
-		_create_mock_item("顺序释放", "logic_sequence", Color(0.5, 0.5, 0.5), {"mana_cost": 1, "delay": 0.1}, null),
+		_create_mock_item(tr("splitter"), "splitter", Color(0.0, 0.9, 0.9), {"mana_cost": 2, "delay": 0.0}, null),
+		_create_mock_item(tr("logic_sequence"), "logic_sequence", Color(0.5, 0.5, 0.5), {"mana_cost": 1, "delay": 0.1}, null),
 		
-		_create_mock_item("发射器", "action_projectile", Color(0.9, 0.4, 0.4), {"mana_cost": 10, "speed": 500.0, "damage": 10.0, "delay": 0.2}, null),
-		_create_mock_item("火花弹 (Spark Bolt)", "action_projectile", Color(0.8, 0.9, 10.0), {"projectile_id": "spark_bolt", "mana_cost": 5, "speed": 800.0, "damage": 3.0, "delay": 0.05}, null),
-		_create_mock_item("魔法弹 (Magic Bolt)", "action_projectile", Color(10.0, 1.5, 30.0), {"projectile_id": "magic_bolt", "mana_cost": 25, "speed": 600.0, "damage": 15.0, "delay": 0.1}, null),
-		_create_mock_item("反弹爆发", "action_projectile", Color(10.0, 10.0, 1.0), {"projectile_id": "bouncing_burst", "mana_cost": 15, "speed": 400.0, "damage": 5.0, "delay": 0.1}, null),
-		_create_mock_item("三叉弹", "action_projectile", Color(0.1, 30.0, 10.0), {"projectile_id": "tri_bolt", "mana_cost": 35, "speed": 500.0, "damage": 8.0, "delay": 0.2}, null),
-		_create_mock_item("电锯 (Chainsaw)", "action_projectile", Color(20.0, 20.0, 20.0), {"projectile_id": "chainsaw", "mana_cost": 1, "speed": 100.0, "damage": 1.0, "delay": 0.0, "recharge": -0.17}, null),
-		_create_mock_item("史莱姆弹", "action_projectile", Color(0.0, 1.0, 0.0), {"projectile_id": "slime", "mana_cost": 12, "speed": 400.0, "damage": 12.0, "element": "slime", "delay": 0.15}, null),
-		_create_mock_item("TNT", "action_projectile", Color(0.9, 0.2, 0.2), {"projectile_id": "tnt", "mana_cost": 40, "damage": 50, "lifetime": 3.0, "speed": 200.0, "delay": 0.5}, null),
-		_create_mock_item("黑洞", "action_projectile", Color(0.1, 0.0, 0.2), {"projectile_id": "blackhole", "mana_cost": 180, "damage": 5, "lifetime": 8.0, "speed": 50.0, "delay": 0.8}, null),
-		_create_mock_item("传送", "action_projectile", Color(0.6, 0.2, 0.8), {"projectile_id": "teleport", "mana_cost": 15, "damage": 0, "lifetime": 1.0, "speed": 800.0, "delay": 0.3}, null)
+		_create_mock_item(tr("action_projectile"), "action_projectile", Color(0.9, 0.4, 0.4), {"mana_cost": 10, "speed": 500.0, "damage": 10.0, "delay": 0.2}, null),
+		_create_mock_item(tr("spark_bolt"), "action_projectile", Color(0.8, 0.9, 10.0), {"projectile_id": "spark_bolt", "mana_cost": 5, "speed": 800.0, "damage": 3.0, "delay": 0.05}, null),
+		_create_mock_item(tr("magic_bolt"), "action_projectile", Color(10.0, 1.5, 30.0), {"projectile_id": "magic_bolt", "mana_cost": 25, "speed": 600.0, "damage": 15.0, "delay": 0.1}, null),
+		_create_mock_item(tr("bouncing_burst"), "action_projectile", Color(10.0, 10.0, 1.0), {"projectile_id": "bouncing_burst", "mana_cost": 15, "speed": 400.0, "damage": 5.0, "delay": 0.1}, null),
+		_create_mock_item(tr("tri_bolt"), "action_projectile", Color(0.1, 30.0, 10.0), {"projectile_id": "tri_bolt", "mana_cost": 35, "speed": 500.0, "damage": 8.0, "delay": 0.2}, null),
+		_create_mock_item(tr("chainsaw"), "action_projectile", Color(20.0, 20.0, 20.0), {"projectile_id": "chainsaw", "mana_cost": 1, "speed": 100.0, "damage": 1.0, "delay": 0.0, "recharge": -0.17}, null),
+		_create_mock_item(tr("slime"), "action_projectile", Color(0.0, 1.0, 0.0), {"projectile_id": "slime", "mana_cost": 12, "speed": 400.0, "damage": 12.0, "element": "slime", "delay": 0.15}, null),
+		_create_mock_item(tr("tnt"), "action_projectile", Color(0.9, 0.2, 0.2), {"projectile_id": "tnt", "mana_cost": 40, "damage": 50, "lifetime": 3.0, "speed": 200.0, "delay": 0.5}, null),
+		_create_mock_item(tr("blackhole"), "action_projectile", Color(0.1, 0.0, 0.2), {"projectile_id": "blackhole", "mana_cost": 180, "damage": 5, "lifetime": 8.0, "speed": 50.0, "delay": 0.8}, null),
+		_create_mock_item(tr("teleport"), "action_projectile", Color(0.6, 0.2, 0.8), {"projectile_id": "teleport", "mana_cost": 15, "damage": 0, "lifetime": 1.0, "speed": 800.0, "delay": 0.3}, null),
+		
+		# New Spells V1
+		_create_mock_item(tr("vampire_bolt"), "action_projectile", Color(0.55, 0.0, 0.0), {"projectile_id": "vampire_bolt", "mana_cost": 50, "damage": 5.0, "speed": 600.0, "delay": 0.2}, null),
+		_create_mock_item(tr("healing_circle"), "action_projectile", Color(0.3, 0.8, 0.5), {"projectile_id": "healing_circle", "mana_cost": 100, "lifetime": 1.5, "speed": 0.0, "delay": 0.5}, null)
 	]
 
 	# Additional Noita-like modifiers and projectiles (from Noita wiki inspiration)
 	# Projectile modifiers
-	logic_items.append(_create_mock_item("重击 (Heavy Shot)", "modifier_damage", Color(0.9, 0.4, 0.2), {"mana_cost": 20, "damage_add": 30, "speed_multiplier": 0.6, "delay": 0.05}, null))
-	logic_items.append(_create_mock_item("轻击 (Light Shot)", "modifier_damage", Color(0.6, 0.9, 0.6), {"mana_cost": 12, "damage_add": -5, "speed_multiplier": 1.5, "delay": 0.02}, null))
-	logic_items.append(_create_mock_item("增加寿命 (Increase Lifetime)", "modifier_lifetime", Color(0.3, 0.6, 1.0), {"mana_cost": 8, "lifetime_add": 1.5, "delay": 0.02}, null))
-	logic_items.append(_create_mock_item("穿透 (Piercing Shot)", "modifier_pierce", Color(0.8, 0.2, 0.8), {"mana_cost": 25, "pierce": 2, "delay": 0.05}, null))
-	logic_items.append(_create_mock_item("追踪 (Homing)", "modifier_homing", Color(0.9, 0.7, 0.2), {"mana_cost": 30, "homing_strength": 0.8, "delay": 0.05}, null))
-	logic_items.append(_create_mock_item("爆炸反弹 (Explosive Bounce)", "modifier_bounce_explosive", Color(1.0, 0.4, 0.1), {"mana_cost": 18, "explode_on_bounce": true, "delay": 0.05}, null))
-	logic_items.append(_create_mock_item("火弧 (Fire Arc)", "modifier_arc_fire", Color(0.9, 0.2, 0.1), {"mana_cost": 14, "arc_type": "fire", "delay": 0.02}, null))
-	logic_items.append(_create_mock_item("法力转伤 (Mana To Damage)", "modifier_mana_to_damage", Color(0.7, 0.2, 0.9), {"mana_cost": 0, "damage_multiplier": 1.2, "delay": 0.0}, null))
+	logic_items.append(_create_mock_item(tr("heavy_shot"), "modifier_damage", Color(0.9, 0.4, 0.2), {"mana_cost": 20, "damage_add": 30, "speed_multiplier": 0.6, "delay": 0.05}, null))
+	logic_items.append(_create_mock_item(tr("light_shot"), "modifier_damage", Color(0.6, 0.9, 0.6), {"mana_cost": 12, "damage_add": -5, "speed_multiplier": 1.5, "delay": 0.02}, null))
+	logic_items.append(_create_mock_item(tr("modifier_lifetime"), "modifier_lifetime", Color(0.3, 0.6, 1.0), {"mana_cost": 8, "lifetime_add": 1.5, "delay": 0.02}, null))
+	logic_items.append(_create_mock_item(tr("modifier_pierce"), "modifier_pierce", Color(0.8, 0.2, 0.8), {"mana_cost": 25, "pierce": 2, "delay": 0.05}, null))
+	logic_items.append(_create_mock_item(tr("homing"), "modifier_homing", Color(0.9, 0.7, 0.2), {"mana_cost": 30, "homing_strength": 0.8, "delay": 0.05}, null))
+	logic_items.append(_create_mock_item("爆炸反弹", "modifier_bounce_explosive", Color(1.0, 0.4, 0.1), {"mana_cost": 18, "explode_on_bounce": true, "delay": 0.05}, null))
+	logic_items.append(_create_mock_item("火弧", "modifier_arc_fire", Color(0.9, 0.2, 0.1), {"mana_cost": 14, "arc_type": "fire", "delay": 0.02}, null))
+	logic_items.append(_create_mock_item("法力转伤", "modifier_mana_to_damage", Color(0.7, 0.2, 0.9), {"mana_cost": 0, "damage_multiplier": 1.2, "delay": 0.0}, null))
+	logic_items.append(_create_mock_item(tr("modifier_orbit"), "modifier_orbit", Color(0.5, 0.0, 0.5), {"mana_cost": 30, "delay": 0.1}, null))
 
 	# Additional projectile spells
-	logic_items.append(_create_mock_item("火球 (Fireball)", "action_projectile", Color(1.0, 0.45, 0.1), {"projectile_id": "fireball", "mana_cost": 35, "damage": 22, "lifetime": 2.5, "speed": 300.0, "delay": 0.25}, null))
-	logic_items.append(_create_mock_item("魔法箭 (Magic Arrow)", "action_projectile", Color(0.8, 0.5, 1.0), {"projectile_id": "magic_arrow", "mana_cost": 18, "damage": 12, "lifetime": 1.8, "speed": 700.0, "delay": 0.08}, null))
-	logic_items.append(_create_mock_item("能量球 (Energy Sphere)", "action_projectile", Color(0.6, 0.9, 1.0), {"projectile_id": "energy_sphere", "mana_cost": 28, "damage": 18, "lifetime": 2.2, "speed": 450.0, "delay": 0.12}, null))
-	logic_items.append(_create_mock_item("分裂弹 (Cluster)", "action_projectile", Color(0.9, 0.6, 0.1), {"projectile_id": "cluster_bomb", "mana_cost": 45, "damage": 12, "lifetime": 1.2, "speed": 250.0, "delay": 0.4}, null))
+	logic_items.append(_create_mock_item(tr("fireball"), "action_projectile", Color(1.0, 0.45, 0.1), {"projectile_id": "fireball", "mana_cost": 35, "damage": 22, "lifetime": 2.5, "speed": 300.0, "delay": 0.25}, null))
+	logic_items.append(_create_mock_item(tr("magic_arrow"), "action_projectile", Color(0.8, 0.5, 1.0), {"projectile_id": "magic_arrow", "mana_cost": 18, "damage": 12, "lifetime": 1.8, "speed": 700.0, "delay": 0.08}, null))
+	logic_items.append(_create_mock_item("能量球", "action_projectile", Color(0.6, 0.9, 1.0), {"projectile_id": "energy_sphere", "mana_cost": 28, "damage": 18, "lifetime": 2.2, "speed": 450.0, "delay": 0.12}, null))
+	logic_items.append(_create_mock_item("分裂弹", "action_projectile", Color(0.9, 0.6, 0.1), {"projectile_id": "cluster_bomb", "mana_cost": 45, "damage": 12, "lifetime": 1.2, "speed": 250.0, "delay": 0.4}, null))
+
 	
 	for child in palette_grid.get_children():
 		child.queue_free()
@@ -607,9 +639,7 @@ func _get_item_id(item: Resource) -> String:
 	
 	if type == "modifier_element":
 		var elem = val.get("element", "")
-		if elem == "fire": return "element_fire" # Mismatch with BaseNPC "modifier_element_fire" vs "element_fire"
-		# BaseNPC code was: "projectile_slime", "modifier_pierce", "logic_splitter"
-		# It didn't handle elements.
+		# BaseNPC code handles standard modifier prefixes
 		return "modifier_element_" + elem
 		
 	if type == "modifier_damage": 
@@ -621,6 +651,8 @@ func _get_item_id(item: Resource) -> String:
 		return "modifier_speed"
 	if type == "modifier_delay": return "modifier_delay"
 	if type == "modifier_add_mana": return "modifier_add_mana"
+	if type == "modifier_mana_to_damage": return "modifier_mana_to_damage"
+	if type == "modifier_orbit": return "modifier_orbit"
 	
 	if type == "splitter": return "logic_splitter"
 	if type == "logic_sequence": return "logic_sequence"
@@ -640,11 +672,13 @@ func _add_visual_palette_button(parent, item):
 
 	_setup_interactive_glow(btn)
 	
-	if not FileAccess.file_exists("res://src/ui/wand_editor/components/visual_palette_button.gd"):
+	if not ResourceLoader.exists("res://src/ui/wand_editor/components/visual_palette_button.gd"):
 		push_error("Visual Palette Button script missing!")
 		return
-		
-	btn.set_script(load("res://src/ui/wand_editor/components/visual_palette_button.gd"))
+
+	var vscr = load("res://src/ui/wand_editor/components/visual_palette_button.gd")
+	if vscr:
+		btn.set_script(vscr)
 	btn.setup(item)
 	
 	# Connect Selection Signal
@@ -657,12 +691,14 @@ func _add_logic_palette_button(parent, item):
 	parent.add_child(btn)
 	_setup_interactive_glow(btn)
 	
-	if not FileAccess.file_exists("res://src/ui/wand_editor/components/logic_palette_button.gd"):
+	if not ResourceLoader.exists("res://src/ui/wand_editor/components/logic_palette_button.gd"):
 		# Fallback if I haven't created it yet, but I just did.
 		push_error("Logic Palette Button script missing!")
 		return
-	
-	btn.set_script(load("res://src/ui/wand_editor/components/logic_palette_button.gd"))
+
+	var lscr = load("res://src/ui/wand_editor/components/logic_palette_button.gd")
+	if lscr:
+		btn.set_script(lscr)
 	
 	# Add metadata for Tutorial System lookup
 	if has_method("_get_item_id"):
@@ -684,14 +720,18 @@ func _create_mock_item(name, type, color, val = {}, icon_path = null):
 	item.wand_visual_color = color
 	item.wand_logic_value = val
 	
-	if icon_path and FileAccess.file_exists(icon_path):
-		item.icon = load(icon_path)
-	elif icon_path and FileAccess.file_exists(icon_path + ".import"):
-		item.icon = load(icon_path)
-	else:
-		# Use a default texture or nothing. 
-		# If nothing, the button will just be colored.
-		pass
+	if icon_path:
+		if ResourceLoader.exists(icon_path):
+			item.icon = ResourceLoader.load(icon_path)
+		elif FileAccess.file_exists(icon_path):
+			item.icon = load(icon_path)
+		elif ResourceLoader.exists(icon_path + ".import"):
+			item.icon = ResourceLoader.load(icon_path + ".import")
+		elif FileAccess.file_exists(icon_path + ".import"):
+			item.icon = load(icon_path + ".import")
+		else:
+			# fallback to no icon; button will be colored
+			pass
 	return item
 
 func _on_save_pressed():

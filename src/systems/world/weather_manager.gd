@@ -18,6 +18,19 @@ signal weather_changed(new_weather: WeatherType)
 func _ready() -> void:
 	# 确保启动时应用一次晴天效果
 	call_deferred("_apply_weather_effects")
+	
+	# Listen for game state changes to enable/disable ambient audio
+	if GameManager:
+		GameManager.state_changed.connect(_on_game_state_changed)
+
+func _on_game_state_changed(new_state: int) -> void:
+	if new_state == GameManager.State.PLAYING:
+		# When entering game, ensure correct ambient sound plays
+		_apply_weather_effects()
+	elif new_state == GameManager.State.START_MENU:
+		# When returning to menu, stop ambient sound
+		if has_node("/root/AudioManager"):
+			get_node("/root/AudioManager").stop_ambient(1.0)
 
 func _process(delta: float) -> void:
 	weather_timer -= delta
@@ -57,7 +70,16 @@ func _handle_thunder(delta: float) -> void:
 		thunder_cooldown = randf_range(10.0, 30.0)
 
 func _trigger_thunder() -> void:
+	# 新手教程期间禁用打雷 (音效和视觉)
+	if GameManager and GameManager.is_new_game:
+		return
+		
 	print("WeatherManager: 触发打雷 SFX")
+	
+	# Audio feedback
+	if has_node("/root/AudioManager"):
+		get_node("/root/AudioManager").play_sfx("thunder", -2.0) # Non-spatial or distant
+	
 	# 闪电视觉反馈
 	var canvas_modulate = get_tree().get_first_node_in_group("global_light")
 	if canvas_modulate:
@@ -81,6 +103,28 @@ func _change_random_weather() -> void:
 func _apply_weather_effects() -> void:
 	print("天气切换为: ", WeatherType.keys()[current_weather])
 	
+	# Skip audio if not in active gameplay (e.g. main menu)
+	if GameManager and GameManager.current_state != GameManager.State.PLAYING:
+		return
+
+	# Audio feedback
+	if has_node("/root/AudioManager"):
+		var am = get_node("/root/AudioManager")
+		
+		# 新手教程期间静默天气音效
+		if GameManager and GameManager.is_new_game:
+			am.stop_ambient(1.0)
+		else:
+			match current_weather:
+				WeatherType.RAINY:
+					am.play_ambient("rain", 1.0)
+				WeatherType.THUNDERSTORM:
+					am.play_ambient("rain", 1.2)
+				WeatherType.SNOWY:
+					am.play_ambient("blizzard", 0.8)
+				_:
+					am.play_ambient("wind_grass", 0.5)
+
 	# 视觉反馈：确保 CanvasModulate 启用
 	var canvas_modulate = get_tree().get_first_node_in_group("global_light")
 	if canvas_modulate:

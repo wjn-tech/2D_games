@@ -105,27 +105,54 @@ func mine_tile_step(coords: Vector2i, delta: float, pickaxe_power: int) -> bool:
 		# print("DiggingManager: 未找到 TileMap!")
 		return false
 	
+	# --- 自动层级检测逻辑 ---
 	var target_layer = ground_layer
-	var tree_layer = _get_tree_layer(ground_layer)
 	
-	# 优先检查树木层
-	if tree_layer:
-		var tree_s_id = -1
-		if tree_layer is TileMap:
-			tree_s_id = tree_layer.get_cell_source_id(mining_layer, coords)
-		else:
-			tree_s_id = tree_layer.get_cell_source_id(coords)
-		
-		if tree_s_id != -1:
-			target_layer = tree_layer
-	
-	var s_id = -1
-	if target_layer is TileMap:
-		s_id = target_layer.get_cell_source_id(mining_layer, coords)
+	# 如果当前图层是空值，尝试从其他图层寻找方块 (主要是背景墙)
+	var layers_to_check = []
+	if LayerManager:
+		layers_to_check.append(LayerManager.active_layer)
+		for i in [0, 1, 2]:
+			if i != LayerManager.active_layer:
+				layers_to_check.append(i)
 	else:
-		s_id = target_layer.get_cell_source_id(coords)
+		layers_to_check = [0]
+
+	var found_layer = null
+	for l_idx in layers_to_check:
+		var check_map = ground_layer
+		if LayerManager:
+			check_map = LayerManager.get_layer(l_idx)
+		
+		if not check_map: continue
+		if _is_background_only_layer(check_map):
+			continue
+		
+		# 检查树木层
+		var tree_layer = _get_tree_layer(check_map)
+		if tree_layer:
+			if not _is_background_only_layer(tree_layer) and tree_layer.get_cell_source_id(coords) != -1:
+				target_layer = tree_layer
+				found_layer = check_map
+				break
+		
+		# 检查普通瓦片层
+		if check_map.get_cell_source_id(coords) != -1:
+			if _is_liquid_render_tile(check_map, coords):
+				continue
+			target_layer = check_map
+			found_layer = check_map
+			break
 	
+	if not found_layer:
+		reset_mining_progress(coords)
+		return false
+	
+	var s_id = target_layer.get_cell_source_id(coords)
 	if s_id == -1:
+		reset_mining_progress(coords)
+		return false
+	if _is_liquid_render_tile(target_layer, coords, s_id):
 		reset_mining_progress(coords)
 		return false
 		
@@ -134,16 +161,22 @@ func mine_tile_step(coords: Vector2i, delta: float, pickaxe_power: int) -> bool:
 	var required_power = _get_custom_data(tile_data, target_layer, coords, "required_power", 0, Vector2i(-1,-1), s_id)
 	var hardness = _get_custom_data(tile_data, target_layer, coords, "hardness", 1.0, Vector2i(-1,-1), s_id)
 	
-	# print("DiggingManager: 正在挖掘 ", coords, " 进度: ", mining_progress_map.get(coords, 0.0), "/", hardness)
+	# 检查玩家属性提供的挖掘伤害（由力量决定）
+	var mining_damage = 1.0
+	var player = get_tree().get_first_node_in_group("player")
+	if player and player.has_node("AttributeComponent"):
+		var attr = player.get_node("AttributeComponent")
+		if attr.has_method("get_attribute"):
+			mining_damage = attr.damage_mult # 使用力量修正系数作为挖掘伤害
 	
 	if pickaxe_power < required_power:
-		# 可以在这里显示“稿力不足”的漂浮文字
 		return false
 		
 	if not mining_progress_map.has(coords):
 		mining_progress_map[coords] = 0.0
 		
-	mining_progress_map[coords] += delta
+	# 应用伤害修正系数
+	mining_progress_map[coords] += delta * mining_damage
 	
 	# --- 视觉与粒子更新 ---
 	var progress_ratio = mining_progress_map[coords] / hardness
@@ -220,19 +253,119 @@ func _get_current_tile_map() -> Node:
 		
 	return null
 
+func _get_cell_source_id_any(layer: Node, coords: Vector2i) -> int:
+	if layer == null:
+		return -1
+	if layer is TileMap:
+		return layer.get_cell_source_id(mining_layer, coords)
+	if layer.has_method("get_cell_source_id"):
+		return layer.get_cell_source_id(coords)
+	return -1
+
+func _get_cell_atlas_any(layer: Node, coords: Vector2i) -> Vector2i:
+	if layer == null:
+		return Vector2i(-1, -1)
+	if layer is TileMap:
+		return layer.get_cell_atlas_coords(mining_layer, coords)
+	if layer.has_method("get_cell_atlas_coords"):
+		return layer.get_cell_atlas_coords(coords)
+	return Vector2i(-1, -1)
+
+func _is_background_only_layer(layer: Node) -> bool:
+	if layer == null:
+		return false
+	if layer.has_method("get_meta"):
+		return bool(layer.get_meta("background_only", false))
+	return false
+
+func _is_liquid_render_tile(layer: Node, coords: Vector2i, source_id: int = -999, atlas: Vector2i = Vector2i(-999, -999)) -> bool:
+	if layer == null:
+		return false
+
+	var world_gen = get_tree().get_first_node_in_group("world_generator")
+	if world_gen:
+		# Only treat tiles on runtime liquid layer (or legacy layer_1 fallback) as liquids.
+		var runtime_liquid_layer = world_gen.get_node_or_null("LiquidRuntimeLayer")
+		if runtime_liquid_layer != null:
+			if layer != runtime_liquid_layer:
+				return false
+		elif "layer_1" in world_gen and layer != world_gen.layer_1:
+			return false
+
+	var resolved_source := source_id
+	if resolved_source == -999:
+		resolved_source = _get_cell_source_id_any(layer, coords)
+	if resolved_source == -1:
+		return false
+
+	var resolved_atlas := atlas
+	if resolved_atlas == Vector2i(-999, -999):
+		resolved_atlas = _get_cell_atlas_any(layer, coords)
+
+	if world_gen:
+		var valid_source := int(world_gen.get("tile_source_id"))
+		if resolved_source != valid_source:
+			return false
+
+		var water_atlas := Vector2i(3, 3)
+		var lava_atlas := Vector2i(1, 4)
+		if world_gen.has_method("get_stage_tileset_mapping"):
+			var mapping: Dictionary = world_gen.get_stage_tileset_mapping()
+			water_atlas = mapping.get("liquid_contact_water", water_atlas)
+			lava_atlas = mapping.get("liquid_contact_lava", lava_atlas)
+		return resolved_atlas == water_atlas or resolved_atlas == lava_atlas
+
+	return resolved_atlas == Vector2i(0, 1) or resolved_atlas == Vector2i(1, 1)
+
+func has_mineable_tile_at(coords: Vector2i) -> bool:
+	var layers_to_check = []
+	if LayerManager:
+		layers_to_check.append(LayerManager.active_layer)
+		for i in [0, 1, 2]:
+			if i != LayerManager.active_layer:
+				layers_to_check.append(i)
+	else:
+		layers_to_check = [0]
+
+	for l_idx in layers_to_check:
+		var target_map = null
+		if LayerManager:
+			target_map = LayerManager.get_layer(l_idx)
+		else:
+			target_map = _get_current_tile_map()
+
+		if not target_map:
+			continue
+		if _is_background_only_layer(target_map):
+			continue
+
+		var tree_layer = _get_tree_layer(target_map)
+		if tree_layer and not _is_background_only_layer(tree_layer):
+			if tree_layer is TileMap:
+				if tree_layer.get_cell_source_id(0, coords) != -1:
+					return true
+			elif tree_layer.get_cell_source_id(coords) != -1:
+				return true
+
+		if target_map is TileMap:
+			if target_map.get_cell_source_id(mining_layer, coords) != -1:
+				if _is_liquid_render_tile(target_map, coords):
+					continue
+				return true
+		elif target_map.get_cell_source_id(coords) != -1:
+			if _is_liquid_render_tile(target_map, coords):
+				continue
+			return true
+
+	return false
+
 func _get_tile_data(current_tile_map: Node, coords: Vector2i) -> TileData:
 	if current_tile_map is TileMap:
 		return current_tile_map.get_cell_tile_data(mining_layer, coords)
-	else:
-		return current_tile_map.get_cell_tile_data(coords)
+	return current_tile_map.get_cell_tile_data(coords)
 
 func _get_custom_data(tile_data: TileData, current_tile_map: Node, coords: Vector2i, key: String, default_val: Variant, provided_atlas: Vector2i = Vector2i(-1, -1), provided_source: int = -2) -> Variant:
-	if tile_data and tile_data.has_custom_data(key):
-		var val = tile_data.get_custom_data(key)
-		if val != null and val != "" and val != 0:
-			return val
-	
-	# 硬编码默认值，以防 TileSet 未配置
+	# 1. Resolve Atlas Coords & Source ID first
 	var atlas_coords = provided_atlas
 	var source_id = provided_source
 	
@@ -247,7 +380,38 @@ func _get_custom_data(tile_data: TileData, current_tile_map: Node, coords: Vecto
 				atlas_coords = current_tile_map.get_cell_atlas_coords(coords)
 			if source_id == -2:
 				source_id = current_tile_map.get_cell_source_id(coords)
+
+	# 2. Hardcoded Fallbacks for Placed Items (Highest Priority)
+	if source_id == 0:
+		if key == "required_power": return 0 # Always mineable
+		if key == "respawn_time": return 0.0 # No respawn for placed blocks
 		
+		# Stone (2,0)
+		if atlas_coords == Vector2i(2, 0):
+			if key == "hardness": return 1.5
+			if key == "drop_item": return "res://data/items/stone.tres"
+			
+		# Dirt (0,0)
+		if atlas_coords == Vector2i(0, 0):
+			if key == "hardness": return 0.8
+			if key == "drop_item": return "res://data/items/dirt.tres"
+			
+		# Wood Planks (0,3) OR Placed Log (3,4) - cover both
+		if atlas_coords == Vector2i(0, 3) or atlas_coords == Vector2i(3, 4):
+			if key == "hardness": return 1.0
+			if key == "drop_item": return "res://data/items/wood.tres"
+			
+		# Grass (1,0)
+		if atlas_coords == Vector2i(1, 0):
+			if key == "hardness": return 0.6
+			if key == "drop_item": return "res://data/items/dirt.tres" # Drops dirt
+
+	# 3. Try TileData Custom Data
+	if tile_data and tile_data.has_custom_data(key):
+		var val = tile_data.get_custom_data(key)
+		if val != null and val != "" and val != 0:
+			return val
+	
 	var world_gen = get_tree().get_first_node_in_group("world_generator")
 	
 	if key == "hardness":
@@ -294,6 +458,12 @@ func _get_custom_data(tile_data: TileData, current_tile_map: Node, coords: Vecto
 			if atlas_coords == Vector2i(1, 0): return 0.6 # Grass
 			if atlas_coords == Vector2i(0, 0): return 0.8 # Dirt
 			if atlas_coords == Vector2i(2, 0): return 1.5 # Stone
+			# 确保放置的物品 (Wood) 也能被破坏
+			if atlas_coords == Vector2i(3, 4): return 1.0 # Placed Wood
+		
+		# 如果是树木ID，但也找不到世界生成器，给予默认硬度
+		if source_id == 0 and atlas_coords == Vector2i(1, 2): return 1.0 # Tree Trunk fallback
+		if source_id == 0 and atlas_coords == Vector2i(1, 0): return 0.3 # Tree Canopy fallback
 		
 		return 1.0
 	
@@ -342,11 +512,13 @@ func _get_custom_data(tile_data: TileData, current_tile_map: Node, coords: Vecto
 			if atlas_coords == Vector2i(0, 0): return "res://data/items/dirt.tres"
 			if atlas_coords == Vector2i(2, 1): return "res://data/items/dirt.tres"
 			if atlas_coords == Vector2i(2, 0): return "res://data/items/stone.tres"
-		
+			if atlas_coords == Vector2i(3, 4): return "res://data/items/wood.tres"
+			
 		# Old Fallback
 		if source_id == 3: return "res://data/items/dirt.tres" # Grass Source
 		if source_id == 1 and atlas_coords == Vector2i(0, 0): return "res://data/items/dirt.tres" # Dirt Tile
 		if source_id == 1 and atlas_coords == Vector2i(1, 0): return "res://data/items/stone.tres" # Stone Tile
+
 
 		
 	return default_val
@@ -403,20 +575,40 @@ func get_tile_display_name(current_tile_map: Node, coords: Vector2i) -> String:
 	return "未知方块"
 
 ## 尝试挖掘指定坐标的 Tile
-func try_mine_tile(coords: Vector2i, pickaxe_power: int) -> bool:
-	# 优先使用 LayerManager 的活跃层
-	var ground_layer = _get_current_tile_map()
-	if not ground_layer: return false
-	
-	# 寻找对应的树木图层
-	var tree_layer = _get_tree_layer(ground_layer)
-	
-	# 优先检查树木图层
-	if tree_layer and _do_mine_at_layer(tree_layer, coords, pickaxe_power):
-		return true
+func try_mine_tile(coords: Vector2i, pickaxe_power: int, spawn_loot: bool = true) -> bool:
+	# 自动检测所有图层的方块 (0: 地面, 1: 背景, 2: 深层)
+	var layers_to_check = []
+	if LayerManager:
+		layers_to_check.append(LayerManager.active_layer)
+		for i in [0, 1, 2]:
+			if i != LayerManager.active_layer:
+				layers_to_check.append(i)
+	else:
+		layers_to_check = [0]
 		
-	# 其次检查地面图层
-	return _do_mine_at_layer(ground_layer, coords, pickaxe_power)
+	for l_idx in layers_to_check:
+		var target_map = null
+		if LayerManager:
+			target_map = LayerManager.get_layer(l_idx)
+		else:
+			target_map = _get_current_tile_map()
+			
+		if not target_map: continue
+		if _is_background_only_layer(target_map):
+			continue
+		
+		# 寻找对应的树木图层
+		var tree_layer = _get_tree_layer(target_map)
+		
+		# 优先检查树木图层
+		if tree_layer and _do_mine_at_layer(tree_layer, coords, pickaxe_power, spawn_loot):
+			return true
+			
+		# 其次检查该图层
+		if _do_mine_at_layer(target_map, coords, pickaxe_power, spawn_loot):
+			return true
+
+	return false
 
 func _get_tree_layer(ground_layer: Node) -> Node:
 	var idx = ground_layer.get_meta("layer_index", -1)
@@ -427,7 +619,10 @@ func _get_tree_layer(ground_layer: Node) -> Node:
 			return l
 	return null
 
-func _do_mine_at_layer(current_tile_map: Node, coords: Vector2i, pickaxe_power: int) -> bool:
+func _do_mine_at_layer(current_tile_map: Node, coords: Vector2i, pickaxe_power: int, spawn_loot: bool = true) -> bool:
+	if _is_background_only_layer(current_tile_map):
+		return false
+
 	var source_id = -1
 	var tile_data: TileData = null
 	
@@ -446,10 +641,14 @@ func _do_mine_at_layer(current_tile_map: Node, coords: Vector2i, pickaxe_power: 
 		if source_id != -1:
 			tile_data = current_tile_map.get_cell_tile_data(coords)
 			
-	if source_id == -1 or not tile_data:
+	if source_id == -1:
+		return false
+	if _is_liquid_render_tile(current_tile_map, coords, source_id):
 		return false
 		
-	# 获取自定义属性
+	# Allow tile_data to be null for placed items (we have fallbacks)
+	# if source_id == -1 or not tile_data: return false -> changed to below
+
 	var required_power = _get_custom_data(tile_data, current_tile_map, coords, "required_power", 0)
 	var respawn_time = _get_custom_data(tile_data, current_tile_map, coords, "respawn_time", 0.0)
 	
@@ -475,9 +674,6 @@ func _do_mine_at_layer(current_tile_map: Node, coords: Vector2i, pickaxe_power: 
 			"time_left": respawn_time
 		}
 	
-	# --- 获取掉落物路径 (在移除之前或传递参数) ---
-	var drop_path = _get_custom_data(tile_data, current_tile_map, coords, "drop_item", "", atlas_coords, source_id)
-	
 	# --- 移除 Tile ---
 	if current_tile_map is TileMap:
 		current_tile_map.set_cell(mining_layer, coords, -1)
@@ -485,7 +681,8 @@ func _do_mine_at_layer(current_tile_map: Node, coords: Vector2i, pickaxe_power: 
 		current_tile_map.set_cell(coords, -1)
 	
 	# --- 生成掉落物 ---
-	_spawn_loot(coords, tile_data, current_tile_map, atlas_coords, source_id)
+	if spawn_loot:
+		_spawn_loot(coords, tile_data, current_tile_map, atlas_coords, source_id)
 	
 	# --- 无限地图 Delta 记录与粒子反馈 ---
 	var world_pos = current_tile_map.map_to_local(coords)
@@ -522,7 +719,6 @@ func _do_mine_at_layer(current_tile_map: Node, coords: Vector2i, pickaxe_power: 
 			_fell_tree(coords, current_tile_map, world_gen, offset)
 		
 	tile_mined.emit(coords, {"source_id": source_id})
-	_spawn_loot(coords, tile_data, current_tile_map, atlas_coords)
 	return true
 
 func _fell_tree(mined_coords: Vector2i, target_map: Node, world_gen: WorldGenerator, root_offset: int) -> void:
@@ -636,7 +832,7 @@ func _spawn_loot(coords: Vector2i, tile_data: TileData, current_tile_map: Node, 
 		print("DiggingManager: 挖掘成功，但该 Tile 未配置 drop_item 属性。")
 
 # --- Magic Interaction API ---
-func explode_at(global_pos: Vector2, radius: float, power: int = 100) -> void:
+func explode_at(global_pos: Vector2, radius: float, power: int = 100, spawn_loot: bool = true) -> void:
 	var ground_layer = _get_current_tile_map()
 	if not ground_layer: return
 	
@@ -649,11 +845,11 @@ func explode_at(global_pos: Vector2, radius: float, power: int = 100) -> void:
 			var cell_center = ground_layer.to_global(ground_layer.map_to_local(target))
 			
 			if cell_center.distance_to(global_pos) <= radius:
-				try_mine_tile(target, power)
+				try_mine_tile(target, power, spawn_loot)
 
 func dissolve_at(global_pos: Vector2, radius: float) -> void:
 	# Blackhole logic: infinite mining power
-	explode_at(global_pos, radius, 999999)
+	explode_at(global_pos, radius, 999999, false)
 
 func _setup_cracking_tileset():
 	# 创建一个包含 10 帧裂纹效果的动态 TileSet

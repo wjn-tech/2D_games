@@ -55,10 +55,14 @@ func _update_slot_text(slot_id: int) -> void:
 	if info.is_empty():
 		btn.text = "存档 %d\n[ 空 ]" % slot_id
 	else:
-		btn.text = "存档 %d\n%s  |  %s" % [
+		var topology_mode := String(info.get("topology_mode", "legacy_infinite"))
+		var world_size := String(info.get("world_size_preset", "legacy"))
+		btn.text = "存档 %d\n%s  |  %s\n%s / %s" % [
 			slot_id, 
 			info.get("player_name", "未知"), 
-			info.get("display_time", "")
+			info.get("display_time", ""),
+			topology_mode,
+			world_size
 		]
 
 func _on_slot_pressed(slot_id: int) -> void:
@@ -94,11 +98,9 @@ func _perform_save(slot_id: int) -> void:
 	GameManager.change_state(GameManager.State.START_MENU)
 	
 func _perform_load(slot_id: int) -> void:
-	if SaveManager.load_game(slot_id):
-		UIManager.close_window("SaveSelection")
-		UIManager.close_window("MainMenu")
-		GameManager.change_state(GameManager.State.PLAYING)
-		
-		# 强制刷新状态
-		GameManager.current_state = GameManager.State.PAUSED 
-		GameManager.change_state(GameManager.State.PLAYING)
+	# 使用 GameManager 托管的加载流程，确保场景正确切换和状态重置
+	GameManager.load_game(slot_id)
+	
+	UIManager.close_window("SaveSelection")
+	UIManager.close_window("MainMenu")
+	# 状态切换由 GameManager._on_reload_finished 处理

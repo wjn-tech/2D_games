@@ -38,6 +38,16 @@ func _ready():
 		icon_node.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		add_child(icon_node)
 
+	# Audio feedback
+	# mouse_entered.connect(func():
+	# 	if has_node("/root/AudioManager"):
+	# 		get_node("/root/AudioManager").play_ui_sfx("hover")
+	# )
+	# pressed.connect(func():
+	# 	if has_node("/root/AudioManager"):
+	# 		get_node("/root/AudioManager").play_ui_sfx("click")
+	# )
+
 	# performance / visual tweaks
 	# Prevent editor/theme focus rectangle from drawing a rectangular outline over our rounded texture
 	focus_mode = Control.FOCUS_NONE

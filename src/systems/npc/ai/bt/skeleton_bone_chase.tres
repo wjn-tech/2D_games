@@ -1,0 +1,30 @@
+[gd_resource type="BehaviorTree" load_steps=9 format=3]
+
+[ext_resource type="Script" path="res://src/systems/npc/ai/tasks/bt_chase_target.gd" id="1_chase"]
+[ext_resource type="Script" path="res://src/systems/npc/ai/tasks/bt_projectile_attack.gd" id="2_attack"]
+[ext_resource type="PackedScene" path="res://src/systems/npc/projectiles/bone_shard.tscn" id="3_projectile"]
+
+[sub_resource type="BlackboardPlan" id="BlackboardPlan_1"]
+
+[sub_resource type="BTAction" id="BTAction_chase"]
+script = ExtResource("1_chase")
+tolerance = 220.0
+
+[sub_resource type="BTAction" id="BTAction_attack"]
+script = ExtResource("2_attack")
+projectile_scene = ExtResource("3_projectile")
+charge_time = 0.55
+cooldown_time = 1.5
+min_range = 50.0
+max_range = 420.0
+track_target_during_charge = true
+
+[sub_resource type="BTSequence" id="BTSequence_main"]
+children = [SubResource("BTAction_chase"), SubResource("BTAction_attack")]
+
+[sub_resource type="BTSelector" id="BTSelector_root"]
+children = [SubResource("BTSequence_main")]
+
+[resource]
+blackboard_plan = SubResource("BlackboardPlan_1")
+root_task = SubResource("BTSelector_root")

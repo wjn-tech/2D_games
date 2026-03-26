@@ -9,6 +9,8 @@ signal chunk_explored(chunk_coord: Vector2i)
 const MAP_RESOLUTION = 8 # 8x8 瓦片对应 1 像素
 const CHUNK_SIZE = 64 # 与 InfiniteChunkManager 保持一致
 const PIXELS_PER_CHUNK = CHUNK_SIZE / MAP_RESOLUTION # 每个区块在小地图上占 8x8 像素
+const MAP_TEXTURE_FLUSH_INTERVAL = 0.08
+const FOG_TEXTURE_FLUSH_INTERVAL = 0.08
 
 # 存储小地图地形颜色的 Image
 var map_image: Image
@@ -37,11 +39,45 @@ var color_palette: Dictionary = {
 
 # 记录已探索的区域矩形 (以像素为单位)
 var explored_rect: Rect2i = Rect2i(0, 0, 0, 0)
+var _map_dirty: bool = false
+var _map_flush_timer: float = 0.0
+var _fog_dirty: bool = false
+var _fog_flush_timer: float = 0.0
 
 func _ready() -> void:
 	# 初始化一个合理大小的图像 (e.g. 2048x1024 像素覆盖 1.6w x 8k 像素世界)
 	# 在无限世界中，我们可能需要根据动态扩展或使用偏移
 	_init_images(1024, 512)
+	set_process(true)
+
+func _process(delta: float) -> void:
+	var did_update: bool = false
+	if _map_dirty:
+		_map_flush_timer -= delta
+		if _map_flush_timer <= 0.0:
+			map_texture.update(map_image)
+			_map_dirty = false
+			_map_flush_timer = 0.0
+			did_update = true
+	if _fog_dirty:
+		_fog_flush_timer -= delta
+		if _fog_flush_timer <= 0.0:
+			fog_texture.update(fog_image)
+			_fog_dirty = false
+			_fog_flush_timer = 0.0
+			did_update = true
+	if did_update:
+		minimap_updated.emit()
+
+func _mark_map_dirty() -> void:
+	_map_dirty = true
+	if _map_flush_timer <= 0.0:
+		_map_flush_timer = MAP_TEXTURE_FLUSH_INTERVAL
+
+func _mark_fog_dirty() -> void:
+	_fog_dirty = true
+	if _fog_flush_timer <= 0.0:
+		_fog_flush_timer = FOG_TEXTURE_FLUSH_INTERVAL
 
 func _init_images(w: int, h: int) -> void:
 	map_image = Image.create(w, h, false, Image.FORMAT_RGBA8)
@@ -57,9 +93,13 @@ func reset_map() -> void:
 	if map_image:
 		map_image.fill(Color(0, 0, 0, 0))
 		map_texture.update(map_image)
+		_map_dirty = false
+		_map_flush_timer = 0.0
 	if fog_image:
 		fog_image.fill(Color.BLACK)
 		fog_texture.update(fog_image)
+		_fog_dirty = false
+		_fog_flush_timer = 0.0
 	print("MinimapManager: Map data reset.")
 
 ## 将世界坐标映射到小地图像素坐标
@@ -92,8 +132,7 @@ func reveal_area(world_pos: Vector2, radius_tiles: int) -> void:
 					changed = true
 	
 	if changed:
-		fog_texture.update(fog_image)
-		minimap_updated.emit()
+		_mark_fog_dirty()
 
 ## 更新或清除特定位置的瓦片
 func update_tile_at_pos(world_pos: Vector2, source_id: int, atlas_coords: Vector2i) -> void:
@@ -105,8 +144,8 @@ func update_tile_at_pos(world_pos: Vector2, source_id: int, atlas_coords: Vector
 	else:
 		var color = color_palette.get(atlas_coords, Color(0.2, 0.2, 0.2))
 		map_image.set_pixelv(pixel_pos, color)
-	
-	map_texture.update(map_image)
+
+	_mark_map_dirty()
 
 func _is_pixel_valid(p: Vector2i) -> bool:
 	return p.x >= 0 and p.x < map_image.get_width() and p.y >= 0 and p.y < map_image.get_height()
@@ -157,7 +196,7 @@ func update_from_chunk(chunk_coord: Vector2i, cells: Dictionary, chunk: WorldChu
 				if _is_pixel_valid(pixel_pos):
 					map_image.set_pixelv(pixel_pos, Color(0, 0, 0, 0))
 	
-	map_texture.update(map_image)
+	_mark_map_dirty()
 
 func get_map_texture() -> Texture2D:
 	return map_texture

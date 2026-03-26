@@ -60,3 +60,136 @@ OBJ_CLOSE_EDITOR,"成功！关闭编辑器(K)测试法术","Success! Close Edito
 OBJ_TEST_FIRE,"逻辑正常。摧毁目标！","Logic confirmed. Destroy the Debris target!"
 OBJ_REOPEN_EDITOR,"逻辑不完整！重新打开编辑器(K)连接节点","Logic incomplete! Re-open Editor (K) to connect nodes"
 NPC_COURT_MAGE,"宫廷法师","Court Mage"
+apocryphal man,"伪经之人","Apocryphal Man"
+MSG_SPELL_UNLOCKED,"新法术已解锁","New Spell Unlocked"
+
+# --- Spell & Logic Nodes ---
+# Generators
+SPELL_GENERATOR,"能量源","Generator"
+GENERATOR,"能量源","Generator"
+generator,"能量源","Generator"
+
+# Triggers
+SPELL_TRIGGER,"触发器","Trigger"
+TRIGGER,"触发器","Trigger"
+trigger,"触发器","Trigger"
+
+# Element Modifiers
+SPELL_MODIFIER_ELEMENT,"元素核心","Element Core"
+MODIFIER_ELEMENT,"元素核心","Element Core"
+modifier_element,"元素核心","Element Core"
+
+SPELL_FIRE,"火焰核心","Fire Core"
+FIRE,"火焰核心","Fire Core"
+fire,"火焰核心","Fire Core"
+
+SPELL_ICE,"寒冰核心","Ice Core"
+ICE,"寒冰核心","Ice Core"
+ice,"寒冰核心","Ice Core"
+
+# Common Modifiers
+SPELL_MODIFIER_DAMAGE,"伤害强化","Damage Modifier"
+MODIFIER_DAMAGE,"伤害强化","Damage Modifier"
+modifier_damage,"伤害强化","Damage Modifier"
+
+SPELL_MODIFIER_SPEED,"速度修正","Speed Modifier"
+MODIFIER_SPEED,"速度修正","Speed Modifier"
+modifier_speed,"速度修正","Speed Modifier"
+
+SPELL_MODIFIER_PIERCE,"穿透强化","Pierce Modifier"
+MODIFIER_PIERCE,"穿透强化","Pierce Modifier"
+modifier_pierce,"穿透强化","Pierce Modifier"
+
+SPELL_MODIFIER_DELAY,"充能修正","Recharge Modifier"
+MODIFIER_DELAY,"充能修正","Recharge Modifier"
+modifier_delay,"充能修正","Recharge Modifier"
+
+SPELL_MODIFIER_LIFETIME,"增加寿命","Lifetime Modifier"
+MODIFIER_LIFETIME,"增加寿命","Lifetime Modifier"
+modifier_lifetime,"增加寿命","Lifetime Modifier"
+
+# Logic Nodes
+SPELL_SPLITTER,"分流器","Splitter"
+SPLITTER,"分流器","Splitter"
+splitter,"分流器","Splitter"
+
+SPELL_LOGIC_SEQUENCE,"顺序释放","Logic Sequence"
+LOGIC_SEQUENCE,"顺序释放","Logic Sequence"
+logic_sequence,"顺序释放","Logic Sequence"
+
+# Projectiles
+SPELL_ACTION_PROJECTILE,"投射物","Projectile"
+ACTION_PROJECTILE,"投射物","Projectile"
+action_projectile,"投射物","Projectile"
+
+SPELL_SPARK_BOLT,"火花弹","Spark Bolt"
+SPARK_BOLT,"火花弹","Spark Bolt"
+spark_bolt,"火花弹","Spark Bolt"
+
+SPELL_MAGIC_BOLT,"魔法弹","Magic Bolt"
+MAGIC_BOLT,"魔法弹","Magic Bolt"
+magic_bolt,"魔法弹","Magic Bolt"
+
+SPELL_MAGIC_ARROW,"魔法箭","Magic Arrow"
+MAGIC_ARROW,"魔法箭","Magic Arrow"
+magic_arrow,"魔法箭","Magic Arrow"
+
+SPELL_FIREBALL,"火球","Fireball"
+FIREBALL,"火球","Fireball"
+fireball,"火球","Fireball"
+
+SPELL_BOUNCING_BURST,"反弹爆发","Bouncing Burst"
+BOUNCING_BURST,"反弹爆发","Bouncing Burst"
+bouncing_burst,"反弹爆发","Bouncing Burst"
+
+SPELL_TRI_BOLT,"三叉弹","Tri Bolt"
+TRI_BOLT,"三叉弹","Tri Bolt"
+tri_bolt,"三叉弹","Tri Bolt"
+
+SPELL_CHAINSAW,"电锯","Chainsaw"
+CHAINSAW,"电锯","Chainsaw"
+chainsaw,"电锯","Chainsaw"
+
+SPELL_SLIME,"史莱米弹","Slime Bolt"
+SLIME,"史莱米弹","Slime Bolt"
+slime,"史莱米弹","Slime Bolt"
+
+SPELL_TNT,"TNT","TNT"
+TNT,"TNT","TNT"
+tnt,"TNT","TNT"
+
+SPELL_BLACKHOLE,"黑洞","Blackhole"
+BLACKHOLE,"黑洞","Blackhole"
+blackhole,"黑洞","Blackhole"
+
+SPELL_TELEPORT,"传送","Teleport Bolt"
+TELEPORT,"传送","Teleport Bolt"
+teleport,"传送","Teleport Bolt"
+
+# Special Modifiers
+SPELL_HEAVY_SHOT,"重击","Heavy Shot"
+HEAVY_SHOT,"重击","Heavy Shot"
+heavy_shot,"重击","Heavy Shot"
+
+SPELL_LIGHT_SHOT,"轻击","Light Shot"
+LIGHT_SHOT,"轻击","Light Shot"
+light_shot,"轻击","Light Shot"
+
+SPELL_HOMING,"追踪","Homing"
+HOMING,"追踪","Homing"
+homing,"追踪","Homing"
+
+# New Spells v1
+SPELL_VAMPIRE_BOLT,"吸血投射物","Vampire Bolt"
+VAMPIRE_BOLT,"吸血投射物","Vampire Bolt"
+vampire_bolt,"吸血投射物","Vampire Bolt"
+
+SPELL_HEALING_CIRCLE,"治疗环","Healing Circle"
+HEALING_CIRCLE,"治疗环","Healing Circle"
+healing_circle,"治疗环","Healing Circle"
+
+SPELL_MODIFIER_ORBIT,"真实环绕","Orbit Modifier"
+MODIFIER_ORBIT,"真实环绕","Orbit Modifier"
+modifier_orbit,"真实环绕","Orbit Modifier"
+
+

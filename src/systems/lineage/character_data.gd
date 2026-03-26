@@ -48,6 +48,14 @@ const INC_PER_TAMED_LEVEL = 0.02 # 2% per tamed level
 @export var spouse_id: int = -1
 @export var generation: int = 1
 @export var age: float = 0.0
+
+# Transient Data (Not Saved) - For UI Visualization of current Equipment
+var current_tool_mana: float = -1.0
+var current_tool_max_mana: float = -1.0
+
+# Spell Learning Data
+@export var intrinsic_spell_pool: Array[String] = []
+
 @export var growth_stage: int = 0 # 0:BABY, 1:JUVENILE, 2:ADULT
 @export var imprint_quality: float = 0.0 # 0.0 - 1.0
 
@@ -59,6 +67,10 @@ const INC_PER_TAMED_LEVEL = 0.02 # 2% per tamed level
 @export var home_pos: Vector2 = Vector2.INF
 @export var is_settled: bool = false
 @export var pylon_unlocked: bool = false
+
+# 教程状态
+@export var tutorial_completed: bool = false
+@export var tutorial_step: int = 0
 
 var stats: Dictionary:
 	get:
@@ -147,7 +159,9 @@ func get_stat_value(stat_name: String) -> float:
 	var tamed_mult = 1.0 + (levels.tamed * INC_PER_TAMED_LEVEL)
 	var imprint_mult = 1.0 + (imprint_quality * 0.2) # 20% max imprint bonus, for example. Design said "Bonus stats (Multiplicative)".
 	
-	return base * wild_mult * tamed_mult * imprint_mult
+	var flat_bonus = attributes.get("bonus_" + stat_name, 0.0)
+	
+	return (base * wild_mult * tamed_mult * imprint_mult) + flat_bonus
 
 # Legacy setter to support loading old saves or direct assignment (converts to wild levels approx)
 func _set_stat_legacy(stat_name: String, v: float) -> void:
@@ -167,6 +181,17 @@ func _set_stat_legacy(stat_name: String, v: float) -> void:
 	
 	stat_levels[stat_name]["wild"] = needed_wild
 	stat_changed.emit(stat_name, get_stat_value(stat_name))
+
+func add_max_hp(amount: float) -> void:
+	if max_health >= 500.0:
+		return
+	
+	var current_bonus = attributes.get("bonus_max_health", 0.0)
+	attributes["bonus_max_health"] = current_bonus + amount
+	health += amount # Also heal the added amount
+	
+	stat_changed.emit("max_health", max_health)
+
 
 @export var health: float = 100.0:
 	set(v):

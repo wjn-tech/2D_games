@@ -5,8 +5,7 @@ extends Node
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	# 自动为开发者生成测试用公主，延迟1秒等待场景加载
-	get_tree().create_timer(1.0).timeout.connect(spawn_princess)
+	# 保持为纯手动调试工具，避免启动和菜单阶段自动注入调试 NPC。
 
 func _input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed: return
@@ -138,7 +137,8 @@ func _debug_give_god_wand():
 			"projectile_slime", "projectile_tnt", "projectile_blackhole", "projectile_teleport",
 			"projectile_spark_bolt", "projectile_magic_bolt", "projectile_bouncing_burst",
 			"projectile_tri_bolt", "projectile_chainsaw", "modifier_damage_plus",
-			"modifier_add_mana", "modifier_element_slime", "modifier_speed_plus"
+			"modifier_add_mana", "modifier_element_slime", "modifier_speed_plus",
+			"projectile_vampire_bolt", "projectile_healing_circle", "modifier_orbit", "modifier_mana_to_damage"
 		]
 		for id in ids:
 			if id not in GameState.unlocked_spells:
@@ -174,8 +174,10 @@ func _debug_unlock_everything() -> void:
 		"modifier_damage", "modifier_damage_plus", "modifier_pierce", 
 		"modifier_speed", "modifier_speed_plus", "modifier_delay", "modifier_add_mana",
 		"modifier_element_fire", "modifier_element_ice", "modifier_element_slime",
+		"modifier_orbit", "modifier_mana_to_damage",
 		"element_fire", "element_ice", 
-		"logic_splitter", "logic_sequence"
+		"logic_splitter", "logic_sequence",
+		"projectile_vampire_bolt", "projectile_healing_circle"
 	]
 	
 	for s in all_spells:

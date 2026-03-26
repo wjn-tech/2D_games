@@ -3,6 +3,7 @@ extends Area2D
 @export var speed: float = 450.0
 @export var damage: float = 12.0
 @export var lifetime: float = 4.0
+@export var damage_type: String = "sand"
 
 var direction: Vector2 = Vector2.ZERO
 
@@ -30,9 +31,9 @@ func _on_area_entered(area: Area2D):
 func _handle_hit(node: Node):
 	if node.is_in_group("player"):
 		if CombatManager:
-			CombatManager.deal_damage(self, node, damage, "sand")
+			CombatManager.deal_damage(self, node, damage, damage_type)
 		elif node.has_method("take_damage"):
-			node.take_damage(damage)
+			node.take_damage(damage, damage_type, self)
 		queue_free()
 	elif node is TileMap or node is TileMapLayer:
 		queue_free()

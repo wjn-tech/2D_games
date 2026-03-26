@@ -17,7 +17,10 @@ func setup(resource: BuildingResource):
 	building_resource = resource
 	if not resource: return
 	
-	buff_radius = resource.influence_radius
+	if "influence_radius" in resource:
+		buff_radius = resource.influence_radius
+	else:
+		buff_radius = 200.0
 	
 	# 如果 Ready 还没运行，手动获取 Sprite
 	if not sprite: sprite = get_node_or_null("Sprite2D")
@@ -39,6 +42,18 @@ func setup(resource: BuildingResource):
 		if not is_in_group("p_interactable"): add_to_group("p_interactable")
 		if not is_in_group("workbench"): add_to_group("workbench")
 		_ensure_interaction_area()
+
+func save_data() -> Dictionary:
+	var data = {}
+	if building_resource:
+		data["resource_id"] = building_resource.id
+	return data
+
+func load_custom_data(data: Dictionary) -> void:
+	if data.has("resource_id"):
+		var res_id = data["resource_id"]
+		if GameState.building_db.has(res_id):
+			setup(GameState.building_db[res_id])
 
 func _ensure_interaction_area():
 	if has_node("InteractionArea"): return

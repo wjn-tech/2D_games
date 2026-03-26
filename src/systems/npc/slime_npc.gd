@@ -32,6 +32,11 @@ signal slime_landed
 
 func _ready() -> void:
 	super._ready() 
+	if hsm:
+		hsm.set_active(false)
+	if bt_player:
+		bt_player.active = false
+		bt_player.behavior_tree = null
 	add_to_group("enemies") 
 	if min_visual:
 		original_scale = min_visual.scale
@@ -103,7 +108,17 @@ func _change_state(new_state: SlimeState) -> void:
 	if not min_visual:
 		return
 
-	# Create a new tween only once we know visuals exist
+	# Only create tween if we are going to add properties to it
+	# This prevents "Tween started with no Tweeners" error
+	var need_tween = false
+	if new_state == SlimeState.IDLE: need_tween = true
+	if new_state == SlimeState.JUMP_PREPARE: need_tween = true
+	if new_state == SlimeState.JUMP_AIRBORNE: need_tween = true
+	if new_state == SlimeState.LAND_RECOVER: need_tween = true
+	
+	if not need_tween:
+		return
+
 	_visual_tween = create_tween().set_parallel(true)
 	
 	match new_state:
@@ -281,9 +296,9 @@ func _apply_damage(player: Node) -> void:
 	
 	# Determine knockback direction (centralized in CombatManager, but we pass custom data if needed)
 	if CombatManager:
-		CombatManager.deal_damage(self, player, damage_amount, "physical")
+		CombatManager.deal_damage(self, player, damage_amount, "slime")
 	else:
-		player.take_damage(damage_amount, "physical")
+		player.take_damage(damage_amount, "slime")
 		if player.has_method("apply_knockback"):
 			var kb_dir = (player.global_position - global_position).normalized()
 			player.apply_knockback(kb_dir * 400.0)

@@ -1,0 +1,13 @@
+[gd_scene load_steps=3 format=3 uid="uid://healing_circle_v1"]
+
+[ext_resource type="Script" path="res://src/systems/magic/projectiles/projectile_healing_circle.gd" id="1_script"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_1"]
+radius = 4.0
+
+[node name="HealingCircle" type="CharacterBody2D"]
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("1_script")
+
+[node name="VisualContainer" type="Node2D" parent="."]

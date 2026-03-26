@@ -20,11 +20,6 @@ startmenu/**
 
 # Ignore imported asset metadata (Godot import files) inside startmenu
 
-startmenu/*.import
-startmenu/**/*.import
-magic/*
-wand_editor/*
-HUD/*
 
 # Allow tracking a specific startmenu folder used by the UI art pipeline
 !assets/ui/startmenu/

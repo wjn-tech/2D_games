@@ -1,0 +1,21 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="PackedScene" path="res://NPC.tscn" id="1_base"]
+[ext_resource type="Script" path="res://src/systems/lineage/character_data.gd" id="2_data"]
+[ext_resource type="BehaviorTree" path="res://src/systems/npc/ai/bt/cave_bat_chase.tres" id="3_combat"]
+
+[sub_resource type="Resource" id="Resource_cave_bat"]
+script = ExtResource("2_data")
+display_name = "洞穴蝙蝠"
+alignment = "Hostile"
+npc_type = "Hostile"
+max_health = 32.0
+health = 32.0
+
+[node name="CaveBat" instance=ExtResource("1_base")]
+npc_data = SubResource("Resource_cave_bat")
+speed = 135.0
+ai_type = 1
+
+[node name="Combat" parent="LimboHSM" index="1"]
+state_behavior_tree = ExtResource("3_combat")

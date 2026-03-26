@@ -35,10 +35,10 @@ func _update(delta: float) -> void:
 	if target:
 		# 修改：如果 NPC 是被动型 (Passive)，则不进入战斗追逐状态，除非被攻击（目前暂不实现反击）
 		if npc.ai_type != BaseNPC.AIType.PASSIVE:
-			# 修改：同时在 HSM 的黑板和 BTPlayer 的黑板设置目标
+			# 修改：通过统一接口同步目标，避免 HSM 与 BT 各自持有不同状态
+			if npc.has_method("set_combat_target"):
+				npc.set_combat_target(target)
 			blackboard.set_var("target", target)
-			if npc.bt_player and npc.bt_player.blackboard:
-				npc.bt_player.blackboard.set_var("target", target)
 			
 			dispatch("enemy_detected")
 			return

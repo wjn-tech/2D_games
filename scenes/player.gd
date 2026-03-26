@@ -30,6 +30,18 @@ const AIR_DRAG_COEFF = 0.000001
 # 下落重力随时间增长速率（每秒增加的乘数量）
 const FALL_GRAVITY_GROWTH = 0.9
 const STEP_HEIGHT = 18.0 # 自动上台阶的高度（略大于一个图块高度）
+const FALL_PRELOAD_SPEED_THRESHOLD = 900.0
+const FALL_PRELOAD_DISTANCE_MIN = 128.0
+const FALL_PRELOAD_DISTANCE_MAX = 896.0
+const FALL_PRELOAD_FRAME_INTERVAL = 6
+const WALK_AHEAD_PRELOAD_DISTANCE = 192.0
+const WALK_AHEAD_PRELOAD_FRAME_INTERVAL = 8
+const FOOTSTEP_INTERVAL_BASE = 0.24
+const FOOTSTEP_INTERVAL_FAST = 0.16
+const PLAYER_FEET_OFFSET = 8.0
+const TERRAIN_RECOVERY_COOLDOWN = 0.15
+const FREEFALL_RESCUE_TIME = 3.0
+const FREEFALL_RESCUE_MIN_SPEED = 900.0
 
 @export var interaction_area: Area2D
 
@@ -48,6 +60,14 @@ var movement_locked: bool = false
 var invincible: bool = false
 var _gravity_enabled: bool = true
 var _debug_lock_warned: bool = false # 防止刷屏的调试变量
+var _terrain_recovery_timer: float = 0.0
+var _last_safe_ground_position: Vector2 = Vector2.ZERO
+var _has_safe_ground_position: bool = false
+var _last_streaming_chunk_coord: Variant = null
+var _last_fall_preload_chunk_coord: Variant = null
+var _fast_fall_streaming_active: bool = false
+var _last_walk_preload_chunk_coord: Variant = null
+var _footstep_timer: float = 0.0
 
 func set_gravity_enabled(enabled: bool) -> void:
 	_gravity_enabled = enabled
@@ -157,11 +177,12 @@ func _ready() -> void:
 	_on_stats_updated("", 0) # 首次强制同步
 	
 	# Add some debug items
-	var ice_wand = _create_debug_wand("Ice Wand")
-	inventory.add_item(ice_wand)
-	var fire_wand = _create_debug_wand("Fire Wand")
-	inventory.add_item(fire_wand)
+	# var ice_wand = _create_debug_wand("Ice Wand")
+	# inventory.add_item(ice_wand)
+	# var fire_wand = _create_debug_wand("Fire Wand")
+	# inventory.add_item(fire_wand)
 	# inventory.select_hotbar_slot(0) # Removed auto-selection to fix "always lit" first slot
+
 
 	# --- 系统连接与初始化 ---
 	EventBus.player_input_enabled.connect(func(enabled): input_enabled = enabled)
@@ -194,15 +215,46 @@ func _ready() -> void:
 	# 同步初始物理状态
 	if LayerManager:
 		LayerManager.move_entity_to_layer(self, 0)
+	_last_safe_ground_position = global_position
+	_has_safe_ground_position = true
 
 func _process(delta: float) -> void:
 	if current_wand:
 		current_wand.update_mana(delta)
+		# Update transient data for HUD
+		if attributes and attributes.data:
+			attributes.data.current_tool_mana = current_wand.current_mana
+			if current_wand.embryo:
+				attributes.data.current_tool_max_mana = current_wand.embryo.mana_capacity
+	else:
+		if attributes and attributes.data:
+			attributes.data.current_tool_max_mana = -1.0
 		
 	if weapon_pivot and input_enabled:
 		var mouse_pos = get_global_mouse_position()
 		var dir = (mouse_pos - global_position).normalized()
 		weapon_pivot.rotation = dir.angle()
+
+func get_spell_spawn_transform() -> Dictionary:
+	var spawn_pos = global_position
+	if projectile_spawn_point:
+		spawn_pos = projectile_spawn_point.global_position
+
+	var direction = Vector2.RIGHT
+	if weapon_pivot:
+		direction = Vector2.RIGHT.rotated(weapon_pivot.global_rotation)
+	elif input_enabled:
+		direction = get_global_mouse_position() - global_position
+
+	if direction == Vector2.ZERO:
+		direction = Vector2.RIGHT
+	else:
+		direction = direction.normalized()
+
+	return {
+		"position": spawn_pos,
+		"direction": direction,
+	}
 
 # Combat Juice Interfaces
 func take_damage(amount: float, _type: String = "physical") -> void:
@@ -483,11 +535,42 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 func _physics_process(delta: float) -> void:
+	var is_fast_fall_streaming := (not is_on_floor() and velocity.y > FALL_PRELOAD_SPEED_THRESHOLD)
+	var horizontal_stream_bias: int = 0
+	if abs(velocity.x) > 25.0:
+		horizontal_stream_bias = 1 if velocity.x > 0.0 else -1
+	var allow_stream_unload: bool = abs(velocity.x) < 35.0
+	var stream_vertical_radius: int = 1
+	if velocity.y > 280.0:
+		stream_vertical_radius = 2
+	if _fast_fall_streaming_active and not is_fast_fall_streaming and InfiniteChunkManager:
+		# 离开高速坠落状态后立即恢复完整邻域，统一回收临时保留区块。
+		InfiniteChunkManager.update_player_vicinity(global_position, -1, allow_stream_unload, horizontal_stream_bias, stream_vertical_radius)
+		_last_streaming_chunk_coord = InfiniteChunkManager.get_chunk_coord(global_position)
+	_fast_fall_streaming_active = is_fast_fall_streaming
+
 	# --- 无限地图更新 ---
 	if InfiniteChunkManager and Engine.get_frames_drawn() % 10 == 0:
-		InfiniteChunkManager.update_player_vicinity(global_position)
+		var current_chunk := InfiniteChunkManager.get_chunk_coord(global_position)
+		var should_refresh_vicinity: bool = (_last_streaming_chunk_coord == null or current_chunk != _last_streaming_chunk_coord)
+		# 在低速/停下时定期触发一次邻域维护，回收移动期暂缓卸载的区块。
+		if not should_refresh_vicinity and allow_stream_unload and Engine.get_frames_drawn() % 60 == 0:
+			should_refresh_vicinity = true
+
+		if should_refresh_vicinity:
+			# 高速坠落时改为小半径且禁用卸载，避免空中频繁卸载/重载导致卡顿。
+			if is_fast_fall_streaming:
+				InfiniteChunkManager.update_player_vicinity(global_position, 1, false, horizontal_stream_bias, 2)
+			else:
+				InfiniteChunkManager.update_player_vicinity(global_position, -1, allow_stream_unload, horizontal_stream_bias, stream_vertical_radius)
+			_last_streaming_chunk_coord = current_chunk
 		if MinimapManager:
 			MinimapManager.reveal_area(global_position, 30) # 约 1.5 个屏幕半径的探索范围
+
+	if _terrain_recovery_timer > 0.0:
+		_terrain_recovery_timer = max(0.0, _terrain_recovery_timer - delta)
+	if _footstep_timer > 0.0:
+		_footstep_timer = max(0.0, _footstep_timer - delta)
 
 	if action_cooldown > 0:
 		action_cooldown -= delta
@@ -503,7 +586,9 @@ func _physics_process(delta: float) -> void:
 		if not is_on_floor():
 			if _gravity_enabled:
 				velocity.y += GRAVITY * delta
+		_mitigate_fast_fall_chunk_gaps()
 		move_and_slide()
+		_recover_from_terrain_embed()
 		return
 		
 	# --- 动作处理 ---
@@ -559,6 +644,9 @@ func _physics_process(delta: float) -> void:
 		jump_ramp_timer = JUMP_RAMP_TIME
 		jump_buffer_timer = 0.0
 		coyote_timer = 0.0
+		# 跳跃音效 - 根据需求已注释
+		# if has_node("/root/AudioManager"):
+		# 	get_node("/root/AudioManager").play_sfx("jump", -8.0, 0.2)
 
 	if jump_ramp_timer > 0.0:
 		velocity.y += JUMP_VELOCITY * (delta / JUMP_RAMP_TIME)
@@ -579,9 +667,63 @@ func _physics_process(delta: float) -> void:
 	if velocity.length() > 0.0:
 		velocity += (-velocity.normalized() * AIR_DRAG_COEFF * velocity.length_squared()) * delta
 
+	_mitigate_fast_fall_chunk_gaps()
+	_mitigate_walk_chunk_gaps()
+
 	# --- 物理执行与翻转 ---
 	var was_on_floor = is_on_floor()
 	move_and_slide()
+
+	# World Wrapping Logic (Planetary Mode)
+	if has_node("/root/WorldTopology"):
+		var topology = get_node("/root/WorldTopology")
+		if topology.has_method("is_planetary") and topology.is_planetary():
+			# Single Source of Truth for Wrapping
+			global_position.x = topology.wrap_x(global_position.x)
+
+	_recover_from_terrain_embed()
+	
+	# 落地音效
+	if not was_on_floor and is_on_floor():
+		_last_safe_ground_position = global_position
+		_has_safe_ground_position = true
+		# 检查垂直速度，只有达到一定速度（下落一定距离）才播放声音
+		if abs(velocity.y) > 400 or (fall_time > 0.4): # fall_time 是 player.gd 中已有的变量
+			if has_node("/root/AudioManager"):
+				get_node("/root/AudioManager").play_sfx("land", -10.0, 0.2)
+	elif is_on_floor():
+		_last_safe_ground_position = global_position
+		_has_safe_ground_position = true
+	
+	# Audio Footsteps
+	if is_on_floor() and abs(velocity.x) > 10:
+		var step_interval_sec: float = FOOTSTEP_INTERVAL_BASE
+		if abs(velocity.x) > SPEED * 1.5:
+			step_interval_sec = FOOTSTEP_INTERVAL_FAST
+
+		if _footstep_timer <= 0.0 and has_node("/root/AudioManager"):
+			var am = get_node("/root/AudioManager")
+			var sound_to_play = "footstep"
+
+			# 简单的地面检测（按步触发，不再每帧取模检测）
+			var space_state = get_world_2d().direct_space_state
+			var query = PhysicsRayQueryParameters2D.create(global_position, global_position + Vector2(0, 10))
+			query.collision_mask = 1
+			query.exclude = [get_rid()]
+			var result = space_state.intersect_ray(query)
+
+			if result and result.collider is TileMapLayer:
+				var tm = result.collider
+				var map_pos = tm.local_to_map(tm.to_local(result.position + Vector2(0, 2)))
+				var atlas_coords = tm.get_cell_atlas_coords(map_pos)
+				if atlas_coords == Vector2i(1, 0):
+					sound_to_play = "footstep_grass"
+				elif atlas_coords == Vector2i(0, 0):
+					sound_to_play = "footstep_dirt"
+
+			# 进一步降低 pitch 抖动，避免脚步音头部爆裂感。
+			am.play_sfx(sound_to_play, -18.0, 0.02)
+			_footstep_timer = step_interval_sec
 	
 	if min_visual and velocity.x != 0:
 		min_visual.scale.x = abs(min_visual.scale.x) * sign(velocity.x)
@@ -589,10 +731,12 @@ func _physics_process(delta: float) -> void:
 	if is_on_wall() and was_on_floor:
 		_handle_step_up()
 
+	_recover_from_long_freefall()
+
 func _attempt_execution() -> void:
 	var enemies = get_tree().get_nodes_in_group("npcs")
 	var closest: Node2D = null
-	var min_dist = 120.0 # Slightly larger than 100 to feel generous
+	var min_dist = 200.0 # Increased range for execution (User Request: "延长斩杀判定距离")
 	
 	for enemy in enemies:
 		# Check if property exists first
@@ -625,6 +769,112 @@ func _handle_step_up() -> void:
 	global_position.y -= STEP_HEIGHT
 	global_position.x += direction * 2
 
+func _mitigate_fast_fall_chunk_gaps() -> void:
+	if not InfiniteChunkManager:
+		return
+
+	if is_on_floor() or velocity.y <= FALL_PRELOAD_SPEED_THRESHOLD:
+		_last_fall_preload_chunk_coord = null
+		return
+
+	if Engine.get_frames_drawn() % FALL_PRELOAD_FRAME_INTERVAL != 0:
+		return
+
+	var feet_pos = global_position + Vector2(0, PLAYER_FEET_OFFSET)
+	var lookahead = clamp(velocity.y * 0.25, FALL_PRELOAD_DISTANCE_MIN, FALL_PRELOAD_DISTANCE_MAX)
+	var preload_coord := InfiniteChunkManager.get_chunk_coord(feet_pos + Vector2(0, lookahead))
+	if _last_fall_preload_chunk_coord != null and preload_coord == _last_fall_preload_chunk_coord:
+		return
+
+	_last_fall_preload_chunk_coord = preload_coord
+	InfiniteChunkManager.prime_required_chunks([preload_coord])
+
+func _mitigate_walk_chunk_gaps() -> void:
+	if not InfiniteChunkManager:
+		return
+	if not is_on_floor() or abs(velocity.x) < 40.0:
+		_last_walk_preload_chunk_coord = null
+		return
+	if Engine.get_frames_drawn() % WALK_AHEAD_PRELOAD_FRAME_INTERVAL != 0:
+		return
+
+	var ahead_dir := 1.0 if velocity.x > 0.0 else -1.0
+	var ahead_pos := global_position + Vector2(ahead_dir * WALK_AHEAD_PRELOAD_DISTANCE, PLAYER_FEET_OFFSET)
+	var preload_coord := InfiniteChunkManager.get_chunk_coord(ahead_pos)
+	if _last_walk_preload_chunk_coord != null and preload_coord == _last_walk_preload_chunk_coord:
+		return
+
+	_last_walk_preload_chunk_coord = preload_coord
+	InfiniteChunkManager.prime_required_chunks([preload_coord])
+
+func _recover_from_terrain_embed() -> void:
+	if not InfiniteChunkManager or _terrain_recovery_timer > 0.0:
+		return
+	if not _is_embedded_in_terrain():
+		return
+
+	var safe_pos = InfiniteChunkManager.find_safe_ground(global_position, 256.0)
+	if safe_pos == null:
+		return
+
+	global_position = safe_pos
+	velocity.y = min(velocity.y, 0.0)
+	_terrain_recovery_timer = TERRAIN_RECOVERY_COOLDOWN
+
+func _recover_from_long_freefall() -> void:
+	if not InfiniteChunkManager:
+		return
+	if is_on_floor() or fall_time < FREEFALL_RESCUE_TIME or velocity.y < FREEFALL_RESCUE_MIN_SPEED:
+		return
+	if not _has_safe_ground_position:
+		return
+
+	var rescue_pos = InfiniteChunkManager.find_safe_ground(_last_safe_ground_position, 256.0)
+	if rescue_pos == null:
+		rescue_pos = _last_safe_ground_position
+
+	global_position = rescue_pos
+	velocity = Vector2.ZERO
+	knockback_velocity = Vector2.ZERO
+	fall_time = 0.0
+	jump_ramp_timer = 0.0
+	coyote_timer = COYOTE_TIME
+	jump_buffer_timer = 0.0
+	_terrain_recovery_timer = TERRAIN_RECOVERY_COOLDOWN
+	print("Player: freefall rescue triggered at ", global_position)
+
+func _is_embedded_in_terrain() -> bool:
+	var gen = get_tree().get_first_node_in_group("world_generator")
+	if not gen or not gen.layer_0:
+		return false
+
+	var sample_points = [
+		global_position,
+		global_position + Vector2(0, -10),
+		global_position + Vector2(0, 4)
+	]
+
+	for sample in sample_points:
+		var map_pos = gen.layer_0.local_to_map(TransformHelper.safe_to_local(gen.layer_0, sample))
+		if _is_solid_map_cell(gen, map_pos):
+			return true
+
+	return false
+
+func _is_solid_map_cell(gen, map_pos: Vector2i) -> bool:
+	if _is_physical_map_cell(gen.layer_0, map_pos):
+		return true
+	if _is_physical_map_cell(gen.layer_1, map_pos):
+		return true
+	if _is_physical_map_cell(gen.layer_2, map_pos):
+		return true
+	return false
+
+func _is_physical_map_cell(layer: TileMapLayer, map_pos: Vector2i) -> bool:
+	if not layer or not layer.collision_enabled:
+		return false
+	return layer.get_cell_source_id(map_pos) != -1
+
 func _handle_continuous_actions() -> void:
 	if not input_enabled:
 		return
@@ -634,14 +884,17 @@ func _handle_continuous_actions() -> void:
 		# 如果装备了魔杖，优先使用魔杖，且阻止挖掘/近战？
 		if current_wand:
 			if action_cooldown <= 0.0:
-				var dir = (get_global_mouse_position() - global_position).normalized()
-				
-				var spawn_pos = global_position
-				if projectile_spawn_point:
-					spawn_pos = projectile_spawn_point.global_position
+				var cast_transform = get_spell_spawn_transform()
+				var dir = cast_transform.get("direction", Vector2.RIGHT)
+				var spawn_pos = cast_transform.get("position", global_position)
 				
 				# Call Cast Spell - returns internal duration + recharge + delay
 				var total_cooldown = SpellProcessor.cast_spell(current_wand, self, dir, spawn_pos)
+				
+				# 发射音效 (根据魔杖类型可以做区分，此处使用通用音效)
+				if total_cooldown > 0: # 确认施法成功（非冷却中）
+					if has_node("/root/AudioManager"):
+						get_node("/root/AudioManager").play_sfx("spell_fire", -6.0, 0.3)
 				
 				# Action cooldown prevents firing until sequence is done
 				action_cooldown = max(total_cooldown, 0.05) # Minimum speed cap
@@ -687,32 +940,9 @@ func _handle_input_actions() -> void:
 			var tile_map = GameState.digging._get_current_tile_map()
 			if tile_map:
 				var mouse_pos = get_global_mouse_position()
-				# 检查树木层
-				var tree_layer = GameState.digging._get_tree_layer(tile_map)
-				if tree_layer:
-					var local_pos = tree_layer.to_local(mouse_pos)
-					var map_pos = tree_layer.local_to_map(local_pos)
-					var s_id = -1
-					if tree_layer is TileMap:
-						s_id = tree_layer.get_cell_source_id(GameState.digging.mining_layer, map_pos)
-					else:
-						s_id = tree_layer.get_cell_source_id(map_pos)
-					
-					if s_id != -1:
-						is_mining_target = true
-				
-				# 检查地面层
-				if not is_mining_target:
-					var local_pos = tile_map.to_local(mouse_pos)
-					var map_pos = tile_map.local_to_map(local_pos)
-					var s_id = -1
-					if tile_map is TileMap:
-						s_id = tile_map.get_cell_source_id(GameState.digging.mining_layer, map_pos)
-					else:
-						s_id = tile_map.get_cell_source_id(map_pos)
-						
-					if s_id != -1:
-						is_mining_target = true
+				var local_pos = tile_map.to_local(mouse_pos)
+				var map_pos = tile_map.local_to_map(local_pos)
+				is_mining_target = GameState.digging.has_mineable_tile_at(map_pos)
 		
 		if not is_mining_target:
 			_perform_combat_action()
@@ -769,22 +999,7 @@ func _handle_mouse_action() -> bool:
 		if tile_map:
 			var local_pos = tile_map.to_local(mouse_pos)
 			var map_pos = tile_map.local_to_map(local_pos)
-			
-			# 检查该位置是否有物块 (挖掘的前提是目标点有物块)
-			var has_tile = false
-			if tile_map is TileMap:
-				has_tile = tile_map.get_cell_source_id(GameState.digging.mining_layer, map_pos) != -1
-			else:
-				has_tile = tile_map.get_cell_source_id(map_pos) != -1
-				
-			if not has_tile:
-				# 检查树木层
-				var tree_layer = GameState.digging._get_tree_layer(tile_map)
-				if tree_layer:
-					if tree_layer is TileMap:
-						has_tile = tree_layer.get_cell_source_id(0, map_pos) != -1
-					else:
-						has_tile = tree_layer.get_cell_source_id(map_pos) != -1
+			var has_tile = GameState.digging.has_mineable_tile_at(map_pos)
 
 			# 检查距离，防止全屏挖掘
 			if global_position.distance_to(mouse_pos) < 150:
@@ -842,34 +1057,20 @@ func _try_place_held_item() -> void:
 	# 如果已经在建造中，则忽略，防止冲突
 	# 但如果我们要“切换”建筑，可能需要逻辑
 	
-	# 1. 检查元数据中是否有预载的建筑资源 (针对门、桌子、火把等)
+	# 1. 优先处理瓦片物品 (泥土、石头等)，确保不会被建筑数据库拦截
+	if item is TileItemData:
+		bm.start_building(item)
+		return
+
+	# 2. 检查元数据中是否有预载的建筑资源 (针对门、桌子、火把等)
 	if item.has_meta("building_resource"):
 		# 传递 override cost，确保消耗物品本身而不是原材料
 		bm.start_building(item.get_meta("building_resource"), { item.id: 1 })
 		return
 
-	# 2. 检查全局建筑数据库 (解决掉落物捡回后丢失元数据的问题)
+	# 3. 检查全局建筑数据库 (解决掉落物捡回后丢失元数据的问题)
 	if GameState.building_db.has(item.id):
 		bm.start_building(GameState.building_db[item.id], { item.id: 1 })
-		return
-
-	# 3. 特殊处理工作台
-	if item.id == "workbench" or item.id == "workbench_item":
-		var res = BuildingResource.new()
-		res.scene = load("res://scenes/world/workbench.tscn")
-		# 强制工作台物品消耗自身，而不是 wood:4 这种配方成本
-		res.cost = { item.id: 1 }
-		res.id = item.id
-		res.display_name = item.display_name
-		res.requires_flat_ground = true
-		res.grid_size = Vector2i(2, 1) # 工作台是 2x1 规格
-		res.influence_radius = 160.0
-		bm.start_building(res, { item.id: 1 })
-		return
-	
-	# 3. 处理瓦片物品 (泥土、石头等)
-	if item is TileItemData:
-		bm.start_building(item)
 		return
 
 func _interact() -> void:

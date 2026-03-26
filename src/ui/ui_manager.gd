@@ -14,6 +14,13 @@ signal window_closed(window_name: String)
 var active_windows: Dictionary = {}
 var blocking_windows: Array = [] # 存储正在拦截输入的窗口名称
 var highlight_overlay: Node = null
+var loading_overlay: Control = null
+var loading_title_label: Label = null
+var loading_stage_label: Label = null
+var loading_status_label: Label = null
+var loading_error_label: Label = null
+var loading_progress_bar: ProgressBar = null
+var loading_progress_tween: Tween = null
 
 var is_ui_focused: bool = false:
 	set(value):
@@ -79,16 +86,15 @@ func open_window(window_name: String, scene_path: String, blocks_input: bool = t
 
 	# 3. 如果还是没找到，则实例化新窗口
 	if not window:
-		if not get_tree().current_scene:
-			print("UIManager: 当前场景尚未加载，延迟打开窗口")
-			call_deferred("open_window", window_name, scene_path, blocks_input)
+		if not get_tree() or not get_tree().current_scene:
+			print("UIManager: 当前场景尚未加载，无法打开窗口: ", window_name)
 			return null
 
-		if not FileAccess.file_exists(scene_path):
-			push_error("UIManager: 找不到场景文件: " + scene_path + "。请确保你已经创建并保存了该场景。")
+		if not ResourceLoader.exists(scene_path):
+			push_error("UIManager: 找不到场景文件: " + scene_path + "。请确保资源路径正确且已包含在导出中。")
 			return null
-			
-		var scene = load(scene_path)
+		
+		var scene = ResourceLoader.load(scene_path)
 		if not scene:
 			push_error("UIManager: 无法加载 UI 场景 " + scene_path)
 			return null
@@ -111,6 +117,7 @@ func open_window(window_name: String, scene_path: String, blocks_input: bool = t
 			
 			if window is Control:
 				window.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+				# 修复：主窗口实例化后延迟应用主题，避免因为 Variation 尚未加载导致的警告
 				window.theme = main_theme
 
 	# 4. 统一设置状态和显示
@@ -123,6 +130,9 @@ func open_window(window_name: String, scene_path: String, blocks_input: bool = t
 			if not window_name in blocking_windows:
 				blocking_windows.append(window_name)
 			is_ui_focused = true
+		else:
+			# 如果明确不拦截输入，确保 mouse_filter 为 IGNORE
+			window.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			
 		_play_open_animation(window)
 		window_opened.emit(window_name)
@@ -162,14 +172,196 @@ func play_fade(to_black: bool, duration: float = 0.5) -> Signal:
 	tween.tween_property(fade_node, "color:a", target_alpha, duration)
 	return tween.finished
 
+func show_loading_overlay(title: String = "世界加载中", stage_text: String = "", progress: float = 0.0, status_text: String = "") -> void:
+	_ensure_loading_overlay()
+	if not is_instance_valid(loading_overlay):
+		return
+	loading_overlay.visible = true
+	loading_overlay.modulate.a = 1.0
+	if is_instance_valid(loading_title_label):
+		loading_title_label.text = title
+	if is_instance_valid(loading_error_label):
+		loading_error_label.visible = false
+	update_loading_overlay(progress, stage_text, status_text)
+
+func update_loading_overlay(progress: float, stage_text: String = "", status_text: String = "") -> void:
+	_ensure_loading_overlay()
+	if not is_instance_valid(loading_overlay):
+		return
+	loading_overlay.visible = true
+	if is_instance_valid(loading_stage_label) and stage_text != "":
+		loading_stage_label.text = stage_text
+	if is_instance_valid(loading_status_label) and status_text != "":
+		loading_status_label.text = status_text
+	if is_instance_valid(loading_progress_bar):
+		var target_value := clampf(progress, 0.0, 1.0) * 100.0
+		if is_instance_valid(loading_progress_tween):
+			loading_progress_tween.kill()
+		loading_progress_tween = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+		loading_progress_tween.tween_property(loading_progress_bar, "value", target_value, 0.12)
+
+func show_loading_failure(message: String) -> void:
+	_ensure_loading_overlay()
+	if not is_instance_valid(loading_overlay):
+		return
+	loading_overlay.visible = true
+	loading_overlay.modulate.a = 1.0
+	if is_instance_valid(loading_stage_label):
+		loading_stage_label.text = "加载失败"
+	if is_instance_valid(loading_status_label):
+		loading_status_label.text = message
+	if is_instance_valid(loading_error_label):
+		loading_error_label.visible = true
+		loading_error_label.text = "正在返回主菜单..."
+
+func hide_loading_overlay(duration: float = 0.2) -> Signal:
+	_ensure_loading_overlay()
+	if not is_instance_valid(loading_overlay) or not loading_overlay.visible:
+		return get_tree().create_timer(0.0).timeout
+	var tween = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	tween.tween_property(loading_overlay, "modulate:a", 0.0, duration)
+	tween.tween_callback(_finalize_loading_overlay_hide)
+	return tween.finished
+
+func dismiss_loading_overlay() -> void:
+	if not is_instance_valid(loading_overlay):
+		return
+	if is_instance_valid(loading_progress_tween):
+		loading_progress_tween.kill()
+	_finalize_loading_overlay_hide()
+
+func _ensure_loading_overlay() -> void:
+	if is_instance_valid(loading_overlay):
+		return
+
+	var root := get_tree().root
+	var loading_layer = root.get_node_or_null("GlobalLoadingLayer")
+	if not loading_layer:
+		var canvas := CanvasLayer.new()
+		canvas.name = "GlobalLoadingLayer"
+		canvas.layer = 129
+		canvas.process_mode = Node.PROCESS_MODE_ALWAYS
+		root.add_child(canvas)
+		loading_layer = canvas
+
+	var overlay := Control.new()
+	overlay.name = "LoadingOverlay"
+	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.process_mode = Node.PROCESS_MODE_ALWAYS
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	loading_layer.add_child(overlay)
+
+	var background := ColorRect.new()
+	background.name = "Background"
+	background.color = Color(0.03, 0.05, 0.09, 0.92)
+	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	background.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.add_child(background)
+
+	var panel := PanelContainer.new()
+	panel.name = "Panel"
+	panel.anchor_left = 0.5
+	panel.anchor_top = 0.5
+	panel.anchor_right = 0.5
+	panel.anchor_bottom = 0.5
+	panel.offset_left = -260
+	panel.offset_top = -120
+	panel.offset_right = 260
+	panel.offset_bottom = 120
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.08, 0.12, 0.18, 0.96)
+	panel_style.border_color = Color(0.36, 0.62, 0.86, 0.9)
+	panel_style.border_width_left = 2
+	panel_style.border_width_top = 2
+	panel_style.border_width_right = 2
+	panel_style.border_width_bottom = 2
+	panel_style.corner_radius_top_left = 10
+	panel_style.corner_radius_top_right = 10
+	panel_style.corner_radius_bottom_left = 10
+	panel_style.corner_radius_bottom_right = 10
+	panel_style.content_margin_left = 24
+	panel_style.content_margin_top = 24
+	panel_style.content_margin_right = 24
+	panel_style.content_margin_bottom = 24
+	panel.add_theme_stylebox_override("panel", panel_style)
+	overlay.add_child(panel)
+
+	var content := VBoxContainer.new()
+	content.name = "Content"
+	content.add_theme_constant_override("separation", 12)
+	panel.add_child(content)
+
+	var title := Label.new()
+	title.name = "TitleLabel"
+	title.text = "世界加载中"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 28)
+	content.add_child(title)
+
+	var stage := Label.new()
+	stage.name = "StageLabel"
+	stage.text = "正在准备场景"
+	stage.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stage.add_theme_font_size_override("font_size", 20)
+	content.add_child(stage)
+
+	var status := Label.new()
+	status.name = "StatusLabel"
+	status.text = "请稍候..."
+	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	content.add_child(status)
+
+	var progress_bar := ProgressBar.new()
+	progress_bar.name = "ProgressBar"
+	progress_bar.min_value = 0.0
+	progress_bar.max_value = 100.0
+	progress_bar.value = 0.0
+	progress_bar.custom_minimum_size = Vector2(420, 22)
+	progress_bar.show_percentage = true
+	content.add_child(progress_bar)
+
+	var error_label := Label.new()
+	error_label.name = "ErrorLabel"
+	error_label.visible = false
+	error_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	error_label.add_theme_color_override("font_color", Color(1.0, 0.55, 0.55))
+	content.add_child(error_label)
+
+	loading_overlay = overlay
+	loading_title_label = title
+	loading_stage_label = stage
+	loading_status_label = status
+	loading_error_label = error_label
+	loading_progress_bar = progress_bar
+	loading_overlay.visible = false
+
+func _finalize_loading_overlay_hide() -> void:
+	if not is_instance_valid(loading_overlay):
+		return
+	loading_overlay.visible = false
+	loading_overlay.modulate.a = 1.0
+	if is_instance_valid(loading_error_label):
+		loading_error_label.visible = false
+
 ## 显示漂浮文字
-func show_floating_text(text: String, global_pos: Vector2, color: Color = Color.WHITE) -> void:
+func show_floating_text(text_content: String, global_pos: Vector2, color: Color = Color.WHITE) -> void:
 	var label = Label.new()
+	# 关键修复 1: 强制忽略输入
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	# 关键修复 2: 确保脚本正确挂载并初始化
 	label.set_script(load("res://src/ui/floating_text.gd"))
 	
 	# 将全局坐标转换为 UI 坐标
 	var ui_root = get_tree().current_scene.find_child("UI", true, false)
 	if ui_root:
+		# 关键修复 3: 检查 UI 根节点是否拦截了输入
+		if ui_root is Control and ui_root.mouse_filter != Control.MOUSE_FILTER_IGNORE:
+			# 如果是主 UI 容器，但只是用来挂载漂浮文字，它不应该拦截
+			if ui_root.name == "UI": ui_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		
 		ui_root.add_child(label)
 		# 如果 UI 是 CanvasLayer，我们需要将世界坐标转换为屏幕坐标
 		var canvas_transform = get_tree().root.get_viewport().get_canvas_transform()
@@ -178,28 +370,38 @@ func show_floating_text(text: String, global_pos: Vector2, color: Color = Color.
 		get_tree().current_scene.add_child(label)
 		label.global_position = global_pos
 	
-	label.setup(text, color)
+	if label.has_method("setup"):
+		label.setup(text_content, color)
+	else:
+		label.text = text_content
+		label.add_theme_color_override("font_color", color)
 
 ## 关闭窗口
 func close_window(window_name: String) -> void:
-	var window: Control = null
-	
-	if active_windows.has(window_name):
-		window = active_windows[window_name]
-	else:
+	if not active_windows.has(window_name):
 		# 增强：场景重载后可能丢失字典引用，尝试在当前场景中寻找预置节点
 		var scene_root = get_tree().current_scene
 		if scene_root:
-			window = scene_root.find_child(window_name, true, false)
-			if window and window is Control:
+			var found = scene_root.find_child(window_name, true, false)
+			if is_instance_valid(found) and found is Control:
 				print("UIManager: 探测并同步场景中的预置窗口: ", window_name)
-				active_windows[window_name] = window
+				active_windows[window_name] = found
+
+	var window: Control = null
+	if active_windows.has(window_name):
+		var potential_window = active_windows[window_name]
+		if is_instance_valid(potential_window):
+			window = potential_window
+		else:
+			active_windows.erase(window_name)
 
 	if not is_instance_valid(window):
-		if active_windows.has(window_name):
-			active_windows.erase(window_name)
-		if window_name in blocking_windows:
-			blocking_windows.erase(window_name)
+		active_windows.erase(window_name)
+		blocking_windows.erase(window_name)
+		return
+		
+	# 如果窗口已经在关闭过程中，直接返回
+	if window.get_meta("ui_target_state", "open") == "closed":
 		return
 		
 	# 设置目标状态为关闭
@@ -213,27 +415,30 @@ func close_window(window_name: String) -> void:
 	if tween:
 		await tween.finished
 	
+	# 再次检查窗口有效性，因为 await 期间可能发生场景重载或销毁
+	if not is_instance_valid(window):
+		active_windows.erase(window_name)
+		return
+		
 	if window_name == "InventoryWindow":
 		EventBus.inventory_closed.emit()
 	
 	if window_name == "WandEditor":
 		EventBus.wand_editor_closed.emit()
 
-		
-	if is_instance_valid(window):
-		# 检查在等待期间是否被重新打开了
-		if window.has_meta("ui_target_state") and window.get_meta("ui_target_state") == "open":
-			print("UIManager: 窗口 %s 在关闭动画期间被重新打开，取消隐藏动作。" % window_name)
-			return
+	# 检查在等待期间是否被重新打开了
+	if window.get_meta("ui_target_state", "closed") == "open":
+		print("UIManager: 窗口 %s 在关闭动画期间被重新打开，取消隐藏动作。" % window_name)
+		return
 			
-		# 只有 MainMenu 和 HUD 是真正持久的预置节点，其他的动态窗口即使在场景中找到也应该销毁
-		var is_persistent = window_name == "MainMenu" or window_name == "HUD"
-		
-		if is_persistent:
-			window.visible = false
-		else:
-			active_windows.erase(window_name)
-			window.queue_free()
+	# 只有 MainMenu 和 HUD 是真正持久的预置节点，其他的动态窗口即使在场景中找到也应该销毁
+	var is_persistent = window_name == "MainMenu" or window_name == "HUD"
+	
+	if is_persistent:
+		window.visible = false
+	else:
+		active_windows.erase(window_name)
+		window.queue_free()
 		
 	if blocking_windows.is_empty():
 		is_ui_focused = false

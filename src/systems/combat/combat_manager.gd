@@ -32,8 +32,8 @@ func deal_damage(attacker: Node, target: Node, base_damage: float, damage_type: 
 	if attacker and "global_position" in attacker and "global_position" in target:
 		hit_dir = (target.global_position - attacker.global_position).normalized()
 		_apply_visual_embedding(attacker, target, hit_dir)
-		
-	target.take_damage(final_damage, damage_type)
+
+	_apply_damage_with_context(attacker, target, final_damage, damage_type)
 	damage_dealt.emit(target, final_damage, is_critical)
 
 	# Corrosive effect for Slime
@@ -46,6 +46,14 @@ func deal_damage(attacker: Node, target: Node, base_damage: float, damage_type: 
 	# 移除了所有卡肉和攻击者嵌入逻辑，确保战斗流畅不中断
 	if attacker and attacker.is_in_group("player"):
 		_trigger_screen_shake(0.2, 12.0 + (final_damage * 0.5)) 
+
+func _apply_damage_with_context(attacker: Node, target: Node, final_damage: float, damage_type: String) -> void:
+	if target is BaseNPC:
+		target.take_damage(final_damage, damage_type, attacker)
+	elif target.is_in_group("player"):
+		target.take_damage(final_damage, damage_type)
+	else:
+		target.take_damage(final_damage)
 
 func _apply_visual_embedding(_attacker: Node, _target: Node, _direction: Vector2) -> void:
 	# 逻辑已停用，保持空函数

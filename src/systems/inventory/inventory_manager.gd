@@ -84,6 +84,169 @@ func move_item(from_inv: Inventory, from_idx: int, to_inv: Inventory):
 			inventory_changed.emit()
 			return
 
+func _get_item_id(item) -> String:
+	if item == null:
+		return ""
+	if item is String:
+		return String(item)
+	if item is Object:
+		var item_id = item.get("id")
+		if item_id != null and not String(item_id).is_empty():
+			return String(item_id)
+	if item is Resource and not item.resource_path.is_empty():
+		return item.resource_path
+	return ""
+
+func _items_match(left, right) -> bool:
+	if left == null or right == null:
+		return false
+	if left == right:
+		return true
+
+	var left_id = _get_item_id(left)
+	var right_id = _get_item_id(right)
+	if not left_id.is_empty() and not right_id.is_empty():
+		return left_id == right_id
+
+	return false
+
+func _resolve_item_resource(item_id: String, resource_path: String = "", fallback = null) -> Resource:
+	if not item_id.is_empty() and GameState and GameState.item_db.has(item_id):
+		return GameState.item_db[item_id]
+	if not resource_path.is_empty() and ResourceLoader.exists(resource_path):
+		var loaded = load(resource_path)
+		if loaded is Resource:
+			return loaded
+	if fallback is Resource:
+		return fallback
+	return null
+
+func _should_embed_item_data(item: Resource) -> bool:
+	if item == null:
+		return false
+	if not item.resource_path.is_empty():
+		return false
+	var item_id = _get_item_id(item)
+	if item_id.is_empty():
+		return true
+	if GameState and GameState.item_db.has(item_id):
+		return false
+	return true
+
+func _serialize_slot(slot: Dictionary) -> Dictionary:
+	var item = slot.get("item")
+	var count = int(slot.get("count", 0))
+	if item == null or count <= 0:
+		return {"item_id": "", "resource_path": "", "count": 0, "item_data": null}
+
+	var resource_path = item.resource_path if item is Resource else ""
+	var serialized = {
+		"item_id": _get_item_id(item),
+		"resource_path": resource_path,
+		"count": count
+	}
+	if item is Resource and _should_embed_item_data(item):
+		serialized["item_data"] = item.duplicate(true)
+	return serialized
+
+func _deserialize_slot(saved_slot) -> Dictionary:
+	if saved_slot == null:
+		return {"item": null, "count": 0}
+
+	if saved_slot is Dictionary:
+		var legacy_item = saved_slot.get("item")
+		var embedded_item = saved_slot.get("item_data")
+		var item_id = String(saved_slot.get("item_id", _get_item_id(legacy_item)))
+		if item_id.is_empty():
+			item_id = _get_item_id(embedded_item)
+		var resource_path = String(saved_slot.get("resource_path", legacy_item.resource_path if legacy_item is Resource else embedded_item.resource_path if embedded_item is Resource else ""))
+		var fallback_item = embedded_item if embedded_item is Resource else legacy_item
+		var resolved_item = _resolve_item_resource(item_id, resource_path, fallback_item)
+		var count = max(int(saved_slot.get("count", 0)), 0)
+		if resolved_item == null or count <= 0:
+			return {"item": null, "count": 0}
+		return {"item": resolved_item, "count": count}
+
+	if saved_slot is Resource:
+		var resolved_item = _resolve_item_resource(_get_item_id(saved_slot), saved_slot.resource_path, saved_slot)
+		return {"item": resolved_item, "count": 1}
+
+	return {"item": null, "count": 0}
+
+func _normalize_inventory(inv: Inventory) -> void:
+	if not inv:
+		return
+
+	inv.resize(inv.capacity)
+	var first_index_by_item: Dictionary = {}
+	for i in range(inv.capacity):
+		var slot = inv.get_slot(i)
+		var item = slot.get("item")
+		var count = int(slot.get("count", 0))
+		if item == null or count <= 0:
+			inv.slots[i] = {"item": null, "count": 0}
+			continue
+		if not bool(item.get("stackable")):
+			continue
+
+		var item_key = _get_item_id(item)
+		if item_key.is_empty():
+			continue
+
+		if first_index_by_item.has(item_key):
+			var first_index = int(first_index_by_item[item_key])
+			var first_slot = inv.get_slot(first_index)
+			inv.slots[first_index] = {
+				"item": first_slot.get("item", item),
+				"count": int(first_slot.get("count", 0)) + count
+			}
+			inv.slots[i] = {"item": null, "count": 0}
+		else:
+			first_index_by_item[item_key] = i
+
+func serialize_inventory() -> Dictionary:
+	return {
+		"backpack": _serialize_inventory_slots(backpack),
+		"hotbar": _serialize_inventory_slots(hotbar)
+	}
+
+func _serialize_inventory_slots(inv: Inventory) -> Array:
+	var serialized: Array = []
+	if not inv:
+		return serialized
+
+	inv.resize(inv.capacity)
+	for i in range(inv.capacity):
+		serialized.append(_serialize_slot(inv.get_slot(i)))
+	return serialized
+
+func load_inventory_data(data: Dictionary) -> void:
+	if backpack:
+		_restore_inventory(backpack, data.get("backpack", []))
+	if hotbar:
+		_restore_inventory(hotbar, data.get("hotbar", []))
+		if active_hotbar_index >= hotbar.capacity:
+			active_hotbar_index = 0
+
+	active_hotbar_changed.emit(active_hotbar_index)
+	var equipped_item = get_equipped_item()
+	equipped_item_changed.emit(equipped_item)
+	EventBus.item_equipped.emit(equipped_item)
+	item_visual_updated.emit(equipped_item)
+	inventory_changed.emit()
+
+func _restore_inventory(inv: Inventory, saved_slots: Array) -> void:
+	if not inv:
+		return
+
+	inv.resize(inv.capacity)
+	for i in range(inv.capacity):
+		var restored_slot = _deserialize_slot(saved_slots[i]) if i < saved_slots.size() else {"item": null, "count": 0}
+		inv.slots[i] = restored_slot
+
+	_normalize_inventory(inv)
+	inv.content_changed.emit(-1)
+
 func add_item(item: Resource, count: int = 1) -> bool:
 	# Add to hotbar first for immediate access
 	if _add_to_inventory(hotbar, item, count):
@@ -140,7 +303,7 @@ func _add_to_inventory(inv: Inventory, item: Resource, count: int) -> bool:
 	if item.get("stackable"):
 		for i in range(inv.capacity):
 			var slot = inv.get_slot(i)
-			if slot.get("item") == item:
+			if _items_match(slot.get("item"), item):
 				# Add logic
 				inv.set_item(i, item, slot.get("count") + count)
 				inventory_changed.emit()
@@ -156,17 +319,17 @@ func _add_to_inventory(inv: Inventory, item: Resource, count: int) -> bool:
 			
 	return false
 
-func remove_item(item: Resource, count: int = 1) -> bool:
+func remove_item(item, count: int = 1) -> bool:
 	# Remove from backpack or hotbar
 	if _remove_from_inventory(backpack, item, count): return true
 	if _remove_from_inventory(hotbar, item, count): return true
 	return false
 
-func _remove_from_inventory(inv: Inventory, item: Resource, count: int) -> bool:
+func _remove_from_inventory(inv: Inventory, item, count: int) -> bool:
 	# Find and remove
 	for i in range(inv.capacity):
 		var slot = inv.get_slot(i)
-		if slot.get("item") == item:
+		if _items_match(slot.get("item"), item):
 			if slot.get("count") >= count:
 				inv.remove_from_slot(i, count)
 				inventory_changed.emit()
@@ -186,6 +349,9 @@ func select_hotbar_slot(index: int) -> void:
 	var item = get_equipped_item()
 	equipped_item_changed.emit(item)
 	EventBus.item_equipped.emit(item)
+	# 显式发出全局信号，确保教程系统能捕捉到任何位置切换后的装备变化
+	if item:
+		EventBus.item_equipped.emit(item)
 	item_visual_updated.emit(item) # Ensure visual sync
 
 func get_equipped_item() -> Resource:

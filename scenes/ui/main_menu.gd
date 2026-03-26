@@ -1,9 +1,9 @@
 extends Control
 
-@onready var start_button: Control = $CenterContainer/VBoxContainer/StartButton
-@onready var load_button: Control = $CenterContainer/VBoxContainer/LoadButton
-@onready var settings_button: Control = $CenterContainer/VBoxContainer/SettingsButton
-@onready var exit_button: Control = $CenterContainer/VBoxContainer/ExitButton
+@onready var start_button: Button = $CenterContainer/VBoxContainer/StartButton
+@onready var load_button: Button = $CenterContainer/VBoxContainer/LoadButton
+@onready var settings_button: Button = $CenterContainer/VBoxContainer/SettingsButton
+@onready var exit_button: Button = $CenterContainer/VBoxContainer/ExitButton
 @onready var title_label: Control = $CenterContainer/VBoxContainer/Title
 
 var welcome_label: Label
@@ -57,8 +57,17 @@ func _ready() -> void:
 	# hide other scene backgrounds so our menu background is the only visible one
 	_hide_external_backgrounds()
 	
+	# Override Overlay mouse filter to ensure it doesn't block input
+	var ov_node = get_node_or_null("Overlay")
+	if ov_node and ov_node is Control:
+		ov_node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
 	# 递归修复背景遮挡导致按钮失效的问题
 	_fix_mouse_filter(self)
+
+	# Ensure specific containers are PASS or IGNORE
+	if $CenterContainer: $CenterContainer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if $CenterContainer/VBoxContainer: $CenterContainer/VBoxContainer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	
 	if not start_button.is_connected("pressed", Callable(self, "_on_start_pressed")):
 		start_button.pressed.connect(Callable(self, "_on_start_pressed"))
@@ -78,6 +87,19 @@ func _ready() -> void:
 	# 强制应用简单标题渲染（直接在 title_label 上），确保能立刻看到效果
 	_force_simple_title()
 	
+	# REMOVED: Deleted startup sound test that caused unexpected noise.
+	# Audio is now handled solely by user interaction.
+	
+	# Restored UI Sound Effects (without visual interference)
+	# REMOVED: Manually connecting sound signals here. 
+	# They are now handled centrally in ui_button_hover.gd for better consistency.
+	for btn in [start_button, load_button, settings_button, exit_button]:
+		if btn:
+			# Ensure button children don't block input
+			for child in btn.get_children():
+				if child is Control:
+					child.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
 	# DISABLED: Legacy hover effects (interferes with new Tween script)
 	# for btn in [start_button, load_button, settings_button, exit_button]:
 	# 	btn.mouse_entered.connect(Callable(self, "_on_button_hover").bind(btn))
@@ -228,6 +250,7 @@ func _create_magic_circle() -> void:
 	mc.name = "MagicCircle"
 	mc.set_script(load("res://ui/controls/magic_circle.gd"))
 	mc.size = Vector2(900, 600)
+	mc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(mc)
 	move_child(mc, 0)
 
@@ -1256,16 +1279,26 @@ func _setup_smart_ui() -> void:
 
 func _fix_mouse_filter(node: Node) -> void:
 	if node is Control:
-		if node is TextureRect or node is ColorRect or "Background" in node.name:
-			node.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		elif node is Button:
+		if node is Button:
 			node.mouse_filter = Control.MOUSE_FILTER_STOP
+			# Button internal contents must NOT block mouse events
+			# Recursively set all children of the button to IGNORE
+			_force_ignore_recursive(node)
+			return # Stop main recursion here, handled manually
+		elif node is TextureRect or node is ColorRect or node is Label or node is RichTextLabel or "Background" in node.name:
+			node.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		else:
-			# 容器类节点设为 PASS，允许点击穿透到子节点
+			# Containers default to passing so clicks reach buttons inside or go through
 			node.mouse_filter = Control.MOUSE_FILTER_PASS
 			
 	for child in node.get_children():
 		_fix_mouse_filter(child)
+
+func _force_ignore_recursive(node: Node) -> void:
+	for child in node.get_children():
+		if child is Control:
+			child.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_force_ignore_recursive(child)
 
 func _on_button_hover(btn: Control) -> void:
 	var tween = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
@@ -1535,3 +1568,11 @@ func _on_title_resized() -> void:
 		mat.set_shader_parameter("height_pixels", text_height)
 		mat.set_shader_parameter("width_pixels", title_label.size.x)
 		mat.set_shader_parameter("offset_y", offset_y)
+
+func _on_sfx_hover() -> void:
+	print("MainMenu: Mouse Entered Button")
+	# AudioManager.play_ui_sfx("hover")
+
+func _on_sfx_click() -> void:
+	print("MainMenu: Button Pressed")
+	# AudioManager.play_ui_sfx("click")

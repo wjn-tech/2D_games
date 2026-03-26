@@ -9,6 +9,7 @@ const COLOR_BORDER_GOLD = Color("#FFD700") # Highlighting Gold
 const COLOR_HP = Color("#E63946") # Vibrant Red
 const COLOR_MANA = Color("#4361EE") # Matches Magic Border
 const COLOR_STAMINA = Color("#2ECC71") # Stamina Green
+const COLOR_AGE = Color("#F1C40F") # Bright Gold for Age/Time
 const COLOR_TEXT_PRIMARY = Color("#E0FFFF") # Light Cyan / White
 const COLOR_TEXT_SHADOW = Color("#0F172A") # Deep Shadow
 
@@ -80,6 +81,12 @@ static func get_slot_style_active() -> StyleBoxFlat:
 	var style = get_slot_style_normal()
 	style.border_color = COLOR_BORDER_GOLD # Gold highlight for active slot
 	style.bg_color = COLOR_BG_SECONDARY.lightened(0.1)
+	return style
+
+static func get_slot_style_hover() -> StyleBoxFlat:
+	var style = get_slot_style_normal()
+	style.border_color = COLOR_BORDER_MAGIC # Magic Blue for hover
+	style.bg_color = COLOR_BG_SECONDARY.lightened(0.15)
 	return style
 
 static func get_bar_bg_style() -> StyleBoxFlat:

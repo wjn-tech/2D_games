@@ -41,16 +41,35 @@ func _ready() -> void:
 	add_theme_stylebox_override("panel", HUDStyles.get_slot_style_normal())
 	
 	gui_input.connect(_on_gui_input)
-	mouse_entered.connect(_on_mouse_entered)
-	mouse_exited.connect(_on_mouse_exited)
+	
+	# Use notification for more robust hover feedback at all speeds
+	# mouse_entered.connect(_on_mouse_entered)
+	# mouse_exited.connect(_on_mouse_exited)
 	
 	pivot_offset = size / 2
+	
+	# Ensure internal components don't block mouse
+	_set_mouse_filter_recursive(self, Control.MOUSE_FILTER_IGNORE)
+	mouse_filter = Control.MOUSE_FILTER_STOP
 	
 	# Initialize visuals
 	if rarity_glow:
 		rarity_glow.visible = false
 	if border:
 		border.visible = false # Use StyleBox instead
+
+func _set_mouse_filter_recursive(node: Node, filter: int) -> void:
+	for child in node.get_children():
+		if child is Control:
+			child.mouse_filter = filter
+		_set_mouse_filter_recursive(child, filter)
+
+func _notification(what: int) -> void:
+	match what:
+		NOTIFICATION_MOUSE_ENTER:
+			_on_mouse_entered()
+		NOTIFICATION_MOUSE_EXIT:
+			_on_mouse_exited()
 
 func setup(index: int, slot_data: Dictionary, inventory_ref: Resource) -> void:
 	slot_index = index
@@ -134,11 +153,19 @@ func _clear_visuals() -> void:
 
 # --- Interaction ---
 func _on_mouse_entered() -> void:
-	if not current_item: return
+	# Always respond to hover, even when empty
 	is_hovered = true
 	
+	# Audio feedback
+	# if has_node("/root/AudioManager"):
+	# 	get_node("/root/AudioManager").play_ui_sfx("hover")
+	
 	# Pixel Cosmic Magic Style Selection
-	add_theme_stylebox_override("panel", HUDStyles.get_slot_style_active())
+	if not current_item and not is_selected:
+		# Lighter hover effect for empty slots
+		add_theme_stylebox_override("panel", HUDStyles.get_slot_style_hover())
+	else:
+		add_theme_stylebox_override("panel", HUDStyles.get_slot_style_active())
 	
 	# Magitech Scale Effect
 	if _tween: _tween.kill()
@@ -178,6 +205,9 @@ func _on_press() -> void:
 	# Mechanical "Click" - scale down
 	var click_tween = create_tween().set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
 	click_tween.tween_property(self, "scale", PRESS_SCALE, 0.05)
+	
+	# if has_node("/root/AudioManager"):
+	# 	get_node("/root/AudioManager").play_ui_sfx("click")
 	
 	_spawn_particles()
 

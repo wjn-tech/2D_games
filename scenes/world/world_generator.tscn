@@ -19,7 +19,6 @@ visible = false
 tile_set = ExtResource("2_tileset")
 
 [node name="Layer1" type="TileMapLayer" parent="."]
-visible = false
 tile_set = ExtResource("2_tileset")
 
 [node name="TreeLayer2" type="TileMapLayer" parent="."]
@@ -27,5 +26,4 @@ visible = false
 tile_set = ExtResource("2_tileset")
 
 [node name="Layer2" type="TileMapLayer" parent="."]
-visible = false
 tile_set = ExtResource("2_tileset")

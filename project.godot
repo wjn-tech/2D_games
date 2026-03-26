@@ -11,13 +11,14 @@ config_version=5
 [application]
 
 config/name="2D_games"
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="res://scenes/boot.tscn"
 config/features=PackedStringArray("4.5", "Forward Plus")
 config/icon="res://icon.svg"
 
 [autoload]
 
 Chronometer="*res://src/core/chronometer.gd"
+AudioManager="*res://src/core/audio_manager.gd"
 EventBus="*res://src/core/event_bus.gd"
 GameState="*res://src/core/game_state.gd"
 SaveManager="*res://src/core/save_manager.gd"
@@ -28,6 +29,7 @@ WeatherManager="*res://src/systems/world/weather_manager.gd"
 LayerManager="*res://src/systems/world/layer_manager.gd"
 GameManager="*res://src/core/game_manager.gd"
 CombatManager="*res://src/systems/combat/combat_manager.gd"
+SpellAbsorptionManager="*res://src/systems/magic/spell_absorption_manager.gd"
 LifespanManager="*res://src/systems/lineage/lifespan_manager.gd"
 SettlementManager="*res://src/systems/settlement/settlement_manager.gd"
 PowerGridManager="*res://src/systems/industrial/power_grid_manager.gd"
@@ -39,6 +41,8 @@ NPCSpawner="*res://src/systems/npc/npc_spawner.gd"
 CraftingManager="*res://src/systems/crafting/crafting_manager.gd"
 EconomyManager="*res://src/core/economy_manager.gd"
 InfiniteChunkManager="*res://src/systems/world/infinite_chunk_manager.gd"
+WorldTopology="*res://src/systems/world/world_topology.gd"
+LiquidManager="*res://src/systems/world/liquid_manager.gd"
 SocialManager="*res://src/systems/npc/social_manager.gd"
 MinimapManager="*res://src/systems/world/minimap_manager.gd"
 SignalManager="*res://src/systems/industrial/signal_manager.gd"
@@ -47,11 +51,6 @@ DebugTools="*res://src/systems/debug/debug_tools.gd"
 TradeManager="*res://src/systems/trading/trade_manager.gd"
 FeedbackManager="*res://src/ui/feedback_manager.gd"
 CinematicDirector="*res://src/systems/cinematic_director.gd"
-
-[internationalization]
-
-locale/translations=PackedStringArray("res://assets/translations.en.translation", "res://assets/translations.zh.translation")
-locale/test="zh"
 
 [display]
 
@@ -156,6 +155,11 @@ mouse_right={
 "events": [Object(InputEventMouseButton,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"button_mask":0,"position":Vector2(0, 0),"global_position":Vector2(0, 0),"factor":1.0,"button_index":2,"canceled":false,"pressed":false,"double_click":false,"script":null)
 ]
 }
+
+[internationalization]
+
+locale/translations=PackedStringArray("res://assets/translations.en.translation", "res://assets/translations.zh.translation")
+locale/test="zh"
 
 [rendering]
 

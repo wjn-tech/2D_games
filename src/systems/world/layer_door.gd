@@ -40,9 +40,16 @@ func _reset_nearby_npc_aggro() -> void:
 	for npc in npcs:
 		if npc is BaseNPC:
 			var bb = npc.bt_player.blackboard if npc.bt_player else null
-			if bb and bb.get_var("target") == player:
+			var is_targeting_player = npc.has_method("get_combat_target") and npc.get_combat_target() == player
+			if not is_targeting_player and bb and bb.get_var("target") == player:
+				is_targeting_player = true
+
+			if is_targeting_player:
 				# 只要玩家跨越了层级，NPC 即使视野内也会因为逻辑检测而丢失目标
-				bb.set_var("target", null)
+				if npc.has_method("clear_combat_target"):
+					npc.clear_combat_target()
+				elif bb:
+					bb.set_var("target", null)
 				# 触发 HSM 事件回到和平状态
 				if npc.hsm:
 					npc.hsm.dispatch("threat_cleared")

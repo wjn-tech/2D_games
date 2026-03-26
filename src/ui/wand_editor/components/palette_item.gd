@@ -18,6 +18,6 @@ func _get_drag_data(at_position):
 	return item_data
 
 func _ready():
-    custom_minimum_size = Vector2(48,48)
-    mouse_entered.connect(func(): create_tween().tween_property(self, "scale", Vector2(1.06,1.06), 0.12))
-    mouse_exited.connect(func(): create_tween().tween_property(self, "scale", Vector2(1,1), 0.12))
+	custom_minimum_size = Vector2(48,48)
+	mouse_entered.connect(func(): create_tween().tween_property(self, "scale", Vector2(1.06,1.06), 0.12))
+	mouse_exited.connect(func(): create_tween().tween_property(self, "scale", Vector2(1,1), 0.12))

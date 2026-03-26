@@ -59,23 +59,39 @@ func _get_tile_source_id() -> int:
 
 func _process(_delta: float) -> void:
 	if preview_instance:
-		# 1. 自动图层切换逻辑 (基于 TileItemData)
+		# 1. 自动图层切换逻辑 (修改版：通用支持)
+		var target_layer = 0
 		if current_resource is TileItemData:
-			var target_layer = current_resource.target_layer
-			
-			# 支持 SHIFT 键强制把方块放入背景层 (Layer 2)
-			if Input.is_key_pressed(KEY_SHIFT):
-				target_layer = 2
-				if preview_instance:
-					preview_instance.modulate = Color(0.6, 0.6, 0.6, 0.5) # 稍微变暗
-			else:
-				if preview_instance:
-					preview_instance.modulate = current_resource.placement_tint
-
-			if has_node("/root/LayerManager"):
-				tile_map = get_node("/root/LayerManager").layer_nodes.get(target_layer)
+			target_layer = current_resource.target_layer
+		elif current_resource.get("target_layer"):
+			target_layer = current_resource.get("target_layer")
 		
-		# 如果不是 TileItemData，默认使用 LayerManager 的当前图层
+		# 只要是 Tile 模式，Shift 键就可以强制切换到背景层 (Layer 1)
+		if is_tile_mode:
+			if Input.is_key_pressed(KEY_SHIFT):
+				target_layer = 1
+				preview_instance.modulate = Color(0.5, 0.5, 0.5, 0.5) # 背景墙预览变暗
+			else:
+				if current_resource is TileItemData:
+					preview_instance.modulate = current_resource.placement_tint
+				else:
+					preview_instance.modulate = Color(1, 1, 1, 1)
+
+		if has_node("/root/LayerManager"):
+			var lm = get_node("/root/LayerManager")
+			# 强制从 LayerManager 获取对应的物理图层节点
+			var lm_node = lm.get_layer(target_layer)
+			if lm_node:
+				tile_map = lm_node
+			elif target_layer > 0:
+				# 容错：如果 LayerManager 没准备好，尝试直接从 WorldGenerator 找 (Layer 1&2 是动态创建的)
+				var wg = get_tree().get_first_node_in_group("world_generator")
+				if wg:
+					if target_layer == 1 and "layer_1" in wg: tile_map = wg.layer_1
+					elif target_layer == 2 and "layer_2" in wg: tile_map = wg.layer_2
+
+		
+		# 如果没有显式指定或者不是 TileItemData，默认使用 LayerManager 的当前激活图层
 		if not tile_map and has_node("/root/LayerManager"):
 			tile_map = get_node("/root/LayerManager").get_current_layer()
 
@@ -166,8 +182,18 @@ func _process(_delta: float) -> void:
 				
 				# 关键修复：放置后通知玩家脚本进入冷却，防止瞬间挖掉
 				var player = get_tree().get_first_node_in_group("player")
-				if player and "action_cooldown" in player:
-					player.action_cooldown = 0.3 # 0.3秒安全期
+				if player:
+					if "action_cooldown" in player:
+						player.action_cooldown = 0.4 # 增加到 0.4 秒安全期
+					if "current_mining_tile" in player:
+						player.current_mining_tile = Vector2i(-1, -1)
+				
+				# Audio feedback with type checking
+				var am = get_node_or_null("/root/AudioManager")
+				if am and is_instance_valid(preview_instance):
+					# Use play_sfx_2d for spatial sound or play_sfx for non-spatial
+					# If you want spatial sound, use play_sfx_2d:
+					am.play_sfx_2d("build", preview_instance.global_position)
 				
 				_last_placed_map_pos = current_map_pos
 				_started_this_frame = false # 确保点击第一帧处理后不再重复触发 _started
@@ -175,6 +201,10 @@ func _process(_delta: float) -> void:
 		elif Input.is_action_just_pressed("mouse_right") and not _started_this_frame:
 			get_viewport().set_input_as_handled()
 			cancel_building()
+			var am = get_node_or_null("/root/AudioManager")
+			if am:
+				# am.play_ui_sfx("cancel")
+				pass
 		
 		_started_this_frame = false
 
@@ -183,6 +213,11 @@ func is_building() -> bool:
 
 func start_building(resource: Resource, cost_override = null) -> void:
 	_refresh_tile_map()
+	
+	# Audio feedback
+	# var am = get_node_or_null("/root/AudioManager")
+	# if am:
+	# 	am.play_ui_sfx("hover")
 	
 	# 如果已经在建造同一个东西且预览实例有效，则不执行任何操作，防止闪烁
 	if current_resource == resource and is_instance_valid(preview_instance):
@@ -199,7 +234,13 @@ func start_building(resource: Resource, cost_override = null) -> void:
 	# 处理封装在 BaseItem 中的建筑资源
 	if resource.has_meta("building_resource"):
 		resource = resource.get_meta("building_resource")
-		
+	
+	# Fix: Explicitly check if resource has tile properties to ensure we don't treat stone as dirt
+	# This avoids class_name checks that might fail
+	var res_id = resource.get("id") if resource.get("id") else resource.get("item_id")
+	var is_basic_block = res_id in ["stone", "dirt", "wood", "grass", "sand", "snow"]
+	var _has_tile_data = resource.get("tile_atlas_coords") != null or is_basic_block
+
 	current_resource = resource
 	if not current_resource: return
 	
@@ -208,6 +249,9 @@ func start_building(resource: Resource, cost_override = null) -> void:
 	
 	# NEW UNIFIED LOGIC: Treat multi-tile Atlas builds as "Building" mode but using Tiles
 	var is_atlas_building = (current_resource is BuildingResource and current_resource.atlas_coords != Vector2i(-1, -1))
+	
+	# Detect if this is effectively a TileItemData, even if class check fails
+	var is_tile_data_duck = resource.get("tile_atlas_coords") != null or is_basic_block
 	
 	if current_resource is BuildingResource and "scene" in current_resource and current_resource.scene:
 		is_tile_mode = false
@@ -218,7 +262,7 @@ func start_building(resource: Resource, cost_override = null) -> void:
 		preview_instance.z_as_relative = true
 		preview_instance.process_mode = Node.PROCESS_MODE_DISABLED
 		add_child(preview_instance)
-	elif resource is TileItemData or is_atlas_building:
+	elif is_tile_data_duck or is_atlas_building:
 		is_tile_mode = true
 		preview_instance = Sprite2D.new()
 		preview_instance.z_index = 2000 
@@ -228,34 +272,60 @@ func start_building(resource: Resource, cost_override = null) -> void:
 		var s_id = -1
 		var gs = Vector2i(1, 1)
 		
-		if resource is TileItemData:
-			atlas_coords = resource.tile_atlas_coords
-			s_id = resource.tile_source_id
-			preview_instance.modulate = resource.placement_tint
+		# --- ROBUST RESOURCE IDENTIFICATION FOR PREVIEW ---
+		if not res_id and resource.get("item_id"): res_id = resource.get("item_id")
+		
+		var force_id_coords = false
+		if res_id:
+			if res_id == "stone": 
+				atlas_coords = Vector2i(2, 0)
+				force_id_coords = true
+			elif res_id == "wood": 
+				atlas_coords = Vector2i(0, 3) 
+				force_id_coords = true
+			elif res_id == "dirt":
+				atlas_coords = Vector2i(0, 0)
+				force_id_coords = true
+			elif res_id == "grass": 
+				atlas_coords = Vector2i(1, 0)
+				force_id_coords = true
+		
+		if not force_id_coords:
+			if is_tile_data_duck:
+				atlas_coords = resource.get("tile_atlas_coords")
+				s_id = resource.get("tile_source_id")
+				var tint = resource.get("placement_tint")
+				if tint: preview_instance.modulate = tint
+			else:
+				atlas_coords = resource.atlas_coords
+				s_id = resource.source_id if resource.source_id != -1 else _get_tile_source_id()
+				
+				# IMPORTANT: Use .grid_size directly if possible, or get() as fallback
+				if "grid_size" in resource:
+					gs = resource.grid_size
+				elif resource.has_method("get"):
+					var res_gs = resource.get("grid_size")
+					if res_gs != null: gs = res_gs
+				
+				# Multi-tile tile preview adjustment
+				if gs.x > 1 or gs.y > 1:
+					is_tile_mode = false # Switch to building-style snap logic but using sprites
 		else:
-			atlas_coords = resource.atlas_coords
-			s_id = resource.source_id if resource.source_id != -1 else _get_tile_source_id()
-			
-			# IMPORTANT: Use .grid_size directly if possible, or get() as fallback
-			if "grid_size" in resource:
-				gs = resource.grid_size
-			elif resource.has_method("get"):
-				var res_gs = resource.get("grid_size")
-				if res_gs != null: gs = res_gs
-			
-			# Multi-tile tile preview adjustment
-			if gs.x > 1 or gs.y > 1:
-				is_tile_mode = false # Switch to building-style snap logic but using sprites
+			# If forced, ensure source is valid (Main Atlas)
+			if s_id == -1: s_id = 0
+		
+		# 尝试获取区域贴图 (优先使用自定义家具贴图集)
 		
 		# 尝试获取区域贴图 (优先使用自定义家具贴图集)
 		var texture_set = false
 		
 		var custom_tex = load("res://assets/world/custom_furniture.png")
-		if custom_tex and resource.get("id") and ("workbench" in resource.id or resource.id in ["door", "table", "chair", "torch"]):
+		var rid = resource.get("id")
+		if custom_tex and rid and ("workbench" in rid or rid in ["door", "table", "chair", "torch"]):
 			var atlas_tex = AtlasTexture.new()
 			atlas_tex.atlas = custom_tex
 			var region = Rect2(0,0,0,0)
-			match resource.id:
+			match rid:
 				"workbench", "workbench_item": region = Rect2(0, 0, 32, 16)
 				"door": region = Rect2(0, 16, 16, 32)
 				"table": region = Rect2(16, 16, 32, 32)
@@ -513,41 +583,70 @@ func _can_place() -> bool:
 	return true
 
 func place_building() -> void:
+	print("abcde");
 	if not _can_place():
 		return
 		
-	if is_tile_mode and not (current_resource is BuildingResource and current_resource.atlas_coords != Vector2i(-1, -1)):
+	if (is_tile_mode and not (current_resource is BuildingResource and current_resource.atlas_coords != Vector2i(-1, -1))):
 		# 确保层级即时匹配（支持放置瞬间的 Shift 状态）
 		var target_layer = 0
 		if current_resource is TileItemData:
 			target_layer = current_resource.target_layer
-			if Input.is_key_pressed(KEY_SHIFT): target_layer = 1 # 统一背景层为 Layer 1
-		
+		elif "target_layer" in current_resource:
+			target_layer = current_resource.get("target_layer")
+			
+		# 强制 Shift 键逻辑生效，覆盖之前的所有层级设定
+		if is_tile_mode and Input.is_key_pressed(KEY_SHIFT): 
+			target_layer = 1 # 背景墙逻辑
+
 		var actual_map = tile_map
 		if has_node("/root/LayerManager"):
-			var lm_map = get_node("/root/LayerManager").layer_nodes.get(target_layer)
+			var lm_map = get_node("/root/LayerManager").get_layer(target_layer)
 			if lm_map: actual_map = lm_map
 
 		if actual_map:
 			var local_pos = TransformHelper.safe_to_local(actual_map, preview_instance.global_position)
 			var map_pos = actual_map.local_to_map(local_pos)
 			
-			var s_id = -1
-			var a_coords = Vector2i.ZERO
+			var s_id = 0 # Default to 0 (Main Atlas)
+			var a_coords = Vector2i(0, 0) # Default to Dirt
 			var cost_map = {}
 
+			# --- ROBUST RESOURCE IDENTIFICATION ---
+			var res_id = current_resource.get("id")
+			if not res_id and current_resource.get("item_id"): res_id = current_resource.get("item_id")
+			
+			if res_id:
+				cost_map = { res_id: 1 }
+				if res_id == "stone": a_coords = Vector2i(2, 0)
+				elif res_id == "wood": a_coords = Vector2i(0, 3) 
+				elif res_id == "dirt": a_coords = Vector2i(0, 0)
+				elif res_id == "grass": a_coords = Vector2i(1, 0)
+				elif res_id == "sand": a_coords = Vector2i(3, 0)
+				elif res_id == "snow": a_coords = Vector2i(3, 1)
+				else:
+					# Fallback to property check
+					var t_ac = current_resource.get("tile_atlas_coords")
+					if t_ac != null: a_coords = t_ac
+					else:
+						# Last ditch: check generic atlas_coords
+						var ac = current_resource.get("atlas_coords")
+						if ac != null: a_coords = ac
+			else:
+				# Generic fallback
+				var t_ac = current_resource.get("tile_atlas_coords")
+				if t_ac != null: 
+					a_coords = t_ac
+	
 			if current_cost_override != null:
 				cost_map = current_cost_override
-			elif current_resource is TileItemData:
-				s_id = current_resource.tile_source_id
-				a_coords = current_resource.tile_atlas_coords
-				cost_map = { current_resource.id: 1 }
-			else:
-				s_id = current_resource.source_id if current_resource.source_id != -1 else _get_tile_source_id()
-				a_coords = current_resource.atlas_coords
-				cost_map = current_resource.cost
 			
-			# 执行放置
+			# Ensure Source ID is valid (0)
+			if current_resource.get("tile_source_id") != null:
+				s_id = current_resource.get("tile_source_id")
+			
+			# Execute Placement
+			print("Building DEBUG: Placing ID: ", res_id, " Coords: ", a_coords, " Source: ", s_id)
 			actual_map.set_cell(map_pos, s_id, a_coords)
 			if actual_map is TileMapLayer:
 				actual_map.update_internals()
@@ -642,8 +741,8 @@ func place_building() -> void:
 				
 				# 1. 优先尝试自定义家具贴图集 (确保放置后视觉一致)
 				var custom_path = "res://assets/world/custom_furniture.png"
-				if FileAccess.file_exists(custom_path):
-					var custom_tex = load(custom_path)
+				if ResourceLoader.exists(custom_path):
+					var custom_tex = ResourceLoader.load(custom_path)
 					if custom_tex and resource_data.id:
 						var region = Rect2(0,0,0,0)
 						match resource_data.id:
@@ -724,8 +823,8 @@ func place_building() -> void:
 			var scene_sprite = new_building.get_node_or_null("Sprite2D")
 			if scene_sprite and resource_data.id:
 				var custom_path = "res://assets/world/custom_furniture.png"
-				if FileAccess.file_exists(custom_path):
-					var custom_tex = load(custom_path)
+				if ResourceLoader.exists(custom_path):
+					var custom_tex = ResourceLoader.load(custom_path)
 					var region = Rect2(0,0,0,0)
 					match resource_data.id:
 						"workbench", "workbench_item": region = Rect2(0, 0, 32, 16)
@@ -751,5 +850,8 @@ func place_building() -> void:
 		# 3. 注册到城邦系统
 		if get_node_or_null("/root/SettlementManager"):
 			get_node("/root/SettlementManager").register_building(new_building, resource_data)
+			
+		# 4. 如果建筑有 save_data 功能且是新放置的，确保它能自描述
+		# (BuildingNode 现在已经有了 save_data 会返回 resource_id)
 	
 	print("建筑已放置")

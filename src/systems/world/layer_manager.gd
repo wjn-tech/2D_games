@@ -51,6 +51,7 @@ func register_layer(index: int, node: Node) -> void:
 	# 物理隔离核心逻辑：
 	# 为每个图层唯一化 TileSet 并设置其碰撞层位
 	if node is TileMapLayer:
+		node.collision_enabled = not bool(node.get_meta("background_only", false))
 		if node.tile_set:
 			# 复制一份 TileSet 资源以实现独立配置
 			node.tile_set = node.tile_set.duplicate()
@@ -104,21 +105,22 @@ func switch_to_layer(layer_index: int) -> void:
 		
 		# 视觉反馈：非活跃层半透明
 		if layer.has_method("set_modulate"):
-			# 如果是背景层 (Layer 1/2)，在活跃层为 Layer 0 时，保持一定可见度
-			if not is_active and idx > 0 and active_layer == 0:
-				layer.modulate = Color(0.8, 0.8, 0.8, 0.7)
+			# 如果是背景层 (Layer 1/2)，在活跃层为 Layer 0 时，保持一定可见度并确保 Z-Index 正确
+			if idx > active_layer:
+				# 背景层 (比当前活跃层更深的层)
+				# 必须有足够的亮度让玩家看到它们，同时要有足够的区分度 (调淡、带点蓝灰色偏)
+				layer.modulate = Color(0.85, 0.85, 0.9, 0.5) # 提高亮度，略微带蓝紫色偏，使其更像“远景/背景墙”
+				layer.z_index = -20 * (idx - active_layer) # 确保严格在当前层后面 (例如 -20, -40)
+			elif idx < active_layer:
+				# 前景层 (理论上挡在玩家面前)，应该半透明或者彻底隐藏
+				layer.modulate = Color(1, 1, 1, 0.3)
+				layer.z_index = 20 * (active_layer - idx) # 在面前 (+20)
 			else:
-				layer.modulate = Color.WHITE if is_active else layer_dim_color
-		
-		# Z-Index 渲染排序
-		# 核心逻辑：背景图层 (idx > 0) 必须使用负的 Z-Index 确保在角色后方
-		# 前景图层 (idx = 0) 使用 0 或正值
-		if layer is CanvasItem:
-			if idx == 0:
-				layer.z_index = 0 if is_active else -5
-			else:
-				# idx 为 1, 2... 的层作为背景，Z-Index 为负
-				layer.z_index = -idx * 50 + (0 if is_active else -10)
+				# 当前活跃层
+				layer.modulate = Color.WHITE
+				layer.z_index = 0
+				
+	# 仅更新玩家及其视野内的实体
 				
 	# 仅更新玩家及其视野内的实体
 	var player = tree.get_first_node_in_group("player")

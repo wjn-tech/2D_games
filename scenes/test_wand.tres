@@ -25,7 +25,6 @@ display_name = "ITEM_CYAN_CRYSTAL"
 wand_visual_color = Color(0.2, 0.9, 1, 1)
 wand_logic_type = "battery"
 
-
 [sub_resource type="Resource" id="Resource_1jdx5"]
 script = ExtResource("3_1jdx5")
 display_name = "ITEM_BLUE_POWER_SOURCE"

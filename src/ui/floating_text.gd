@@ -3,6 +3,9 @@ extends Label
 class_name FloatingText
 
 func _ready():
+	# 确保漂浮文字不会拦截鼠标输入
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
 	# Set default properties if not set
 	horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vertical_alignment = VERTICAL_ALIGNMENT_CENTER

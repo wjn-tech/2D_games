@@ -1,0 +1,26 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/systems/npc/projectiles/sand_ball.gd" id="1_script"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_1"]
+radius = 6.0
+
+[node name="BoneShard" type="Area2D"]
+collision_layer = 0
+collision_mask = 17
+script = ExtResource("1_script")
+speed = 520.0
+damage = 10.0
+lifetime = 3.2
+damage_type = "physical"
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_1")
+
+[node name="ColorRect" type="ColorRect" parent="."]
+offset_left = -3.0
+offset_top = -5.0
+offset_right = 3.0
+offset_bottom = 5.0
+rotation = 0.5
+color = Color(0.9, 0.9, 0.85, 1)

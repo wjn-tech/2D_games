@@ -271,7 +271,7 @@ var town_npc_pool = [
 	{
 		"name": "商人",
 		"scene": "res://scenes/npc/merchant.tscn",
-		"condition": func(): return GameState.player_data.gold >= 50,
+		"condition": func(): return GameState.player_data != null and GameState.player_data.money >= 50,
 		"recruited": false
 	},
 	{

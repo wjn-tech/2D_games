@@ -29,7 +29,14 @@ The system must provide a globally accessible `AudioManager` Autoload to central
 - **Then** `AudioManager` must start the "RainLoop" in the `Ambient` stream.
 - **And** the "RainLoop" should loop indefinitely until another ambience is called.
 
-### 2. Audio Library Mapping
-The `AudioManager` must map string identifiers to `AudioStream` resources for decoupled access.
-- **Requirement**: An internal `Dictionary` must store `Key -> Resource` pairs.
-- **Requirement**: Invalid sound keys must log a warning instead of crashing the game.
+#### Scenario: Muffled Underground Audio
+- **Given** the player is moving below the `surface_height`.
+- **When** the player's Y position exceeds the biome surface threshold.
+- **Then** `AudioManager` must enable the Low-Pass Filter (LPF) on the `Ambient` bus.
+- **And** when returning to the surface, the LPF must be disabled.
+
+### 2. Audio settings
+The system must expose volume control for each audio bus to the settings menu.
+- **Requirement**: `AudioManager` must provide methods to set volume in decibels or percentage (0-100).
+- **Requirement**: Volume settings must persist via `SettingsManager`.
+

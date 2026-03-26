@@ -81,8 +81,6 @@ func _perform_succession_async(child_data: CharacterData) -> void:
 		elif "npc_data" in npc and npc.npc_data:
 			target_uuid = npc.npc_data.uuid
 			
-		print("  - 检查 NPC: ", npc.name, " (UUID: ", target_uuid, ")")
-		
 		if target_uuid != -1 and target_uuid == child_data.uuid:
 			spawn_pos = npc.global_position
 			print("Reincarnation: 找到继承人实体，位置: ", spawn_pos)
@@ -91,31 +89,41 @@ func _perform_succession_async(child_data: CharacterData) -> void:
 			if npc is CharacterBody2D:
 				npc.velocity = Vector2.ZERO # 停止任何残留速度
 			
-			# 立即隐藏并停止处理，确保在 queue_free 生效前就在视觉上消失
+			# 立即彻底移除子嗣实体，防止继承后世间还存在一个一模一样的自己
 			npc.visible = false
 			npc.process_mode = Node.PROCESS_MODE_DISABLED
+			npc.remove_from_group("npcs") # 立即移出组，防止被后续逻辑误判
 			
 			heir_found = true
-			npc.queue_free() # Remove NPC instance as it becomes Player
+			npc.free() # 使用 free() 强制立即释放，而不是 wait queue_free
 			break
 			
 	if not heir_found:
 		# Fallback to current camera pos or player death pos
 		spawn_pos = GameState.get_meta("last_player_pos", Vector2.ZERO)
+		print("Reincarnation: 未找到继承人实体，使用保底位置: ", spawn_pos)
 		
 	# Store position Meta for GameManager to pick up
-	# 关键：我们设置 meta 并在 GameManager 中立即应用
+	# 关键：设置位置元数据
 	GameState.set_meta("load_spawn_pos", spawn_pos)
 	
-	# Reset state
-	GameState.player_data.life_span = child_data.max_life_span
-	# 确保属性完整性，新角色以满状态开始
-	GameState.player_data.health = GameState.player_data.max_health
+	# 显式重置新角色的生命状态，防止继承了死亡状态的数据
+	child_data.health = child_data.max_health
+	child_data.life_span = child_data.max_life_span
+	child_data.current_age = 20.0 # 继承后统一设为成年起始年龄（或根据需求保持 child_data.age）
 	
 	UIManager.close_window("Reincarnation")
 	
 	# 3. 切换状态 (GameManager 现在会处理从 REINCARNATING 到 PLAYING 的玩家重置逻辑)
 	GameManager.change_state(GameManager.State.PLAYING)
 	
-	# 4. 淡入回游戏
-	await UIManager.play_fade(false, 0.6)
+	# 4. 强制在本帧刷新玩家位置（双重保险）
+	var player = get_tree().get_first_node_in_group("player")
+	if player:
+		player.global_position = spawn_pos
+		if player.has_method("refresh_data"):
+			player.refresh_data()
+			
+	# 5. 延迟恢复淡入，确保新场景/角色已就绪
+	await get_tree().create_timer(0.2).timeout
+	UIManager.play_fade(false, 0.6)

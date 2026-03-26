@@ -41,5 +41,6 @@ func reincarnate(child_index: int) -> void:
 	children.remove_at(child_index)
 	
 	# 触发世界刷新或玩家重置
-	SaveManager.save_game()
+	var slot_id := SaveManager.current_slot_id if SaveManager.current_slot_id >= 0 else 1
+	SaveManager.save_game(slot_id)
 	get_tree().reload_current_scene()

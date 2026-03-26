@@ -1,6 +1,6 @@
 extends Control
 
-@onready var main_layout = /MainLayout
+@onready var main_layout = get_node("MainLayout")
 @onready var content_hbox = main_layout.get_node("ContentHBox")
 @onready var inventory_col = content_hbox.get_node("InventoryColumn")
 @onready var stats_col = content_hbox.get_node("StatsColumn")

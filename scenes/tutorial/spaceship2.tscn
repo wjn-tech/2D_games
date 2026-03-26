@@ -8,7 +8,7 @@
 [ext_resource type="Texture2D" uid="uid://c8akbjlcjjqnv" path="res://assets/visuals/spaceship/prop_cryopod.png" id="6_cryopod"]
 [ext_resource type="Texture2D" uid="uid://ck6m3wn8213eg" path="res://assets/visuals/spaceship/prop_console.png" id="7_console"]
 [ext_resource type="Texture2D" uid="uid://br6jbdh2d1mxo" path="res://assets/visuals/spaceship/prop_pipe_broken.png" id="8_pipe"]
-[ext_resource type="PackedScene" uid="uid://court_mage_entity_001" path="res://scenes/entities/court_mage.tscn" id="10_mage_scene"]
+[ext_resource type="PackedScene" path="res://scenes/entities/court_mage.tscn" id="10_mage_scene"]
 
 [sub_resource type="Gradient" id="Gradient_light"]
 colors = PackedColorArray(1, 1, 1, 1, 0, 0, 0, 0)
@@ -85,7 +85,6 @@ texture_scale = 3.0
 [node name="ConsoleLight" type="PointLight2D" parent="EnvironmentController/Lights"]
 position = Vector2(250, 40)
 color = Color(0.2, 1, 0.2, 1)
-energy = 1.0
 texture = SubResource("GradientTexture2D_light")
 texture_scale = 0.5
 
@@ -107,7 +106,6 @@ color = Color(1, 0.8, 0.2, 1)
 [node name="Spark2" type="CPUParticles2D" parent="EnvironmentController/SparkEmitters"]
 position = Vector2(250, -50)
 emitting = false
-amount = 8
 lifetime = 0.4
 explosiveness = 0.6
 spread = 180.0
@@ -133,7 +131,6 @@ scale_amount_max = 5.0
 color = Color(0.8, 0.8, 0.8, 0.4)
 
 [node name="Structure" type="StaticBody2D" parent="."]
-collision_layer = 1
 
 [node name="Floor" type="CollisionPolygon2D" parent="Structure"]
 position = Vector2(0, 50)

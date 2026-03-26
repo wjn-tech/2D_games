@@ -10,6 +10,11 @@ const WALL_SCENE = preload("res://scenes/tutorial/breakable_wall.tscn")
 const DEBRIS_SCENE = preload("res://scenes/vfx/ship_debris.tscn")
 const WIND_LINES_SCENE = preload("res://scenes/vfx/falling_wind_lines.tscn")
 const SHIELD_SCENE = preload("res://scenes/vfx/mage_shield.tscn")
+const STARTUP_PLAYER_OFFSET := Vector2(-200, -50)
+const TUTORIAL_START_HEIGHT_ABOVE_SPAWN := 1200.0
+const REENTRY_PRELOAD_RADIUS := 2
+const REENTRY_PRELOAD_CORRIDOR_DEPTH := 6
+const REENTRY_PRELOAD_TIMEOUT_FRAMES := 720
 
 var _fall_duration: float = 10.0
 var _fall_timer: float = 0.0
@@ -39,7 +44,15 @@ enum Step {
 	COMPLETED
 }
 
-var current_step: Step = Step.INIT
+var current_step: Step = Step.INIT:
+	set(v):
+		current_step = v
+		# 实时同步进度到玩家数据，确保随时存档都能保留状态
+		if GameState.player_data:
+			GameState.player_data.tutorial_step = int(v)
+			if v == Step.COMPLETED:
+				GameState.player_data.tutorial_completed = true
+
 var camera: Camera2D
 var cinematic: Node # Changed from CinematicOverlay to Node to support TerminalOverlay
 var tracker: ObjectiveTracker
@@ -47,23 +60,120 @@ var tracker: ObjectiveTracker
 var _shake_amplitude: float = 0.0
 var _original_cam_offset: Vector2 = Vector2.ZERO
 var _movement_start_pos: Vector2 = Vector2.ZERO
+var _tutorial_runtime_active: bool = false
+var _data_ready_event_received: bool = false
+var _startup_init_done: bool = false
 
 func _ready() -> void:
-	# 1. 验证是否运行教程
-	var is_tutorial_scene = get_tree().current_scene.scene_file_path.contains("tutorial")
-	if not GameManager.is_new_game and not is_tutorial_scene:
-		process_mode = Node.PROCESS_MODE_DISABLED
+	# 显式隐藏，等待数据初始化
+	visible = false
+	process_mode = Node.PROCESS_MODE_DISABLED
+	
+	# 等待 GameManager 完成数据加载
+	if EventBus:
+		if not EventBus.player_data_refreshed.is_connected(_on_data_ready):
+			EventBus.player_data_refreshed.connect(_on_data_ready)
+	if GameManager and not GameManager.state_changed.is_connected(_on_game_state_changed):
+		GameManager.state_changed.connect(_on_game_state_changed)
+
+	# 容错：如果节点创建时数据已就绪，则直接标记并尝试启动门控。
+	if GameState and GameState.player_data:
+		_data_ready_event_received = true
+	call_deferred("_attempt_startup_gate")
+
+func _exit_tree() -> void:
+	if EventBus and EventBus.player_data_refreshed.is_connected(_on_data_ready):
+		EventBus.player_data_refreshed.disconnect(_on_data_ready)
+	if GameManager and GameManager.state_changed.is_connected(_on_game_state_changed):
+		GameManager.state_changed.disconnect(_on_game_state_changed)
+
+func _on_data_ready() -> void:
+	_data_ready_event_received = true
+	_attempt_startup_gate()
+
+func _on_game_state_changed(_new_state: int) -> void:
+	_attempt_startup_gate()
+
+func _is_world_runtime_ready() -> bool:
+	if not GameManager:
+		return false
+	var is_playing := GameManager.current_state == GameManager.State.PLAYING
+	var startup_ready := is_playing
+	if GameManager.has_method("is_world_startup_ready"):
+		startup_ready = bool(GameManager.is_world_startup_ready())
+	return is_playing and startup_ready
+
+func _attempt_startup_gate() -> void:
+	if _startup_init_done:
+		return
+	if not _data_ready_event_received:
+		return
+	if not _is_world_runtime_ready():
 		visible = false
+		process_mode = Node.PROCESS_MODE_DISABLED
+		return
+	_startup_init_done = true
+	_activate_tutorial_if_needed()
+
+func _activate_tutorial_if_needed() -> void:
+	# 1. 验证是否运行教程
+	
+	# 首先获取玩家数据状态
+	var tutorial_active = false
+	var saved_step = 0
+	if GameState.player_data:
+		if not GameState.player_data.tutorial_completed:
+			tutorial_active = true
+			saved_step = GameState.player_data.tutorial_step
+			
+	# 如果是新游戏，强制激活
+	if GameManager.is_new_game:
+		tutorial_active = true
+		saved_step = 0
+		
+	# 如果是一个纯粹的教程场景文件（例如独立测试场景），也强制激活
+	# 在导出环境中直接访问 scene_file_path 可能不可靠，改为优先使用存档/Meta 或 player_data
+	var is_tutorial_scene_file = false
+	var cs = get_tree().current_scene
+	if cs:
+		var sfp = ""
+		# 尝试安全地读取 scene_file_path（有些运行时场景可能为空或未设置）
+		if str(cs.scene_file_path) != "null" and cs.scene_file_path != null and cs.scene_file_path != "":
+			sfp = str(cs.scene_file_path)
+		is_tutorial_scene_file = sfp.find("tutorial") != -1
+
+	# 另外，如果 SaveManager/加载逻辑通过 GameState 保存了 pending_scene_path，也检查该字段
+	if not tutorial_active:
+		if GameState.has_meta("pending_scene_path"):
+			var pending = GameState.get_meta("pending_scene_path")
+			if typeof(pending) == TYPE_STRING and str(pending).find("tutorial") != -1:
+				tutorial_active = true
+				saved_step = GameState.player_data.tutorial_step if GameState.player_data else 0
+
+	if not tutorial_active and not is_tutorial_scene_file:
+		_tutorial_runtime_active = false
 		queue_free()
 		return
 		
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	visible = true
+	_tutorial_runtime_active = true
 	
-	# 2. 等待初始化
-	await get_tree().process_frame
+	# 使用 cast 或直接赋值 (GDScript 2.0 能够处理 int -> enum)
+	current_step = saved_step as Step
 	
-	visible = true # Explicitly show tutorial scene
-	
+	# 2. 初始化逻辑 (原 _ready 的剩余部分)
+	_init_tutorial_elements()
+
+func should_override_startup_spawn() -> bool:
+	return _tutorial_runtime_active and current_step != Step.COMPLETED
+
+func get_startup_spawn_position() -> Vector2:
+	return _compute_tutorial_start_player_pos()
+
+func _init_tutorial_elements() -> void:
+	_align_to_world_spawn_anchor()
+
 	# 找到合适的主角 (优先使用场景中已有的 Player，避免 TutorialSpaceship 自带的 Player 造成双主角冲突)
 	var global_player = get_tree().get_first_node_in_group("player")
 	if has_node("Player"):
@@ -79,12 +189,7 @@ func _ready() -> void:
 		
 	# Teleport Player to Ship
 	if player:
-		# If we are in Main scene, the spaceship is at (0, -50000) by default, 
-		# but let's force the manager position just in case or use local offsets.
-		# The Manager is the root of the spaceship scene, so its children (Wall, Mage) are local.
-		# But in Main.tscn, the instance is at (0, -50000).
-		# We should move the player relative to the manager.
-		player.global_position = self.global_position + Vector2(-200, -50)
+		player.global_position = get_startup_spawn_position()
 		player.velocity = Vector2.ZERO
 		
 	# 清除 UIManager 的黑屏淡入
@@ -192,55 +297,146 @@ func _process_crash_fall(delta: float) -> void:
 func _on_crash_impact() -> void:
 	current_step = Step.COMPLETED # Or a new wake up step
 	set_process(false)
-	
-	# Wake Up Sequence
+
+	if EventBus:
+		EventBus.player_movement_locked.emit(true)
+		EventBus.player_input_enabled.emit(false)
+
+	if UIManager and UIManager.has_method("show_loading_overlay"):
+		UIManager.show_loading_overlay("世界同步中", "静默预加载", 0.0, "正在预热坠落落点周边区块...")
 	if UIManager:
-		UIManager.play_fade(true, 0.5) # Flash white/black
-	
-	await get_tree().create_timer(1.0).timeout
-	
-	if player:
-		# Teleport to safe ground
-		player.global_position = Vector2(0, 0) # Ground Zero
-		player.velocity = Vector2.ZERO
-		player.rotation_degrees = -90.0 # Lying down
-		
-		# Remove attached VFX (Shield, Wind)
-		for child in player.get_children():
-			if child.name.contains("MageShield") or child.name.contains("Wind"):
-				child.queue_free()
-		# Remove camera attached VFX
-		if camera:
-			for child in camera.get_children():
-				if child.name.contains("Wind"):
-					child.queue_free()
-					
-	# Restore Environment
-	if UIManager:
-		UIManager.play_fade(false, 2.0)
-		
-	# Camera restore
+		await UIManager.play_fade(true, 0.45)
+
+	var reentry_target := _resolve_world_reentry_target()
+	await _prepare_world_reentry(reentry_target)
+
 	if camera:
 		camera.offset = _original_cam_offset
-		
-	await get_tree().create_timer(2.0).timeout
-	
-	# Stand up
+
+	if UIManager:
+		await UIManager.play_fade(false, 1.0)
+		if UIManager.has_method("hide_loading_overlay"):
+			await UIManager.hide_loading_overlay(0.18)
+
 	if player:
+		player.rotation_degrees = -90.0
 		var tween = create_tween()
-		tween.tween_property(player, "rotation_degrees", 0.0, 1.5).set_trans(Tween.TRANS_SINE)
+		tween.tween_property(player, "rotation_degrees", 0.0, 1.2).set_trans(Tween.TRANS_SINE)
 		await tween.finished
-		
-		# Enable Controls
+
+	if EventBus:
 		EventBus.player_movement_locked.emit(false)
 		EventBus.player_input_enabled.emit(true)
-		
-		# Tutorial Done!
-		GameManager.is_new_game = false
-		
-		# Final cleanup: Remove Tutorial Spaceship Scene (self)
-		# We must defer this to avoid messing up the current frame
-		queue_free()
+
+	GameManager.is_new_game = false
+	if InfiniteChunkManager and InfiniteChunkManager.has_method("set_enrichment_suppressed"):
+		InfiniteChunkManager.set_enrichment_suppressed(false)
+	queue_free()
+
+func _align_to_world_spawn_anchor() -> void:
+	var tutorial_player_target := _compute_tutorial_start_player_pos()
+	global_position = tutorial_player_target - STARTUP_PLAYER_OFFSET
+
+func _compute_tutorial_start_player_pos() -> Vector2:
+	var scene_root := get_tree().current_scene
+	if scene_root:
+		var world_gen = scene_root.find_child("WorldGenerator", true, false)
+		if world_gen and world_gen.has_method("get_spawn_position"):
+			var world_spawn: Vector2 = world_gen.get_spawn_position()
+			return world_spawn + Vector2(0.0, -TUTORIAL_START_HEIGHT_ABOVE_SPAWN)
+	return global_position + STARTUP_PLAYER_OFFSET
+
+func _resolve_world_reentry_target() -> Vector2:
+	var scene_root := get_tree().current_scene
+	if scene_root:
+		var world_gen = scene_root.find_child("WorldGenerator", true, false)
+		if world_gen and world_gen.has_method("get_spawn_position"):
+			return world_gen.get_spawn_position()
+	if player:
+		return player.global_position + Vector2(0.0, 240.0)
+	return Vector2.ZERO
+
+func _prepare_world_reentry(target_pos: Vector2) -> bool:
+	if not is_instance_valid(player):
+		return false
+
+	player.process_mode = Node.PROCESS_MODE_DISABLED
+	player.velocity = Vector2.ZERO
+	_cleanup_reentry_vfx()
+
+	if not InfiniteChunkManager:
+		player.global_position = target_pos
+		player.process_mode = Node.PROCESS_MODE_INHERIT
+		return true
+
+	var required_chunks := _collect_reentry_required_chunks(target_pos)
+	if InfiniteChunkManager.has_method("set_startup_streaming_mode"):
+		InfiniteChunkManager.set_startup_streaming_mode(true)
+	if InfiniteChunkManager.has_method("prime_required_chunks"):
+		InfiniteChunkManager.prime_required_chunks(required_chunks)
+	else:
+		InfiniteChunkManager.update_player_vicinity(target_pos)
+
+	var remaining_frames := REENTRY_PRELOAD_TIMEOUT_FRAMES
+	var loaded_count := 0
+	while remaining_frames > 0:
+		loaded_count = 0
+		for coord in required_chunks:
+			if InfiniteChunkManager.loaded_chunks.has(coord):
+				loaded_count += 1
+		var progress := float(loaded_count) / float(maxi(required_chunks.size(), 1))
+		if UIManager and UIManager.has_method("update_loading_overlay"):
+			UIManager.update_loading_overlay(progress, "静默预加载", "正在同步区块 %d/%d..." % [loaded_count, required_chunks.size()])
+		if loaded_count >= required_chunks.size():
+			break
+		await get_tree().process_frame
+		remaining_frames -= 1
+
+	player.global_position = target_pos
+	var safe_ground = InfiniteChunkManager.find_safe_ground(target_pos)
+	if safe_ground != null:
+		player.global_position = safe_ground + Vector2(0, -2)
+	InfiniteChunkManager.update_player_vicinity(player.global_position)
+
+	if InfiniteChunkManager.has_method("set_startup_streaming_mode"):
+		InfiniteChunkManager.set_startup_streaming_mode(false, 45)
+	player.process_mode = Node.PROCESS_MODE_INHERIT
+
+	return loaded_count >= required_chunks.size()
+
+func _collect_reentry_required_chunks(target_pos: Vector2) -> Array:
+	if not InfiniteChunkManager:
+		return []
+
+	var center_chunk: Vector2i = InfiniteChunkManager.get_chunk_coord(target_pos)
+	var required_chunks: Array = []
+	for x in range(center_chunk.x - REENTRY_PRELOAD_RADIUS, center_chunk.x + REENTRY_PRELOAD_RADIUS + 1):
+		for y in range(center_chunk.y - REENTRY_PRELOAD_RADIUS, center_chunk.y + REENTRY_PRELOAD_RADIUS + 1):
+			var coord := Vector2i(x, y)
+			if InfiniteChunkManager.has_method("get_canonical_chunk_coord"):
+				coord = InfiniteChunkManager.get_canonical_chunk_coord(coord)
+			if not required_chunks.has(coord):
+				required_chunks.append(coord)
+
+	for x in range(center_chunk.x - 1, center_chunk.x + 2):
+		for y in range(center_chunk.y + 1, center_chunk.y + REENTRY_PRELOAD_CORRIDOR_DEPTH + 1):
+			var corridor_coord := Vector2i(x, y)
+			if InfiniteChunkManager.has_method("get_canonical_chunk_coord"):
+				corridor_coord = InfiniteChunkManager.get_canonical_chunk_coord(corridor_coord)
+			if not required_chunks.has(corridor_coord):
+				required_chunks.append(corridor_coord)
+	return required_chunks
+
+func _cleanup_reentry_vfx() -> void:
+	if not is_instance_valid(player):
+		return
+	for child in player.get_children():
+		if child.name.contains("MageShield") or child.name.contains("Wind"):
+			child.queue_free()
+	if camera:
+		for child in camera.get_children():
+			if child.name.contains("Wind"):
+				child.queue_free()
 
 # --- 核心教程步骤 ---
 
@@ -460,9 +656,19 @@ func _on_editor_closed() -> void:
 	if current_step >= Step.WAIT_INVENTORY:
 		EventBus.player_input_enabled.emit(true)
 		
-	if current_step == Step.WAIT_FIX_SPELL or current_step == Step.WAIT_LOGIC_TAB:
-		# 如果逻辑已经合法，或者用户已经切换了页签直接退出了
+	if current_step == Step.WAIT_FIX_SPELL or current_step == Step.WAIT_LOGIC_TAB or current_step == Step.WAIT_EDITOR:
+		# 修复：教程逻辑检测不仅依赖于刚刚关闭的编辑器，而是检测玩家当前装备的任何合法法杖
 		var wand = GameState.inventory.get_equipped_item()
+		
+		# 如果当前位没有，遍历快捷栏看看有没有合适的法杖
+		if not wand or not (wand is WandItem):
+			for i in range(GameState.inventory.hotbar_capacity):
+				var slot = GameState.inventory.hotbar.get_slot(i)
+				if slot.item and slot.item is WandItem:
+					wand = slot.item
+					# 自动切换到该槽位，方便玩家使用
+					GameState.inventory.select_hotbar_slot(i)
+					break
 		
 		var logic_ok = false
 		if wand and wand is WandItem:
@@ -531,6 +737,8 @@ func _on_target_destroyed() -> void:
 func _start_crash_sequence() -> void:
 	current_step = Step.CRASH_SEQUENCE
 	_shake_amplitude = 15.0
+	if InfiniteChunkManager and InfiniteChunkManager.has_method("set_enrichment_suppressed"):
+		InfiniteChunkManager.set_enrichment_suppressed(true)
 	
 	# 1. Hide the spaceship structure and mage
 	if env_controller and env_controller.has_node("ShipTiles"):

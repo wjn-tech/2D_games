@@ -49,14 +49,45 @@ var nameplate: Control
 var hp_bar: ProgressBar
 var name_label: Label
 
+func _is_hostile_runtime() -> bool:
+	if not npc_data:
+		return false
+	return npc_data.alignment == "Hostile" or npc_data.npc_type == "Hostile"
+
+func _is_town_runtime() -> bool:
+	return npc_data != null and npc_data.npc_type == "Town"
+
+func refresh_runtime_groups() -> void:
+	_set_group_membership("npcs", true)
+	_set_group_membership("town_npcs", _is_town_runtime())
+	_set_group_membership("hostile_npcs", _is_hostile_runtime())
+	_set_group_membership("enemies", _is_hostile_runtime())
+
+func _set_group_membership(group_name: String, should_be_present: bool) -> void:
+	if should_be_present:
+		if not is_in_group(group_name):
+			add_to_group(group_name)
+	elif is_in_group(group_name):
+		remove_from_group(group_name)
+
+func _sync_player_collision_rules() -> void:
+	var player = get_tree().get_first_node_in_group("player")
+	if not player:
+		return
+
+	if _is_hostile_runtime():
+		remove_collision_exception_with(player)
+	else:
+		add_collision_exception_with(player)
+
 func _ready() -> void:
 	spawn_position = global_position
-	
-	# 新增：如果是友方 NPC，则与玩家忽略物理碰撞
-	if npc_data and npc_data.npc_type != "Hostile":
-		var player = get_tree().get_first_node_in_group("player")
-		if player:
-			add_collision_exception_with(player)
+
+	if not npc_data:
+		npc_data = CharacterData.new()
+
+	refresh_runtime_groups()
+	_sync_player_collision_rules()
 	
 	if npc_data:
 		# 加载数据驱动的行为树
@@ -99,9 +130,6 @@ func _ready() -> void:
 	#	if animator.sprite_frames.has_animation("idle"):
 	#		animator.play("idle")
 
-	if not npc_data:
-		npc_data = CharacterData.new()
-		
 	# --- Apply Minimalist Config ---
 	if min_visual and min_visual.has_method("setup_from_npc"):
 		# Use display_name (like "Slime") or alignment
@@ -113,11 +141,38 @@ func _ready() -> void:
 	# if npc_data.alignment == "Hostile":
 	# 	modulate = Color(1.0, 0.4, 0.4)
 
-	add_to_group("npcs")
-	# 自动归类敌人
-	if npc_data and npc_data.alignment == "Hostile":
-		add_to_group("enemies")
+	# --- Ensure Spell Pool is Populated for Absorption ---
+	if _is_hostile_runtime() and npc_data.get("intrinsic_spell_pool") != null and npc_data.intrinsic_spell_pool.is_empty():
+		_populate_intrinsic_spell_pool()
 
+	_setup_runtime_components()
+
+func _populate_intrinsic_spell_pool() -> void:
+	if not npc_data or npc_data.get("intrinsic_spell_pool") == null: return
+	var d_name = npc_data.display_name.to_lower()
+	var pool: Array[String] = []
+	
+	# Common Spells
+	var common = ["projectile_spark_bolt", "action_projectile", "modifier_speed", "modifier_delay"]
+	pool.append_array(common)
+	
+	# Specific Spells based on name/type
+	if "slime" in d_name or "史莱姆" in d_name:
+		pool.append_array(["projectile_slime", "modifier_element_slime"])
+	elif "skeleton" in d_name or "bone" in d_name or "骨" in d_name:
+		pool.append_array(["modifier_pierce", "projectile_magic_bolt", "modifier_damage"])
+	elif "eye" in d_name or "眼" in d_name:
+		pool.append_array(["projectile_blackhole", "projectile_teleport"])
+	elif "fire" in d_name or "火" in d_name:
+		pool.append_array(["modifier_element_fire", "projectile_tnt"])
+	elif "ice" in d_name or "冰" in d_name:
+		pool.append_array(["modifier_element_ice", "projectile_magic_bolt"])
+	elif "boss" in d_name:
+		pool.append_array(["projectile_blackhole", "modifier_damage_plus", "logic_splitter", "logic_sequence"])
+		
+	npc_data.intrinsic_spell_pool = pool
+
+func _setup_runtime_components() -> void:
 	# 实例化气泡对话框 (保留用于手动say，但移除自动闲聊)
 	var bubble_scene = load("res://scenes/ui/speech_bubble.tscn")
 	if bubble_scene:
@@ -128,7 +183,7 @@ func _ready() -> void:
 	# 初始化头顶信息 (种族与血量)
 	_setup_nameplate()
 	_setup_visual_cue_component()
-	
+
 	# 更新初始成长视觉
 	update_growth_visual()
 
@@ -136,52 +191,52 @@ func _ready() -> void:
 	collision_layer = LayerManager.LAYER_NPC
 	# NPC 默认位于第 0 层 (LAYER_WORLD_0)
 	collision_mask = LayerManager.LAYER_WORLD_0
-	
+
 	if interaction_area:
 		interaction_area.collision_layer = LayerManager.LAYER_INTERACTION
 		interaction_area.collision_mask = 0
-		
+
 	# 同步初始数据 (在行为树启动前执行，确保变量可用)
 	sync_data_to_blackboard()
 
-	# 初始化 LimboHSM
-	if hsm:
-		hsm.initialize(self)
-		
-		if bt_player and bt_player.blackboard:
-			# 修复：LimboHSM 的 blackboard 属性在某些版本中是只读的，
-			# 我们应该通过其内部方法或在初始化后同步数据。
-			# 另一种方式是让 HSM 直接使用代理的黑板（如果插件支持）
-			# 这里采用手动同步关键变量的方式，确保 target 能互通
-			print("[BaseNPC] HSM initialized with blackboard.")
-		
-		# 强制设置初始状态
-		var idle_state = hsm.get_node_or_null("Idle")
-		var combat_state = hsm.get_node_or_null("Combat")
-		var home_state = hsm.get_node_or_null("Home")
-		
-		if idle_state:
-			print("[BaseNPC] Setting initial state to Idle.")
-			hsm.initial_state = idle_state
-		else:
-			push_error("[BaseNPC] CRITICAL: Idle state node not found!")
-			
-		# 关键修复：注册状态转换
-		if idle_state and combat_state:
-			print("[BaseNPC] Registering HSM transitions.")
-			hsm.add_transition(idle_state, combat_state, &"enemy_detected")
-			hsm.add_transition(combat_state, idle_state, &"threat_cleared")
-			
-			if home_state:
-				hsm.add_transition(idle_state, home_state, &"night_started")
-				hsm.add_transition(home_state, idle_state, &"day_started")
-				hsm.add_transition(combat_state, home_state, &"night_started")
-				hsm.add_transition(home_state, combat_state, &"enemy_detected")
-		else:
-			push_error("[BaseNPC] CRITICAL: Cannot register transitions, missing states.")
-			
-		hsm.set_active(true)
-		print("[BaseNPC] HSM active set to true.")
+	_initialize_hsm()
+
+func _initialize_hsm() -> void:
+	if not hsm:
+		return
+
+	hsm.initialize(self)
+
+	if bt_player and bt_player.blackboard:
+		print("[BaseNPC] HSM initialized with blackboard.")
+
+	# 强制设置初始状态
+	var idle_state = hsm.get_node_or_null("Idle")
+	var combat_state = hsm.get_node_or_null("Combat")
+	var home_state = hsm.get_node_or_null("Home")
+
+	if idle_state:
+		print("[BaseNPC] Setting initial state to Idle.")
+		hsm.initial_state = idle_state
+	else:
+		push_error("[BaseNPC] CRITICAL: Idle state node not found!")
+
+	# 关键修复：注册状态转换
+	if idle_state and combat_state:
+		print("[BaseNPC] Registering HSM transitions.")
+		hsm.add_transition(idle_state, combat_state, &"enemy_detected")
+		hsm.add_transition(combat_state, idle_state, &"threat_cleared")
+
+		if home_state:
+			hsm.add_transition(idle_state, home_state, &"night_started")
+			hsm.add_transition(home_state, idle_state, &"day_started")
+			hsm.add_transition(combat_state, home_state, &"night_started")
+			hsm.add_transition(home_state, combat_state, &"enemy_detected")
+	else:
+		push_error("[BaseNPC] CRITICAL: Cannot register transitions, missing states.")
+
+	hsm.set_active(true)
+	print("[BaseNPC] HSM active set to true.")
 
 func _setup_nameplate() -> void:
 	nameplate = Control.new()
@@ -280,6 +335,8 @@ func sync_data_to_blackboard() -> void:
 	
 	if npc_data:
 		bb.set_var("alignment", npc_data.alignment)
+		bb.set_var("is_hostile", _is_hostile_runtime())
+		bb.set_var("npc_type", npc_data.npc_type)
 		bb.set_var("role", npc_data.role)
 		bb.set_var("display_name", npc_data.display_name)
 		bb.set_var("speed", speed)
@@ -293,6 +350,34 @@ func sync_data_to_blackboard() -> void:
 	var is_night = sm.is_night if sm else false
 	bb.set_var("is_night", is_night)
 	bb.set_var("current_layer", get_meta("current_layer", 0))
+
+func set_combat_target(target: Node2D) -> void:
+	if not is_instance_valid(target):
+		clear_combat_target()
+		return
+
+	set_meta("combat_target", target)
+	if bt_player and bt_player.blackboard:
+		bt_player.blackboard.set_var("target", target)
+
+func get_combat_target():
+	var target = get_meta("combat_target", null)
+	if is_instance_valid(target):
+		return target
+
+	if bt_player and bt_player.blackboard:
+		target = bt_player.blackboard.get_var("target", null)
+		if is_instance_valid(target):
+			set_meta("combat_target", target)
+			return target
+
+	return null
+
+func clear_combat_target() -> void:
+	if has_meta("combat_target"):
+		remove_meta("combat_target")
+	if bt_player and bt_player.blackboard:
+		bt_player.blackboard.set_var("target", null)
 
 func _physics_process(delta: float) -> void:
 	# 0. 击退衰减处理 (Removed in favor of direct velocity manipulation)
@@ -367,16 +452,19 @@ func jump(force_x: float, force_y: float) -> void:
 
 func shoot_at(target_pos: Vector2, projectile_scene: PackedScene) -> void:
 	if not projectile_scene: return
+	var fire_dir = global_position.direction_to(target_pos)
+	if fire_dir == Vector2.ZERO:
+		fire_dir = Vector2.RIGHT
 	var proj = projectile_scene.instantiate()
 	get_parent().add_child(proj)
-	proj.global_position = global_position
+	proj.global_position = global_position + fire_dir * 24.0 + Vector2(0, -8.0)
 	
 	# Ensure enemy projectiles can hit the player and world
 	if proj is CharacterBody2D:
 		proj.collision_mask = LayerManager.LAYER_WORLD_0 | LayerManager.LAYER_PLAYER
 	
 	if proj.has_method("launch"):
-		proj.launch(global_position.direction_to(target_pos))
+		proj.launch(fire_dir)
 
 func _on_velocity_computed(safe_velocity: Vector2) -> void:
 	if ai_type == AIType.FLYER:
@@ -451,11 +539,19 @@ func assign_home(room_info: Dictionary):
 				npc_data.home_pos = l0.to_global(l0.map_to_local(room_info.interior[0]))
 				home_position = npc_data.home_pos
 
-func take_damage(amount: float, _type: String = "physical") -> void:
+func take_damage(amount: float, _type: String = "physical", source: Node = null) -> void:
 	if npc_data:
 		var old_hp = npc_data.health
 		npc_data.health -= amount
 		print(name, " takes damage: ", amount, " | HP: ", old_hp, " -> ", npc_data.health)
+
+		if source is Node2D:
+			if get_node_or_null("/root/FactionManager"):
+				get_node("/root/FactionManager").notify_attack(source, self)
+			if _is_hostile_runtime() and ai_type != AIType.PASSIVE:
+				set_combat_target(source)
+				if hsm:
+					hsm.dispatch("enemy_detected")
 
 		# Check Execution Threshold (20%)
 		if npc_data.health <= npc_data.max_health * 0.2 and npc_data.health > 0:
@@ -477,7 +573,7 @@ func take_damage(amount: float, _type: String = "physical") -> void:
 		_update_hp_bar()
 
 		if npc_data.health <= 0:
-			_die()
+			_die(source)
 
 func update_growth_visual() -> void:
 	if not npc_data: return
@@ -506,16 +602,24 @@ func update_growth_visual() -> void:
 	
 	print(name, " [", npc_data.display_name, "] 尺寸对齐完成: Scale ", target_scale)
 
-func _die() -> void:
+func _die(killer: Node = null) -> void:
 	print(name, " died.")
 	
-	# 触发常规掉落 (Noita 风格)
-	_drop_normal_loot()
-	
-	# 触发群体仇恨
-	var player = get_tree().get_first_node_in_group("player")
-	if player and get_node_or_null("/root/FactionManager"):
-		get_node("/root/FactionManager").notify_attack(player, self)
+	# Vampiric Effect Check
+	if killer and killer.get("is_vampiric"):
+		var caster = killer.get("caster")
+		if caster and caster.get("attributes") and caster.attributes.data:
+			caster.attributes.data.add_max_hp(1.0)
+			# Visual Feedback
+			if UIManager:
+				UIManager.show_floating_text("+1 MaxHP", caster.global_position + Vector2(0, -40), Color.RED)
+
+	# --- MODIFIED: Use SpellAbsorptionManager instead of physical spell loot ---
+	if get_node_or_null("/root/SpellAbsorptionManager"):
+		get_node("/root/SpellAbsorptionManager").handle_npc_death(self)
+	else:
+		# Fallback to normal loot if manager not found (shouldn't happen with Autoload)
+		_drop_normal_loot()
 		
 	# 给予经验奖励
 	if GameState.player_data:
@@ -540,17 +644,8 @@ func _die() -> void:
 	queue_free()
 
 func _drop_normal_loot() -> void:
-	# 基础掉落逻辑：所有 NPC 都有极低概率掉落随机法术，
-	# 特定 NPC 有更高概率掉落特定法术。
-	
-	var drop_chance = 0.05 # 默认 5% 掉落法术
-	if npc_data and npc_data.alignment == "Hostile":
-		drop_chance = 0.1 # 敌对生物 10%
-	
-	if randf() < drop_chance:
-		var spell_id = _get_random_spell_for_npc()
-		if spell_id != "":
-			_spawn_spell_item(spell_id)
+	# REPURPOSED: Only drops gold/materials. Spells are absorbed via SpellAbsorptionManager.
+	pass
 
 func _get_random_spell_for_npc() -> String:
 	var d_name = npc_data.display_name.to_lower()
@@ -591,12 +686,18 @@ func get_uuid() -> int:
 	return -1
 
 func on_ally_attacked(attacker: Node2D) -> void:
+	if not is_instance_valid(attacker) or not npc_data:
+		return
+
 	if npc_data.alignment != "Hostile":
 		npc_data.alignment = "Hostile" # 变敌对
-		if bt_player and bt_player.blackboard:
-			bt_player.blackboard.set_var("target", attacker)
-		if hsm:
-			hsm.dispatch("enemy_detected")
+
+	refresh_runtime_groups()
+	_sync_player_collision_rules()
+	sync_data_to_blackboard()
+	set_combat_target(attacker)
+	if hsm:
+		hsm.dispatch("enemy_detected")
 
 func apply_knockback(force: Vector2) -> void:
 	velocity += force
@@ -765,9 +866,13 @@ func _try_recruit() -> void:
 	if npc_data.loyalty >= 50:
 		npc_data.npc_type = "Town"
 		npc_data.alignment = "Friendly"
+		refresh_runtime_groups()
+		_sync_player_collision_rules()
+		sync_data_to_blackboard()
 		var sm = get_node_or_null("/root/SettlementManager")
 		if sm:
-			sm.recruited_npcs.append(npc_data)
+			if not sm.recruited_npcs.has(npc_data):
+				sm.recruited_npcs.append(npc_data)
 			sm._recalculate_stats()
 			
 		if dm: dm.start_dialogue(npc_data.display_name, ["我愿意加入你的队伍！"], [{"text": "太棒了！", "action": func(): pass}])
@@ -816,9 +921,10 @@ func execute_by_player(player: Node2D) -> void:
 	if player.has_method("set_physics_process"):
 		player.set_physics_process(false)
 	
-	# Pull Effect
+	# Execution Sequence (Invincibility Frame, No Pull)
 	var tween = create_tween()
-	tween.tween_property(self, "global_position", player.global_position, 0.25).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	# Just wait for a moment to emphasize the hit (Invincibility Frame)
+	tween.tween_interval(0.25)
 	tween.tween_callback(func():
 		# Effect
 		if UIManager and UIManager.has_method("show_floating_text"):
@@ -878,18 +984,8 @@ func _spawn_loot(item: Resource, count: int) -> void:
 		loot.call_deferred("setup", item, count, 0.0)
 
 func _spawn_spell_item(spell_id: String) -> void:
-	var spell_item = SpellItem.new()
-	spell_item.id = "spell_scroll_" + spell_id
-	spell_item.spell_unlock_id = spell_id
-	spell_item.display_name = "法术: " + spell_id
-	spell_item.item_type = "Consumable"
-	# Placeholder icon from palette
-	var atlas = AtlasTexture.new()
-	atlas.atlas = load("res://assets/minimalist_palette.png")
-	atlas.region = Rect2(48, 0, 16, 16) # Magic looking region
-	spell_item.icon = atlas
-	
-	_spawn_loot(spell_item, 1)
+	# DEPRECATED: Spells are absorbed as pixels now.
+	pass
 
 func get_inventory():
 	# 移除之前的随机生成逻辑，现在由 WorldGenerator 在生成时初始化

@@ -7,6 +7,7 @@ extends Node
 # --- 常量配置 ---
 const SFX_POOL_SIZE = 12
 const SFX_POOL_2D_SIZE = 8
+const ENABLE_AUDIO_DEBUG_LOGS = false
 
 # --- 音频资源库 ---
 var audio_library: Dictionary = {}
@@ -262,7 +263,26 @@ func play_ui_sfx(sound_key: String, volume_db: float = 0.0, pitch_rand: float = 
 	# UI 音效使用较低音量，或者是固定的
 	play_sfx(sound_key, volume_db, pitch_rand)
 
+func _get_sound_min_interval_ms(sound_key: String) -> int:
+	if sound_key.begins_with("footstep"):
+		return 220
+	if sound_key == "spell_fire":
+		return 60
+	if sound_key == "thunder":
+		return 300
+	return MIN_PLAY_INTERVAL_MS
+
 func play_sfx(sound_key: String, volume_db: float = 0.0, pitch_rand: float = 0) -> void:
+	var now_ms: int = Time.get_ticks_msec()
+	var min_interval_ms: int = _get_sound_min_interval_ms(sound_key)
+	var gate_key: String = sound_key
+	if sound_key.begins_with("footstep"):
+		gate_key = "footstep_family"
+	var last_ms: int = int(_last_played_time.get(gate_key, -1000000))
+	if now_ms - last_ms < min_interval_ms:
+		return
+	_last_played_time[gate_key] = now_ms
+
 	# 强力调试日志：确认每个请求是否被处理
 	# print("AudioManager REQ: ", sound_key)
 	
@@ -310,6 +330,9 @@ func play_sfx(sound_key: String, volume_db: float = 0.0, pitch_rand: float = 0) 
 	
 	# 如果都满了，强制中断并重用当前，确保 UI 反馈永远优先发出声音
 	if not found_player:
+		# 脚步音不抢占已有播放器，直接丢弃本次触发，避免硬 stop 造成爆音。
+		if sound_key.begins_with("footstep"):
+			return
 		player.stop() 
 		
 	player.stream = stream
@@ -345,7 +368,8 @@ func play_sfx(sound_key: String, volume_db: float = 0.0, pitch_rand: float = 0) 
 		var timer = get_tree().create_timer(0.5)
 		timer.timeout.connect(player.stop)
 	
-	print("AudioManager SFX: '%s' | Player: %s | Bus: %s | Vol: %s" % [sound_key, player.name, player.bus, player.volume_db])
+	if ENABLE_AUDIO_DEBUG_LOGS:
+		print("AudioManager SFX: '%s' | Player: %s | Bus: %s | Vol: %s" % [sound_key, player.name, player.bus, player.volume_db])
 	
 	_current_pool_idx = (_current_pool_idx + 1) % SFX_POOL_SIZE
 

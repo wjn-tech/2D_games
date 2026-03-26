@@ -14,11 +14,18 @@ var _cached_player_data: Dictionary = {}
 var save_metadata: Dictionary = {}
 var current_slot_id: int = -1
 var auto_save_timer: Timer
+var _autosave_pending: bool = false
+var _autosave_running: bool = false
+var _autosave_requested_slot: int = -1
+var _autosave_world_path: String = ""
+var _autosave_data: Dictionary = {}
 
 func _ready() -> void:
 	_ensure_root_dir()
 	_load_metadata()
 	_init_autosave()
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	set_process(true)
 
 func _init_autosave() -> void:
 	auto_save_timer = Timer.new()
@@ -30,15 +37,85 @@ func _init_autosave() -> void:
 
 func _on_autosave_timeout() -> void:
 	if current_slot_id >= 0:
-		# Use a background thread or sliced logic? No, synchronous for now per spec.
-		save_game(current_slot_id)
-		print("SaveManager: Autosave executed for slot %d" % current_slot_id)
+		_request_autosave(current_slot_id)
+
+func _process(_delta: float) -> void:
+	if not _autosave_running and _autosave_pending:
+		_start_autosave_pipeline(_autosave_requested_slot)
+
+	if _autosave_running:
+		_continue_autosave_pipeline()
+
+func _request_autosave(slot_id: int) -> void:
+	if slot_id < 0:
+		return
+	_autosave_requested_slot = slot_id
+	_autosave_pending = true
+
+func _start_autosave_pipeline(slot_id: int) -> void:
+	if slot_id < 0:
+		return
+	_autosave_pending = false
+	_autosave_running = true
+
+	var slot_dir := _get_slot_dir(slot_id)
+	if not DirAccess.dir_exists_absolute(slot_dir):
+		DirAccess.make_dir_recursive_absolute(slot_dir)
+
+	_autosave_world_path = slot_dir + "world_deltas/"
+	_autosave_data = {}
+
+	if InfiniteChunkManager:
+		InfiniteChunkManager.set_save_root(_autosave_world_path, true)
+		InfiniteChunkManager.save_all_deltas(false, false)
+
+func _continue_autosave_pipeline() -> void:
+	if InfiniteChunkManager and InfiniteChunkManager.has_method("has_pending_dirty_flushes"):
+		if InfiniteChunkManager.has_pending_dirty_flushes():
+			return
+
+	if _autosave_data.is_empty():
+		_autosave_data = _build_save_data()
+		# Autosave skips thumbnail capture to avoid periodic frame spikes.
+		var final_path := _get_data_path(_autosave_requested_slot)
+		if not _write_atomic_compressed(final_path, _autosave_data):
+			push_warning("SaveManager: Autosave write failed for slot %d" % _autosave_requested_slot)
+			_end_autosave_pipeline()
+			return
+		_update_slot_metadata(_autosave_requested_slot, _autosave_data)
+		print("SaveManager: Autosave executed for slot %d" % _autosave_requested_slot)
+		_end_autosave_pipeline()
+
+func _end_autosave_pipeline() -> void:
+	_autosave_running = false
+	_autosave_world_path = ""
+	_autosave_data = {}
+
+func flush_save_pipeline_sync() -> void:
+	if _autosave_running:
+		if InfiniteChunkManager:
+			InfiniteChunkManager.flush_pending_dirty_writes_sync()
+		if not _autosave_data.is_empty() and _autosave_requested_slot >= 0:
+			var final_path := _get_data_path(_autosave_requested_slot)
+			if _write_atomic_compressed(final_path, _autosave_data):
+				_update_slot_metadata(_autosave_requested_slot, _autosave_data)
+		_end_autosave_pipeline()
+
+	if InfiniteChunkManager:
+		InfiniteChunkManager.flush_pending_dirty_writes_sync()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		flush_save_pipeline_sync()
 
 func start_autosave() -> void:
-	if auto_save_timer: auto_save_timer.start()
+	if auto_save_timer:
+		auto_save_timer.start()
 
 func stop_autosave() -> void:
-	if auto_save_timer: auto_save_timer.stop()
+	if auto_save_timer:
+		auto_save_timer.stop()
+	_autosave_pending = false
 
 func _ensure_root_dir() -> void:
 	if not DirAccess.dir_exists_absolute(SAVE_ROOT):
@@ -71,28 +148,13 @@ func get_slot_info(slot_id: int) -> Dictionary:
 
 # --- 核心保存逻辑 ---
 
-func save_game(slot_id: int) -> void:
-	current_slot_id = slot_id
-	# Reset autosave timer on manual save
-	if auto_save_timer and not auto_save_timer.is_stopped():
-		auto_save_timer.start()
-		
-	var slot_dir = _get_slot_dir(slot_id)
-	if not DirAccess.dir_exists_absolute(slot_dir):
-		DirAccess.make_dir_recursive_absolute(slot_dir)
-	
-	# 1. 切换无限地图管理器的目标目录并同步保存最新的内存修改
-	var world_path = slot_dir + "world_deltas/"
-	if InfiniteChunkManager:
-		InfiniteChunkManager.set_save_root(world_path, true)
-		InfiniteChunkManager.save_all_deltas() # 强制物块修改写盘
-	
-	# 2. 收集核心游戏数据
-	var data = {
+func _build_save_data() -> Dictionary:
+	return {
 		"version": "2.0",
 		"timestamp": Time.get_unix_time_from_system(),
 		"scene_path": get_tree().current_scene.scene_file_path, # 保存当前场景路径
 		"game_time": GameState.current_time,
+		"world_metadata": _get_world_metadata(),
 		"player": _pack_player_data(),
 		"inventory": _pack_inventory(),
 		"buildings": _pack_buildings(),
@@ -105,6 +167,52 @@ func save_game(slot_id: int) -> void:
 		"unlocked_spells": GameState.unlocked_spells,
 		"world_seed": _get_world_seed()
 	}
+
+func _update_slot_metadata(slot_id: int, data: Dictionary) -> void:
+	var key = "slot_%d" % slot_id
+	var p_name = "Unknown"
+	var p_gen = 1
+	var p_lineage = "unknown"
+
+	if data.player and data.player.data:
+		p_name = data.player.data.get("display_name", "Player")
+		p_gen = data.player.data.get("generation", 1)
+		p_lineage = data.player.data.get("lineage_id", "L-%d" % slot_id)
+
+	save_metadata[key] = {
+		"timestamp": data.timestamp,
+		"player_name": p_name,
+		"generation": p_gen,
+		"lineage_id": p_lineage,
+		"display_time": Time.get_datetime_string_from_system(),
+		"topology_mode": String(data.world_metadata.get("topology_mode", "legacy_infinite")),
+		"world_size_preset": String(data.world_metadata.get("world_size_preset", "legacy"))
+	}
+	_save_metadata_to_disk()
+
+func save_game(slot_id: int, force_sync_flush: bool = true) -> void:
+	current_slot_id = slot_id
+	if _autosave_running:
+		flush_save_pipeline_sync()
+
+	# Reset autosave timer on manual save
+	if auto_save_timer and not auto_save_timer.is_stopped():
+		auto_save_timer.start()
+		
+	var slot_dir = _get_slot_dir(slot_id)
+	if not DirAccess.dir_exists_absolute(slot_dir):
+		DirAccess.make_dir_recursive_absolute(slot_dir)
+	
+	# 1. 切换无限地图管理器的目标目录并同步保存最新的内存修改
+	var world_path = slot_dir + "world_deltas/"
+	if InfiniteChunkManager:
+		InfiniteChunkManager.set_save_root(world_path, true)
+		InfiniteChunkManager.save_all_deltas(true, force_sync_flush) # 强制物块修改写盘
+		if force_sync_flush and InfiniteChunkManager.has_method("flush_pending_dirty_writes_sync"):
+			InfiniteChunkManager.flush_pending_dirty_writes_sync()
+	
+	# 2. 收集核心游戏数据
+	var data = _build_save_data()
 	
 	# 3. 写入数据文件 (Atomic & Compressed)
 	var final_path = _get_data_path(slot_id)
@@ -117,24 +225,7 @@ func save_game(slot_id: int) -> void:
 		return
 		
 	# 4. 更新元数据
-	var key = "slot_%d" % slot_id
-	var p_name = "Unknown"
-	var p_gen = 1
-	var p_lineage = "unknown"
-	
-	if data.player and data.player.data:
-		p_name = data.player.data.get("display_name", "Player")
-		p_gen = data.player.data.get("generation", 1)
-		p_lineage = data.player.data.get("lineage_id", "L-%d" % slot_id)
-		
-	save_metadata[key] = {
-		"timestamp": data.timestamp,
-		"player_name": p_name,
-		"generation": p_gen,
-		"lineage_id": p_lineage,
-		"display_time": Time.get_datetime_string_from_system()
-	}
-	_save_metadata_to_disk()
+	_update_slot_metadata(slot_id, data)
 	
 	print("SaveManager: 存档 %d 保存成功 (Binary/Atomic)" % slot_id)
 
@@ -287,6 +378,9 @@ func load_game(slot_id: int) -> bool:
 		# when initializing the WorldGenerator later.
 		GameState.set_meta("pending_new_seed", data.world_seed)
 		print("SaveManager: Loaded World Seed: ", data.world_seed)
+
+	if data.has("world_metadata"):
+		GameState.set_meta("pending_world_metadata", data.world_metadata)
 	
 	if data.has("scene_path"):
 		GameState.set_meta("pending_scene_path", data.scene_path)
@@ -442,6 +536,11 @@ func _get_world_seed() -> int:
 	if world_gen and "seed_value" in world_gen:
 		return world_gen.seed_value
 	return 0
+
+func _get_world_metadata() -> Dictionary:
+	if WorldTopology and WorldTopology.has_method("get_save_metadata"):
+		return WorldTopology.get_save_metadata()
+	return {}
 
 func _pack_hostiles() -> Array:
 	var list = []

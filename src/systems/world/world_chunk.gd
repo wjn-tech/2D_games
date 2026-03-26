@@ -11,6 +11,9 @@ class_name WorldChunk
 # 存储区块内的实体数据 (机器、容器等): [ { "scene_path": string, "pos": Vector2, "data": dict } ]
 @export var entities: Array = []
 
+# 区块液体状态: { "x,y": { "type": "water|lava", "amount": float } }
+@export var liquid_cells: Dictionary = {}
+
 # 标记该区块是否已被玩家探索/发现
 @export var is_discovered: bool = false
 

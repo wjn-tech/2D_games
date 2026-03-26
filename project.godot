@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="2D_games"
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="res://scenes/boot.tscn"
 config/features=PackedStringArray("4.5", "Forward Plus")
 config/icon="res://icon.svg"
 
@@ -41,6 +41,8 @@ NPCSpawner="*res://src/systems/npc/npc_spawner.gd"
 CraftingManager="*res://src/systems/crafting/crafting_manager.gd"
 EconomyManager="*res://src/core/economy_manager.gd"
 InfiniteChunkManager="*res://src/systems/world/infinite_chunk_manager.gd"
+WorldTopology="*res://src/systems/world/world_topology.gd"
+LiquidManager="*res://src/systems/world/liquid_manager.gd"
 SocialManager="*res://src/systems/npc/social_manager.gd"
 MinimapManager="*res://src/systems/world/minimap_manager.gd"
 SignalManager="*res://src/systems/industrial/signal_manager.gd"

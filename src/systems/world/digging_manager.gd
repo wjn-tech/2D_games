@@ -125,17 +125,21 @@ func mine_tile_step(coords: Vector2i, delta: float, pickaxe_power: int) -> bool:
 			check_map = LayerManager.get_layer(l_idx)
 		
 		if not check_map: continue
+		if _is_background_only_layer(check_map):
+			continue
 		
 		# 检查树木层
 		var tree_layer = _get_tree_layer(check_map)
 		if tree_layer:
-			if tree_layer.get_cell_source_id(coords) != -1:
+			if not _is_background_only_layer(tree_layer) and tree_layer.get_cell_source_id(coords) != -1:
 				target_layer = tree_layer
 				found_layer = check_map
 				break
 		
 		# 检查普通瓦片层
 		if check_map.get_cell_source_id(coords) != -1:
+			if _is_liquid_render_tile(check_map, coords):
+				continue
 			target_layer = check_map
 			found_layer = check_map
 			break
@@ -146,6 +150,9 @@ func mine_tile_step(coords: Vector2i, delta: float, pickaxe_power: int) -> bool:
 	
 	var s_id = target_layer.get_cell_source_id(coords)
 	if s_id == -1:
+		reset_mining_progress(coords)
+		return false
+	if _is_liquid_render_tile(target_layer, coords, s_id):
 		reset_mining_progress(coords)
 		return false
 		
@@ -246,6 +253,70 @@ func _get_current_tile_map() -> Node:
 		
 	return null
 
+func _get_cell_source_id_any(layer: Node, coords: Vector2i) -> int:
+	if layer == null:
+		return -1
+	if layer is TileMap:
+		return layer.get_cell_source_id(mining_layer, coords)
+	if layer.has_method("get_cell_source_id"):
+		return layer.get_cell_source_id(coords)
+	return -1
+
+func _get_cell_atlas_any(layer: Node, coords: Vector2i) -> Vector2i:
+	if layer == null:
+		return Vector2i(-1, -1)
+	if layer is TileMap:
+		return layer.get_cell_atlas_coords(mining_layer, coords)
+	if layer.has_method("get_cell_atlas_coords"):
+		return layer.get_cell_atlas_coords(coords)
+	return Vector2i(-1, -1)
+
+func _is_background_only_layer(layer: Node) -> bool:
+	if layer == null:
+		return false
+	if layer.has_method("get_meta"):
+		return bool(layer.get_meta("background_only", false))
+	return false
+
+func _is_liquid_render_tile(layer: Node, coords: Vector2i, source_id: int = -999, atlas: Vector2i = Vector2i(-999, -999)) -> bool:
+	if layer == null:
+		return false
+
+	var world_gen = get_tree().get_first_node_in_group("world_generator")
+	if world_gen:
+		# Only treat tiles on runtime liquid layer (or legacy layer_1 fallback) as liquids.
+		var runtime_liquid_layer = world_gen.get_node_or_null("LiquidRuntimeLayer")
+		if runtime_liquid_layer != null:
+			if layer != runtime_liquid_layer:
+				return false
+		elif "layer_1" in world_gen and layer != world_gen.layer_1:
+			return false
+
+	var resolved_source := source_id
+	if resolved_source == -999:
+		resolved_source = _get_cell_source_id_any(layer, coords)
+	if resolved_source == -1:
+		return false
+
+	var resolved_atlas := atlas
+	if resolved_atlas == Vector2i(-999, -999):
+		resolved_atlas = _get_cell_atlas_any(layer, coords)
+
+	if world_gen:
+		var valid_source := int(world_gen.get("tile_source_id"))
+		if resolved_source != valid_source:
+			return false
+
+		var water_atlas := Vector2i(3, 3)
+		var lava_atlas := Vector2i(1, 4)
+		if world_gen.has_method("get_stage_tileset_mapping"):
+			var mapping: Dictionary = world_gen.get_stage_tileset_mapping()
+			water_atlas = mapping.get("liquid_contact_water", water_atlas)
+			lava_atlas = mapping.get("liquid_contact_lava", lava_atlas)
+		return resolved_atlas == water_atlas or resolved_atlas == lava_atlas
+
+	return resolved_atlas == Vector2i(0, 1) or resolved_atlas == Vector2i(1, 1)
+
 func has_mineable_tile_at(coords: Vector2i) -> bool:
 	var layers_to_check = []
 	if LayerManager:
@@ -265,9 +336,11 @@ func has_mineable_tile_at(coords: Vector2i) -> bool:
 
 		if not target_map:
 			continue
+		if _is_background_only_layer(target_map):
+			continue
 
 		var tree_layer = _get_tree_layer(target_map)
-		if tree_layer:
+		if tree_layer and not _is_background_only_layer(tree_layer):
 			if tree_layer is TileMap:
 				if tree_layer.get_cell_source_id(0, coords) != -1:
 					return true
@@ -276,8 +349,12 @@ func has_mineable_tile_at(coords: Vector2i) -> bool:
 
 		if target_map is TileMap:
 			if target_map.get_cell_source_id(mining_layer, coords) != -1:
+				if _is_liquid_render_tile(target_map, coords):
+					continue
 				return true
 		elif target_map.get_cell_source_id(coords) != -1:
+			if _is_liquid_render_tile(target_map, coords):
+				continue
 			return true
 
 	return false
@@ -285,8 +362,7 @@ func has_mineable_tile_at(coords: Vector2i) -> bool:
 func _get_tile_data(current_tile_map: Node, coords: Vector2i) -> TileData:
 	if current_tile_map is TileMap:
 		return current_tile_map.get_cell_tile_data(mining_layer, coords)
-	else:
-		return current_tile_map.get_cell_tile_data(coords)
+	return current_tile_map.get_cell_tile_data(coords)
 
 func _get_custom_data(tile_data: TileData, current_tile_map: Node, coords: Vector2i, key: String, default_val: Variant, provided_atlas: Vector2i = Vector2i(-1, -1), provided_source: int = -2) -> Variant:
 	# 1. Resolve Atlas Coords & Source ID first
@@ -518,6 +594,8 @@ func try_mine_tile(coords: Vector2i, pickaxe_power: int, spawn_loot: bool = true
 			target_map = _get_current_tile_map()
 			
 		if not target_map: continue
+		if _is_background_only_layer(target_map):
+			continue
 		
 		# 寻找对应的树木图层
 		var tree_layer = _get_tree_layer(target_map)
@@ -542,6 +620,9 @@ func _get_tree_layer(ground_layer: Node) -> Node:
 	return null
 
 func _do_mine_at_layer(current_tile_map: Node, coords: Vector2i, pickaxe_power: int, spawn_loot: bool = true) -> bool:
+	if _is_background_only_layer(current_tile_map):
+		return false
+
 	var source_id = -1
 	var tile_data: TileData = null
 	
@@ -561,6 +642,8 @@ func _do_mine_at_layer(current_tile_map: Node, coords: Vector2i, pickaxe_power: 
 			tile_data = current_tile_map.get_cell_tile_data(coords)
 			
 	if source_id == -1:
+		return false
+	if _is_liquid_render_tile(current_tile_map, coords, source_id):
 		return false
 		
 	# Allow tile_data to be null for placed items (we have fallbacks)

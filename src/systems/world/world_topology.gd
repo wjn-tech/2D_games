@@ -6,47 +6,138 @@ const TOPOLOGY_VERSION := 1
 const DEFAULT_WORLD_SIZE_PRESET := "medium"
 const CHUNK_SIZE := 64
 const TILE_SIZE := 16
+const DEPTH_REFERENCE_SURFACE_Y := 300
+const PRELOAD_BATCH_SIZE_BY_PRESET := {
+	"small": 64,
+	"medium": 96,
+	"large": 128,
+}
+const PRELOAD_TIMEOUT_SEC_BY_PRESET := {
+	"small": 600.0,
+	"medium": 1200.0,
+	"large": 2400.0,
+}
 
 const WORLD_SIZE_PRESETS := {
 	"small": {
-		"circumference_chunks": 256,
-		"spawn_safe_radius_chunks": 12,
-		"seam_buffer_chunks": 16,
-		"transition_chunks": 6,
-		"surface_landmark_budget": 4,
-		"underground_landmark_budget": 4,
+		"circumference_chunks": 96, # ~6144 tiles (Terraria Small+ / Medium)
+		"spawn_safe_radius_chunks": 4,
+		"seam_buffer_chunks": 6,
+		"transition_chunks": 4,
+		"surface_landmark_budget": 3,
+		"underground_landmark_budget": 3,
+		"bedrock_start_depth": 1500,
+		"bedrock_hard_floor_depth": 1620,
 	},
 	"medium": {
-		"circumference_chunks": 384,
-		"spawn_safe_radius_chunks": 16,
-		"seam_buffer_chunks": 20,
-		"transition_chunks": 8,
-		"surface_landmark_budget": 6,
-		"underground_landmark_budget": 6,
+		"circumference_chunks": 144, # ~9216 tiles (Terraria Large)
+		"spawn_safe_radius_chunks": 6,
+		"seam_buffer_chunks": 8,
+		"transition_chunks": 5,
+		"surface_landmark_budget": 5,
+		"underground_landmark_budget": 5,
+		"bedrock_start_depth": 3200,
+		"bedrock_hard_floor_depth": 3400,
 	},
 	"large": {
-		"circumference_chunks": 512,
-		"spawn_safe_radius_chunks": 20,
-		"seam_buffer_chunks": 24,
-		"transition_chunks": 10,
-		"surface_landmark_budget": 8,
-		"underground_landmark_budget": 8,
+		"circumference_chunks": 256, # ~16384 tiles (Huge / 2x Terraria Large)
+		"spawn_safe_radius_chunks": 8,
+		"seam_buffer_chunks": 12,
+		"transition_chunks": 8,
+		"surface_landmark_budget": 7,
+		"underground_landmark_budget": 7,
+		"bedrock_start_depth": 4800,
+		"bedrock_hard_floor_depth": 5200,
 	},
 }
 
 const DEPTH_BANDS := [
 	{"id": "surface", "min_depth": -1000000.0, "max_depth": 28.0},
 	{"id": "shallow_underground", "min_depth": 28.0, "max_depth": 120.0},
-	{"id": "mid_cavern", "min_depth": 120.0, "max_depth": 260.0},
-	{"id": "deep", "min_depth": 260.0, "max_depth": 420.0},
-	{"id": "terminal", "min_depth": 420.0, "max_depth": 1000000.0},
+	{"id": "mid_cavern", "min_depth": 120.0, "max_depth": 1200.0},
+	{"id": "deep", "min_depth": 1200.0, "max_depth": 2400.0},
+	{"id": "terminal", "min_depth": 2400.0, "max_depth": 1000000.0},
 ]
+
+const WorldStructurePlanner = preload("res://src/systems/world/world_structure_planner.gd")
 
 var current_metadata: Dictionary = {}
 var world_plan: Dictionary = {}
 
 func _ready() -> void:
 	reset_to_legacy()
+
+# --- Topology Query API (Single Source of Truth) ---
+
+func is_planetary() -> bool:
+	return current_metadata.get("topology_mode", "") == TOPOLOGY_MODE_PLANETARY
+
+func get_circumference_chunks() -> int:
+	return int(current_metadata.get("horizontal_circumference_in_chunks", 0))
+
+func get_circumference_tiles() -> int:
+	return get_circumference_chunks() * CHUNK_SIZE
+
+func get_circumference_pixels() -> float:
+	return float(get_circumference_tiles() * TILE_SIZE)
+
+func wrap_x(x: float) -> float:
+	if not is_planetary():
+		return x
+	var circ = get_circumference_pixels()
+	if circ <= 0: return x
+	# Wrap logic: fposmod behaves correctly for negative numbers
+	return fposmod(x, circ)
+
+func wrap_tile_x(tx: int) -> int:
+	if not is_planetary():
+		return tx
+	var circ = get_circumference_tiles()
+	if circ <= 0: return tx
+	return posmod(tx, circ)
+
+func wrap_chunk_x(cx: int) -> int:
+	if not is_planetary():
+		return cx
+	var circ = get_circumference_chunks()
+	if circ <= 0: return cx
+	return posmod(cx, circ)
+
+func wrap_vector(pos: Vector2) -> Vector2:
+	return Vector2(wrap_x(pos.x), pos.y)
+
+## Calculates shortest signed distance from A to B on x-axis.
+## Returns positive if B is "right" of A, negative if "left".
+## Range: [-circumference/2, circumference/2]
+func distance_x(from_x: float, to_x: float) -> float:
+	if not is_planetary():
+		return to_x - from_x
+	
+	var circ = get_circumference_pixels()
+	if circ <= 0: return to_x - from_x
+	
+	var diff = fposmod(to_x - from_x, circ)
+	if diff > circ * 0.5:
+		return diff - circ
+	return diff
+
+func get_chunk_coords_in_range(center_chunk_x: int, radius: int) -> Array[int]:
+	var result: Array[int] = []
+	if is_planetary():
+		var circ = get_circumference_chunks()
+		if circ <= 0: # Safety fallback
+			for i in range(-radius, radius + 1):
+				result.append(center_chunk_x + i)
+			return result
+			
+		for i in range(-radius, radius + 1):
+			result.append(wrap_chunk_x(center_chunk_x + i))
+	else:
+		for i in range(-radius, radius + 1):
+			result.append(center_chunk_x + i)
+	return result
+
+# ---------------------------------------------------------
 
 func reset_to_legacy(seed: int = 0) -> void:
 	current_metadata = {
@@ -59,6 +150,10 @@ func reset_to_legacy(seed: int = 0) -> void:
 		"spawn_safe_radius_chunks": 0,
 		"seam_buffer_chunks": 0,
 		"world_plan_revision": 0,
+		"depth_boundary_enabled": false,
+		"depth_reference_surface_y": DEPTH_REFERENCE_SURFACE_Y,
+		"bedrock_start_depth": 0,
+		"bedrock_hard_floor_depth": 0,
 	}
 	world_plan = {
 		"surface_regions": [],
@@ -87,7 +182,20 @@ func create_new_world(seed: int, world_size_preset: String = DEFAULT_WORLD_SIZE_
 		"spawn_safe_radius_chunks": spawn_safe_radius_chunks,
 		"seam_buffer_chunks": seam_buffer_chunks,
 		"world_plan_revision": 1,
+		"depth_boundary_enabled": true,
+		"depth_reference_surface_y": DEPTH_REFERENCE_SURFACE_Y,
+		"bedrock_start_depth": int(preset_info.get("bedrock_start_depth", 500)),
+		"bedrock_hard_floor_depth": int(preset_info.get("bedrock_hard_floor_depth", 620)),
 	}
+	
+	# Generate Structure Plan (Dungeon, Jungle, Temple Locations)
+	metadata["structure_plan"] = WorldStructurePlanner.generate_plan(
+		seed,
+		circumference_chunks,
+		spawn_anchor_chunk,
+		preset_info
+	)
+	
 	load_world_metadata(metadata)
 	return get_current_metadata()
 
@@ -111,9 +219,60 @@ func load_world_metadata(metadata: Dictionary) -> void:
 	incoming["spawn_safe_radius_chunks"] = int(incoming.get("spawn_safe_radius_chunks", preset_info.get("spawn_safe_radius_chunks", 16)))
 	incoming["seam_buffer_chunks"] = int(incoming.get("seam_buffer_chunks", preset_info.get("seam_buffer_chunks", 20)))
 	incoming["world_plan_revision"] = int(incoming.get("world_plan_revision", 1))
+	# 旧存档缺少该字段时默认关闭封底规则，保持兼容行为。
+	var boundary_enabled := bool(incoming.get("depth_boundary_enabled", false))
+	incoming["depth_boundary_enabled"] = boundary_enabled
+	incoming["depth_reference_surface_y"] = int(incoming.get("depth_reference_surface_y", DEPTH_REFERENCE_SURFACE_Y))
+	incoming["bedrock_start_depth"] = int(incoming.get("bedrock_start_depth", preset_info.get("bedrock_start_depth", 500)))
+	incoming["bedrock_hard_floor_depth"] = int(incoming.get("bedrock_hard_floor_depth", preset_info.get("bedrock_hard_floor_depth", 620)))
 
 	current_metadata = incoming
 	world_plan = _build_world_plan(current_metadata)
+	_rebuild_region_fast_lookup()
+
+var _region_lookup_table: Array = []
+var _lookup_table_circumference: int = -1
+
+func _rebuild_region_fast_lookup() -> void:
+	if not is_planetary():
+		_region_lookup_table.clear()
+		_lookup_table_circumference = -1
+		return
+		
+	var circumference := get_circumference_chunks()
+	if circumference <= 0:
+		_region_lookup_table.clear()
+		return
+		
+	_lookup_table_circumference = circumference
+	_region_lookup_table.clear()
+	_region_lookup_table.resize(circumference)
+	# Initialize with empty dictionaries
+	for i in range(circumference):
+		_region_lookup_table[i] = {}
+	
+	# Populate based on priority. Sort regions by priority first to update in order?
+	# Or simpler: just overwrite if priority is higher.
+	var regions = world_plan.get("surface_regions", [])
+	
+	for region in regions:
+		var start := int(region.get("start", -1))
+		var end := int(region.get("end", -1))
+		var prio := int(region.get("priority", 0))
+		
+		# Handle regular and wrapped ranges
+		var length := 0
+		if end >= start:
+			length = end - start + 1
+		else:
+			length = (circumference - start) + end + 1
+			
+		for i in range(length):
+			var idx := (start + i) % circumference
+			# Check existing
+			var existing = _region_lookup_table[idx]
+			if existing.is_empty() or int(existing.get("priority", -1)) < prio:
+				_region_lookup_table[idx] = region
 
 func get_current_metadata() -> Dictionary:
 	return current_metadata.duplicate(true)
@@ -121,17 +280,8 @@ func get_current_metadata() -> Dictionary:
 func get_save_metadata() -> Dictionary:
 	return get_current_metadata()
 
-func is_planetary() -> bool:
-	return String(current_metadata.get("topology_mode", TOPOLOGY_MODE_LEGACY)) == TOPOLOGY_MODE_PLANETARY
-
 func get_world_size_preset() -> String:
 	return String(current_metadata.get("world_size_preset", "legacy"))
-
-func get_circumference_chunks() -> int:
-	return int(current_metadata.get("horizontal_circumference_in_chunks", 0))
-
-func get_circumference_tiles() -> int:
-	return get_circumference_chunks() * CHUNK_SIZE
 
 func get_spawn_anchor_chunk() -> int:
 	return int(current_metadata.get("spawn_anchor_chunk", 0))
@@ -154,21 +304,68 @@ func get_depth_band_for_depth(depth: float) -> Dictionary:
 func get_depth_band_id_for_depth(depth: float) -> String:
 	return String(get_depth_band_for_depth(depth).get("id", "surface"))
 
-func wrap_chunk_x(chunk_x: int) -> int:
-	if not is_planetary():
-		return chunk_x
-	var circumference := get_circumference_chunks()
-	if circumference <= 0:
-		return chunk_x
-	return posmod(chunk_x, circumference)
+func is_depth_boundary_enabled() -> bool:
+	# Force enabled for planetary mode, even if metadata lags
+	if is_planetary():
+		return true
+	return bool(current_metadata.get("depth_boundary_enabled", false))
 
-func wrap_tile_x(tile_x: int) -> int:
-	if not is_planetary():
-		return tile_x
-	var circumference_tiles := get_circumference_tiles()
-	if circumference_tiles <= 0:
-		return tile_x
-	return posmod(tile_x, circumference_tiles)
+func get_depth_reference_surface_y() -> int:
+	return int(current_metadata.get("depth_reference_surface_y", DEPTH_REFERENCE_SURFACE_Y))
+
+func _get_default_bedrock_depth(key: String, default: int) -> int:
+	var preset = String(current_metadata.get("world_size_preset", DEFAULT_WORLD_SIZE_PRESET))
+	if WORLD_SIZE_PRESETS.has(preset):
+		return int(WORLD_SIZE_PRESETS[preset].get(key, default))
+	return default
+
+func get_bedrock_start_depth() -> int:
+	var depth = int(current_metadata.get("bedrock_start_depth", 0))
+	if depth <= 0 and is_planetary():
+		return _get_default_bedrock_depth("bedrock_start_depth", 500)
+	return depth
+
+func get_bedrock_hard_floor_depth() -> int:
+	var depth = int(current_metadata.get("bedrock_hard_floor_depth", 0))
+	if depth <= 0 and is_planetary():
+		return _get_default_bedrock_depth("bedrock_hard_floor_depth", 620)
+	return depth
+
+func get_bedrock_start_global_y() -> int:
+	return get_depth_reference_surface_y() + get_bedrock_start_depth()
+
+func get_bedrock_hard_floor_global_y() -> int:
+	return get_depth_reference_surface_y() + get_bedrock_hard_floor_depth()
+
+func is_global_y_at_or_below_hard_floor(global_y: int) -> bool:
+	if not is_depth_boundary_enabled():
+		return false
+	return global_y >= get_bedrock_hard_floor_global_y()
+
+func is_chunk_below_hard_floor(coord: Vector2i) -> bool:
+	if not is_depth_boundary_enabled():
+		return false
+	var chunk_top_global_y := coord.y * CHUNK_SIZE
+	return chunk_top_global_y > get_bedrock_hard_floor_global_y()
+
+func get_bedrock_transition_ratio_for_depth(depth: float) -> float:
+	if not is_depth_boundary_enabled():
+		return 0.0
+	var start_depth := float(get_bedrock_start_depth())
+	var hard_floor_depth := float(get_bedrock_hard_floor_depth())
+	if hard_floor_depth <= start_depth:
+		return 1.0 if depth >= hard_floor_depth else 0.0
+	return clampf((depth - start_depth) / (hard_floor_depth - start_depth), 0.0, 1.0)
+
+func get_bedrock_boundary_config() -> Dictionary:
+	return {
+		"enabled": is_depth_boundary_enabled(),
+		"depth_reference_surface_y": get_depth_reference_surface_y(),
+		"bedrock_start_depth": get_bedrock_start_depth(),
+		"bedrock_hard_floor_depth": get_bedrock_hard_floor_depth(),
+		"bedrock_start_global_y": get_bedrock_start_global_y(),
+		"bedrock_hard_floor_global_y": get_bedrock_hard_floor_global_y(),
+	}
 
 func canonical_chunk_coord(coord: Vector2i) -> Vector2i:
 	if not is_planetary():
@@ -209,13 +406,43 @@ func get_surface_region_for_tile_x(tile_x: int) -> Dictionary:
 	var chunk_x := wrap_chunk_x(int(floor(float(tile_x) / CHUNK_SIZE)))
 	return get_surface_region_for_chunk(chunk_x)
 
+
 func get_surface_region_for_chunk(chunk_x: int) -> Dictionary:
 	if not is_planetary():
 		return {}
+
+	# Fast path: O(1) Lookup
 	var wrapped_chunk_x := wrap_chunk_x(chunk_x)
+	var circumference := get_circumference_chunks()
+	
+	if _region_lookup_table.size() == circumference and _lookup_table_circumference == circumference:
+		var cached = _region_lookup_table[wrapped_chunk_x]
+		if typeof(cached) == TYPE_DICTIONARY and not cached.is_empty():
+			return cached # Return REFERENCE. Do not duplicate.
+		return {}
+
+	# Fallback (Slow Path) - if cache invalid or empty region
+	# Linear search is fine for < 100 regions. For massive worlds, spatial partitioning needed.
+	var best_region := {}
+	var best_prio := -1
+	
 	for region in world_plan.get("surface_regions", []):
-		if _arc_contains_chunk(wrapped_chunk_x, int(region.get("start_chunk", 0)), int(region.get("length", 0))):
-			return region.duplicate(true)
+		# Planner provides "start" and "end" (inclusive)
+		var r_start := int(region.get("start", -1))
+		var r_end := int(region.get("end", -1))
+		
+		if r_start == -1 or r_end == -1:
+			continue
+			
+		if wrapped_chunk_x >= r_start and wrapped_chunk_x <= r_end:
+			var prio := int(region.get("priority", 0))
+			if prio > best_prio:
+				best_prio = prio
+				best_region = region
+	
+	if not best_region.is_empty():
+		return best_region # Return REFERENCE.
+		
 	return {}
 
 func get_surface_biome_name_at_tile_x(tile_x: int) -> String:
@@ -284,13 +511,110 @@ func get_underground_generation_rules() -> Dictionary:
 func get_world_storage_prefix() -> String:
 	var seed := int(current_metadata.get("primary_seed", 0))
 	if is_planetary():
-		return "%s_%s_%d_%d" % [
+		return "%s_%s_%d_%d_%d_%d" % [
 			String(current_metadata.get("topology_mode", TOPOLOGY_MODE_PLANETARY)),
 			String(current_metadata.get("world_size_preset", DEFAULT_WORLD_SIZE_PRESET)),
 			int(current_metadata.get("horizontal_circumference_in_chunks", 0)),
+			int(current_metadata.get("topology_version", TOPOLOGY_VERSION)),
+			int(current_metadata.get("world_plan_revision", 1)),
 			seed,
 		]
 	return "%s_%d" % [String(current_metadata.get("topology_mode", TOPOLOGY_MODE_LEGACY)), seed]
+
+func get_preload_timeout_seconds() -> float:
+	if not is_planetary():
+		return 0.0
+	var preset := get_world_size_preset()
+	if PRELOAD_TIMEOUT_SEC_BY_PRESET.has(preset):
+		return float(PRELOAD_TIMEOUT_SEC_BY_PRESET.get(preset, 1200.0))
+	return float(PRELOAD_TIMEOUT_SEC_BY_PRESET.get(DEFAULT_WORLD_SIZE_PRESET, 1200.0))
+
+func get_preload_batch_size() -> int:
+	if not is_planetary():
+		return 0
+	var preset := get_world_size_preset()
+	if PRELOAD_BATCH_SIZE_BY_PRESET.has(preset):
+		return int(PRELOAD_BATCH_SIZE_BY_PRESET.get(preset, 96))
+	return int(PRELOAD_BATCH_SIZE_BY_PRESET.get(DEFAULT_WORLD_SIZE_PRESET, 96))
+
+func get_preload_domain_definition() -> Dictionary:
+	if not is_planetary():
+		return {
+			"required": false,
+			"domain_type": "legacy_spawn_warmup_fallback",
+			"topology_mode": TOPOLOGY_MODE_LEGACY,
+			"min_chunk_y": 0,
+			"max_chunk_y": 0,
+			"x_start": 0,
+			"x_count": 0,
+			"mandatory_chunk_total": 0,
+			"identity": get_preload_domain_identity(),
+		}
+
+	var circumference := maxi(get_circumference_chunks(), 0)
+	var hard_floor_global_y := get_bedrock_hard_floor_global_y()
+	
+	# [Fix] Limit preload depth to avoid excessive loading on deep presets
+	# Clamp to ~12 chunks (768 tiles) below surface reference = ~1068 total Y
+	var preload_limit_y_tiles := get_depth_reference_surface_y() + (12 * CHUNK_SIZE)
+	var effective_max_y := mini(hard_floor_global_y, preload_limit_y_tiles)
+	
+	var min_chunk_y := 0
+	var max_chunk_y := int(floor(float(effective_max_y) / float(CHUNK_SIZE)))
+	if max_chunk_y < min_chunk_y:
+		max_chunk_y = min_chunk_y
+	var mandatory_chunk_total := circumference * (max_chunk_y - min_chunk_y + 1)
+
+	return {
+		"required": true,
+		"domain_type": "planetary_full_world",
+		"topology_mode": TOPOLOGY_MODE_PLANETARY,
+		"min_chunk_y": min_chunk_y,
+		"max_chunk_y": max_chunk_y,
+		"x_start": 0,
+		"x_count": circumference,
+		"mandatory_chunk_total": mandatory_chunk_total,
+		"identity": get_preload_domain_identity(),
+	}
+
+func get_preload_domain_identity() -> Dictionary:
+	var min_chunk_y := 0
+	var max_chunk_y := 0
+	var x_count := 0
+	if is_planetary():
+		x_count = maxi(get_circumference_chunks(), 0)
+		max_chunk_y = int(floor(float(get_bedrock_hard_floor_global_y()) / float(CHUNK_SIZE)))
+		if max_chunk_y < min_chunk_y:
+			max_chunk_y = min_chunk_y
+
+	var preload_domain := {
+		"topology_mode": String(current_metadata.get("topology_mode", TOPOLOGY_MODE_LEGACY)),
+		"world_size_preset": String(current_metadata.get("world_size_preset", "legacy")),
+		"topology_version": int(current_metadata.get("topology_version", 0)),
+		"world_plan_revision": int(current_metadata.get("world_plan_revision", 0)),
+		"primary_seed": int(current_metadata.get("primary_seed", 0)),
+		"horizontal_circumference_in_chunks": int(current_metadata.get("horizontal_circumference_in_chunks", 0)),
+		"depth_boundary_enabled": bool(current_metadata.get("depth_boundary_enabled", false)),
+		"bedrock_hard_floor_depth": int(current_metadata.get("bedrock_hard_floor_depth", 0)),
+		"min_chunk_y": min_chunk_y,
+		"max_chunk_y": max_chunk_y,
+		"x_count": x_count,
+	}
+	return preload_domain
+
+func get_preload_domain_signature() -> String:
+	var identity := get_preload_domain_identity()
+	return "%s|%s|%d|%d|%d|%d|%d|%d|%d" % [
+		String(identity.get("topology_mode", TOPOLOGY_MODE_LEGACY)),
+		String(identity.get("world_size_preset", "legacy")),
+		int(identity.get("topology_version", 0)),
+		int(identity.get("world_plan_revision", 0)),
+		int(identity.get("primary_seed", 0)),
+		int(identity.get("horizontal_circumference_in_chunks", 0)),
+		int(identity.get("min_chunk_y", 0)),
+		int(identity.get("max_chunk_y", 0)),
+		int(identity.get("bedrock_hard_floor_depth", 0)),
+	]
 
 func _get_world_size_preset_info(world_size_preset: String) -> Dictionary:
 	if WORLD_SIZE_PRESETS.has(world_size_preset):
@@ -302,6 +626,17 @@ func _get_world_size_preset_info(world_size_preset: String) -> Dictionary:
 	return fallback
 
 func _build_world_plan(metadata: Dictionary) -> Dictionary:
+	# If a structure plan exists in metadata (from WorldStructurePlanner), use it.
+	if metadata.has("structure_plan"):
+		var sp = metadata["structure_plan"].duplicate(true)
+		# Ensure required fields exist
+		if not sp.has("depth_bands"):
+			sp["depth_bands"] = DEPTH_BANDS.duplicate(true)
+		if not sp.has("underground_rules"):
+			sp["underground_rules"] = {}
+		return sp
+
+	# Fallback for old saves or initialization without planner
 	var plan := {
 		"surface_regions": [],
 		"landmarks": [],

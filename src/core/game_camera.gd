@@ -45,7 +45,34 @@ func _process(delta: float) -> void:
 		pass
 	elif player:
 		# 平滑跟随玩家
-		global_position = global_position.lerp(player.global_position, 10.0 * delta)
+		var target_pos = player.global_position
+		
+		# Check for planetary topology and wrapping
+		if has_node("/root/WorldTopology"):
+			var topology = get_node("/root/WorldTopology")
+			if topology.has_method("is_planetary") and topology.is_planetary():
+				var circ_px = topology.get_circumference_pixels()
+				if circ_px > 0:
+					# Calculate shortest horizontal delta on cylinder
+					var dx = target_pos.x - global_position.x
+					var half_width = circ_px * 0.5
+					
+					# Wrap delta to [-half, half]
+					if dx > half_width: dx -= circ_px
+					elif dx < -half_width: dx += circ_px
+					
+					# Lerp towards virtual target position
+					var new_x = lerpf(global_position.x, global_position.x + dx, 10.0 * delta)
+					
+					# Wrap result back to canonical space [0, circ)
+					global_position.x = topology.wrap_x(new_x)
+					global_position.y = lerpf(global_position.y, target_pos.y, 10.0 * delta)
+				else:
+					global_position = global_position.lerp(target_pos, 10.0 * delta)
+			else:
+				global_position = global_position.lerp(target_pos, 10.0 * delta)
+		else:
+			global_position = global_position.lerp(target_pos, 10.0 * delta)
 
 # --- Cinematic API ---
 

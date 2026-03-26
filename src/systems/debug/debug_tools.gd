@@ -5,8 +5,7 @@ extends Node
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	# 自动为开发者生成测试用公主，延迟1秒等待场景加载
-	get_tree().create_timer(1.0).timeout.connect(spawn_princess)
+	# 保持为纯手动调试工具，避免启动和菜单阶段自动注入调试 NPC。
 
 func _input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed: return

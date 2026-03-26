@@ -15,7 +15,8 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	# 也可以连接 Chronometer 信号来保持绝对同步
 	if Chronometer:
-		Chronometer.day_passed.connect(_on_calendar_day_passed)
+		if not Chronometer.day_passed.is_connected(_on_calendar_day_passed):
+			Chronometer.day_passed.connect(_on_calendar_day_passed)
 
 func _process(delta: float) -> void:
 	if not GameState.player_data: return
@@ -37,10 +38,18 @@ func _process(delta: float) -> void:
 
 func _on_calendar_day_passed(day: int, year: int) -> void:
 	# 仅用于日志或触发每日结算
-	print("LifespanManager: 历法更新, 第 %d 天, 当前玩家年龄: %.2f" % [day, GameState.player_data.current_age])
+	var player_data: CharacterData = GameState.player_data
+	if not player_data:
+		print("LifespanManager: 历法更新, 第 %d 天, 玩家数据暂不可用" % day)
+		return
+	print("LifespanManager: 历法更新, 第 %d 天, 当前玩家年龄: %.2f" % [day, player_data.current_age])
 
 ## 消耗寿命
 func consume_lifespan(data: CharacterData, amount_years: float) -> void:
+	if not data:
+		return
+	if amount_years <= 0.0:
+		return
 	if data.life_span <= 0: return
 	
 	data.life_span -= amount_years
@@ -84,6 +93,8 @@ func _drop_player_loot() -> void:
 
 ## 环境触发的意外死亡（如掉落虚空、极寒天气）
 func trigger_instant_death(data: CharacterData, reason: String = "意外") -> void:
+	if not data:
+		return
 	print("LifespanManager: 角色死亡原因: ", reason)
 	data.life_span = 0
 	lifespan_depleted.emit(data)
@@ -98,7 +109,10 @@ func _on_player_death() -> void:
 	
 	_drop_player_loot()
 	if EventBus and EventBus.has_signal("player_health_changed"):
-		EventBus.player_health_changed.emit(0, GameState.player_data.max_health)
+		var max_health := 100
+		if GameState.player_data:
+			max_health = int(GameState.player_data.max_health)
+		EventBus.player_health_changed.emit(0, max_health)
 	GameManager.change_state(GameManager.State.REINCARNATING)
 
 ## 高强度动作导致的额外消耗（加速老化）

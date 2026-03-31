@@ -578,11 +578,28 @@ func _chunk_has_persistable_changes(chunk: WorldChunk) -> bool:
 	for l in [0, 1, 2]:
 		if not chunk.deltas.get(l, {}).is_empty():
 			return true
+	if "liquid_state_initialized" in chunk:
+		if bool(chunk.get("liquid_state_initialized")):
+			return true
+	elif not chunk.liquid_cells.is_empty():
+		# Legacy chunks without the initialization flag.
+		return true
+	if "liquid_outbound_handoffs" in chunk:
+		var outbound = chunk.get("liquid_outbound_handoffs")
+		if outbound is Dictionary and not (outbound as Dictionary).is_empty():
+			return true
 	return false
 
 func _mark_chunk_dirty(coord: Vector2i) -> void:
 	var canonical := _canonical_chunk_coord(coord)
 	_dirty_chunk_coords[canonical] = true
+
+func _ensure_chunk_tracked_for_persistence(coord: Vector2i, chunk: WorldChunk) -> void:
+	if chunk == null:
+		return
+	var canonical := _canonical_chunk_coord(coord)
+	if not world_delta_data.has(canonical):
+		world_delta_data[canonical] = chunk
 
 func _request_dirty_flush(coord: Vector2i) -> void:
 	var canonical := _canonical_chunk_coord(coord)
@@ -653,6 +670,18 @@ func flush_pending_dirty_writes_sync() -> void:
 		_flush_dirty_chunk(coord)
 
 func save_all_deltas(force_all: bool = false, synchronous: bool = true) -> void:
+	if LiquidManager and LiquidManager.has_method("flush_runtime_to_chunks"):
+		var touched_coords = LiquidManager.flush_runtime_to_chunks(world_delta_data)
+		if touched_coords is Array:
+			for coord_variant in touched_coords:
+				if coord_variant is Vector2i:
+					var canonical := _canonical_chunk_coord(coord_variant)
+					if not world_delta_data.has(canonical):
+						var loaded_variant = loaded_chunks.get(canonical, null)
+						if loaded_variant is WorldChunk:
+							_ensure_chunk_tracked_for_persistence(canonical, loaded_variant)
+					_mark_chunk_dirty(canonical)
+
 	if force_all:
 		for coord in world_delta_data.keys():
 			var chunk: WorldChunk = world_delta_data[coord]
@@ -2367,6 +2396,13 @@ func _unload_chunk(coord: Vector2i) -> void:
 	_pending_chunk_requests.erase(coord)
 	_precomputed_enrichment_cells.erase(coord)
 
+	var loaded_chunk: WorldChunk = loaded_chunks.get(coord, null)
+	if LiquidManager and LiquidManager.has_method("on_chunk_unloaded"):
+		LiquidManager.on_chunk_unloaded(coord, loaded_chunk)
+
+	if loaded_chunk != null and _chunk_has_persistable_changes(loaded_chunk):
+		_ensure_chunk_tracked_for_persistence(coord, loaded_chunk)
+
 	# 1. 如果有修改，保存到磁盘并释放内存
 	if world_delta_data.has(coord):
 		var chunk = world_delta_data[coord]
@@ -2386,9 +2422,6 @@ func _unload_chunk(coord: Vector2i) -> void:
 		chunk_entity_containers.erase(coord)
 
 	# 2. 清除 TileMapLayer 上的对应区域以释放渲染资源
-	var loaded_chunk: WorldChunk = loaded_chunks.get(coord, null)
-	if LiquidManager and LiquidManager.has_method("on_chunk_unloaded"):
-		LiquidManager.on_chunk_unloaded(coord, loaded_chunk)
 	_clear_chunk_region(coord, loaded_chunk)
 
 	# 1.8 从已加载列表移除

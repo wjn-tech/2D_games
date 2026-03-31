@@ -26,8 +26,8 @@ const WORLD_SIZE_PRESETS := {
 		"transition_chunks": 4,
 		"surface_landmark_budget": 3,
 		"underground_landmark_budget": 3,
-		"bedrock_start_depth": 1500,
-		"bedrock_hard_floor_depth": 1620,
+		"bedrock_start_depth": 900,
+		"bedrock_hard_floor_depth": 1040,
 	},
 	"medium": {
 		"circumference_chunks": 144, # ~9216 tiles (Terraria Large)
@@ -36,8 +36,8 @@ const WORLD_SIZE_PRESETS := {
 		"transition_chunks": 5,
 		"surface_landmark_budget": 5,
 		"underground_landmark_budget": 5,
-		"bedrock_start_depth": 3200,
-		"bedrock_hard_floor_depth": 3400,
+		"bedrock_start_depth": 1700,
+		"bedrock_hard_floor_depth": 1900,
 	},
 	"large": {
 		"circumference_chunks": 256, # ~16384 tiles (Huge / 2x Terraria Large)
@@ -46,17 +46,17 @@ const WORLD_SIZE_PRESETS := {
 		"transition_chunks": 8,
 		"surface_landmark_budget": 7,
 		"underground_landmark_budget": 7,
-		"bedrock_start_depth": 4800,
-		"bedrock_hard_floor_depth": 5200,
+		"bedrock_start_depth": 2500,
+		"bedrock_hard_floor_depth": 2820,
 	},
 }
 
 const DEPTH_BANDS := [
 	{"id": "surface", "min_depth": -1000000.0, "max_depth": 28.0},
 	{"id": "shallow_underground", "min_depth": 28.0, "max_depth": 120.0},
-	{"id": "mid_cavern", "min_depth": 120.0, "max_depth": 1200.0},
-	{"id": "deep", "min_depth": 1200.0, "max_depth": 2400.0},
-	{"id": "terminal", "min_depth": 2400.0, "max_depth": 1000000.0},
+	{"id": "mid_cavern", "min_depth": 120.0, "max_depth": 420.0},
+	{"id": "deep", "min_depth": 420.0, "max_depth": 980.0},
+	{"id": "terminal", "min_depth": 980.0, "max_depth": 1000000.0},
 ]
 
 const WorldStructurePlanner = preload("res://src/systems/world/world_structure_planner.gd")
@@ -154,6 +154,8 @@ func reset_to_legacy(seed: int = 0) -> void:
 		"depth_reference_surface_y": DEPTH_REFERENCE_SURFACE_Y,
 		"bedrock_start_depth": 0,
 		"bedrock_hard_floor_depth": 0,
+		"underworld_layer_enabled": false,
+		"underworld_layer_revision": 0,
 	}
 	world_plan = {
 		"surface_regions": [],
@@ -186,7 +188,14 @@ func create_new_world(seed: int, world_size_preset: String = DEFAULT_WORLD_SIZE_
 		"depth_reference_surface_y": DEPTH_REFERENCE_SURFACE_Y,
 		"bedrock_start_depth": int(preset_info.get("bedrock_start_depth", 500)),
 		"bedrock_hard_floor_depth": int(preset_info.get("bedrock_hard_floor_depth", 620)),
+		"underworld_layer_enabled": true,
+		"underworld_layer_revision": 2,
+		"underworld_horizontal_coverage_ratio": 1.0,
+		"underworld_min_vertical_span": 180,
+		"underworld_ore_uplift_multiplier": 1.30,
 	}
+	metadata["underworld_anchor_chunk"] = posmod(spawn_anchor_chunk, circumference_chunks)
+	metadata["underworld_primary_route_chunk"] = metadata["underworld_anchor_chunk"]
 	
 	# Generate Structure Plan (Dungeon, Jungle, Temple Locations)
 	metadata["structure_plan"] = WorldStructurePlanner.generate_plan(
@@ -225,6 +234,30 @@ func load_world_metadata(metadata: Dictionary) -> void:
 	incoming["depth_reference_surface_y"] = int(incoming.get("depth_reference_surface_y", DEPTH_REFERENCE_SURFACE_Y))
 	incoming["bedrock_start_depth"] = int(incoming.get("bedrock_start_depth", preset_info.get("bedrock_start_depth", 500)))
 	incoming["bedrock_hard_floor_depth"] = int(incoming.get("bedrock_hard_floor_depth", preset_info.get("bedrock_hard_floor_depth", 620)))
+
+	# Legacy compatibility: old saves without this field auto-enable underworld metadata.
+	var underworld_enabled := bool(incoming.get("underworld_layer_enabled", true))
+	incoming["underworld_layer_enabled"] = underworld_enabled
+	incoming["underworld_layer_revision"] = int(incoming.get("underworld_layer_revision", 2 if underworld_enabled else 0))
+	incoming["underworld_horizontal_coverage_ratio"] = float(incoming.get("underworld_horizontal_coverage_ratio", 1.0))
+	incoming["underworld_min_vertical_span"] = int(incoming.get("underworld_min_vertical_span", 180))
+	incoming["underworld_ore_uplift_multiplier"] = float(incoming.get("underworld_ore_uplift_multiplier", 1.30))
+	var incoming_circumference := maxi(int(incoming.get("horizontal_circumference_in_chunks", 0)), 1)
+	if not incoming.has("underworld_anchor_chunk"):
+		incoming["underworld_anchor_chunk"] = posmod(int(incoming["spawn_anchor_chunk"]), incoming_circumference)
+	else:
+		incoming["underworld_anchor_chunk"] = posmod(int(incoming["underworld_anchor_chunk"]), incoming_circumference)
+	if not incoming.has("underworld_primary_route_chunk"):
+		incoming["underworld_primary_route_chunk"] = incoming["underworld_anchor_chunk"]
+	else:
+		incoming["underworld_primary_route_chunk"] = posmod(int(incoming["underworld_primary_route_chunk"]), incoming_circumference)
+
+	# Migration guard: normalize pre-v2 underworld placement to spawn-side full coverage.
+	if underworld_enabled and int(incoming.get("underworld_layer_revision", 0)) < 2:
+		incoming["underworld_layer_revision"] = 2
+		incoming["underworld_horizontal_coverage_ratio"] = 1.0
+		incoming["underworld_anchor_chunk"] = posmod(int(incoming["spawn_anchor_chunk"]), incoming_circumference)
+		incoming["underworld_primary_route_chunk"] = incoming["underworld_anchor_chunk"]
 
 	current_metadata = incoming
 	world_plan = _build_world_plan(current_metadata)
@@ -365,6 +398,29 @@ func get_bedrock_boundary_config() -> Dictionary:
 		"bedrock_hard_floor_depth": get_bedrock_hard_floor_depth(),
 		"bedrock_start_global_y": get_bedrock_start_global_y(),
 		"bedrock_hard_floor_global_y": get_bedrock_hard_floor_global_y(),
+	}
+
+func is_underworld_layer_enabled() -> bool:
+	return bool(current_metadata.get("underworld_layer_enabled", false))
+
+func get_underworld_generation_config() -> Dictionary:
+	if not is_planetary():
+		return {
+			"enabled": false,
+		}
+	var circumference_chunks := get_circumference_chunks()
+	var anchor_chunk := wrap_chunk_x(int(current_metadata.get("underworld_anchor_chunk", int(circumference_chunks / 2))))
+	var route_chunk := wrap_chunk_x(int(current_metadata.get("underworld_primary_route_chunk", anchor_chunk)))
+	return {
+		"enabled": is_underworld_layer_enabled(),
+		"revision": int(current_metadata.get("underworld_layer_revision", 0)),
+		"anchor_chunk": anchor_chunk,
+		"anchor_tile": anchor_chunk * CHUNK_SIZE + int(CHUNK_SIZE / 2),
+		"primary_route_chunk": route_chunk,
+		"primary_route_tile": route_chunk * CHUNK_SIZE + int(CHUNK_SIZE / 2),
+		"horizontal_coverage_ratio": clampf(float(current_metadata.get("underworld_horizontal_coverage_ratio", 1.0)), 0.50, 1.0),
+		"min_vertical_span": maxi(int(current_metadata.get("underworld_min_vertical_span", 180)), 180),
+		"ore_uplift_multiplier": maxf(float(current_metadata.get("underworld_ore_uplift_multiplier", 1.30)), 1.0),
 	}
 
 func canonical_chunk_coord(coord: Vector2i) -> Vector2i:

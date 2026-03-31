@@ -61,6 +61,10 @@ func _ready() -> void:
 		"ui_hover": "res://assets/audio/sfx/ui_hover",
 		"ui_click": "res://assets/audio/sfx/ui_click",
 		"spell_fire": "res://assets/audio/sfx/spell_fire",
+		"water_enter": "res://assets/audio/sfx/player_land",
+		"water_exit": "res://assets/audio/sfx/player_land",
+		"water_surface_break": "res://assets/audio/sfx/player_land",
+		"water_swim_loop": "res://assets/audio/sfx/player_step",
 	}
 
 	for k in key_map:
@@ -266,6 +270,10 @@ func play_ui_sfx(sound_key: String, volume_db: float = 0.0, pitch_rand: float = 
 func _get_sound_min_interval_ms(sound_key: String) -> int:
 	if sound_key.begins_with("footstep"):
 		return 220
+	if sound_key == "water_swim_loop":
+		return 260
+	if sound_key.begins_with("water_"):
+		return 120
 	if sound_key == "spell_fire":
 		return 60
 	if sound_key == "thunder":

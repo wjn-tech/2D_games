@@ -1,5 +1,8 @@
 ﻿extends CharacterBody2D
 
+signal water_state_changed(previous_state: String, next_state: String, immersion: float)
+signal water_interaction_event(event_name: String, immersion: float)
+
 # Safe transform helpers
 const TransformHelper = preload("res://src/utils/transform_helper.gd")
 
@@ -43,6 +46,23 @@ const TERRAIN_RECOVERY_COOLDOWN = 0.15
 const FREEFALL_RESCUE_TIME = 3.0
 const FREEFALL_RESCUE_MIN_SPEED = 900.0
 
+const WATER_STATE_DRY := "dry"
+const WATER_STATE_WADING := "wading"
+const WATER_STATE_SWIMMING := "swimming"
+const WATER_STATE_SUBMERGED := "submerged"
+
+const WATER_ENTER_WADING := 0.08
+const WATER_EXIT_WADING := 0.03
+const WATER_ENTER_SWIMMING_TORSO := 0.24
+const WATER_EXIT_SWIMMING_TORSO := 0.14
+const WATER_ENTER_SUBMERGED_HEAD := 0.28
+const WATER_EXIT_SUBMERGED_HEAD := 0.16
+
+const WATER_SWIM_UP_ACCEL := 920.0
+const WATER_SWIM_UP_MAX_SPEED := 220.0
+const WATER_EVENT_COOLDOWN_MS := 220
+const WATER_LOOP_EVENT_INTERVAL_MS := 380
+
 @export var interaction_area: Area2D
 
 const WandRendererScene = preload("res://src/systems/magic/wand_renderer.tscn")
@@ -68,6 +88,22 @@ var _last_fall_preload_chunk_coord: Variant = null
 var _fast_fall_streaming_active: bool = false
 var _last_walk_preload_chunk_coord: Variant = null
 var _footstep_timer: float = 0.0
+var _water_state: String = WATER_STATE_DRY
+var _water_immersion: float = 0.0
+var _water_probe_foot: float = 0.0
+var _water_probe_torso: float = 0.0
+var _water_probe_head: float = 0.0
+var _water_head_submerged: bool = false
+var _water_event_next_ms: Dictionary = {}
+var _water_motion_profile: Dictionary = {
+	"speed_scale": 1.0,
+	"accel_scale": 1.0,
+	"gravity_scale": 1.0,
+	"buoyancy": 0.0,
+	"jump_scale": 1.0,
+	"max_fall_speed": 99999.0,
+}
+var _water_jump_ramp_scale: float = 1.0
 
 func set_gravity_enabled(enabled: bool) -> void:
 	_gravity_enabled = enabled
@@ -581,11 +617,16 @@ func _physics_process(delta: float) -> void:
 	else:
 		knockback_velocity = Vector2.ZERO
 
+	_update_water_interaction_state(delta)
+
 	if not input_enabled:
 		velocity.x = move_toward(velocity.x, 0, SPEED)
 		if not is_on_floor():
 			if _gravity_enabled:
-				velocity.y += GRAVITY * delta
+				if _water_state == WATER_STATE_DRY:
+					velocity.y += GRAVITY * delta
+				else:
+					_apply_water_vertical_forces(delta, false)
 		_mitigate_fast_fall_chunk_gaps()
 		move_and_slide()
 		_recover_from_terrain_embed()
@@ -618,13 +659,14 @@ func _physics_process(delta: float) -> void:
 	if not movement_locked:
 		direction = Input.get_axis("left", "right")
 		
-	var target_speed_x = direction * SPEED
+	var accel_scale := float(_water_motion_profile.get("accel_scale", 1.0))
+	var target_speed_x = direction * SPEED * float(_water_motion_profile.get("speed_scale", 1.0))
 	
 	# 平滑移动处理并叠加击退速度
 	var current_move_x = velocity.x - knockback_velocity.x
 	var movement_x = target_speed_x
 	if direction == 0:
-		movement_x = move_toward(current_move_x, 0, SPEED * 10.0 * delta)
+		movement_x = move_toward(current_move_x, 0, SPEED * 10.0 * accel_scale * delta)
 	
 	velocity.x = movement_x + knockback_velocity.x
 	
@@ -641,7 +683,12 @@ func _physics_process(delta: float) -> void:
 		jump_buffer_timer = max(0.0, jump_buffer_timer - delta)
 
 	if jump_buffer_timer > 0.0 and coyote_timer > 0.0:
-		jump_ramp_timer = JUMP_RAMP_TIME
+		_water_jump_ramp_scale = float(_water_motion_profile.get("jump_scale", 1.0))
+		if _water_state == WATER_STATE_SWIMMING or _water_state == WATER_STATE_SUBMERGED:
+			jump_ramp_timer = 0.0
+			velocity.y = minf(velocity.y, -WATER_SWIM_UP_MAX_SPEED * 0.9)
+		else:
+			jump_ramp_timer = JUMP_RAMP_TIME
 		jump_buffer_timer = 0.0
 		coyote_timer = 0.0
 		# 跳跃音效 - 根据需求已注释
@@ -649,19 +696,22 @@ func _physics_process(delta: float) -> void:
 		# 	get_node("/root/AudioManager").play_sfx("jump", -8.0, 0.2)
 
 	if jump_ramp_timer > 0.0:
-		velocity.y += JUMP_VELOCITY * (delta / JUMP_RAMP_TIME)
+		velocity.y += JUMP_VELOCITY * _water_jump_ramp_scale * (delta / JUMP_RAMP_TIME)
 		jump_ramp_timer = max(0.0, jump_ramp_timer - delta)
 
 	if not is_on_floor():
 		if _gravity_enabled:
-			if velocity.y < 0:
-				var is_holding_jump = (not movement_locked and Input.is_action_pressed("space"))
-				var g_mult = GRAVITY_HOLD_MULTIPLIER if is_holding_jump else GRAVITY_RELEASE_MULTIPLIER
-				velocity.y += GRAVITY * g_mult * delta
+			if _water_state == WATER_STATE_DRY:
+				if velocity.y < 0:
+					var is_holding_jump = (not movement_locked and Input.is_action_pressed("space"))
+					var g_mult = GRAVITY_HOLD_MULTIPLIER if is_holding_jump else GRAVITY_RELEASE_MULTIPLIER
+					velocity.y += GRAVITY * g_mult * delta
+				else:
+					fall_time += delta
+					var dynamic_fall_multiplier = clamp(GRAVITY_FALL_MULTIPLIER + fall_time * FALL_GRAVITY_GROWTH, GRAVITY_FALL_MULTIPLIER, 4.5)
+					velocity.y += GRAVITY * dynamic_fall_multiplier * delta
 			else:
-				fall_time += delta
-				var dynamic_fall_multiplier = clamp(GRAVITY_FALL_MULTIPLIER + fall_time * FALL_GRAVITY_GROWTH, GRAVITY_FALL_MULTIPLIER, 4.5)
-				velocity.y += GRAVITY * dynamic_fall_multiplier * delta
+				_apply_water_vertical_forces(delta, not movement_locked)
 
 	# --- 空气阻力 ---
 	if velocity.length() > 0.0:
@@ -732,6 +782,160 @@ func _physics_process(delta: float) -> void:
 		_handle_step_up()
 
 	_recover_from_long_freefall()
+
+func _resolve_liquid_contact_amount(global_probe_pos: Vector2) -> float:
+	if not LiquidManager or not LiquidManager.has_method("get_liquid_contact_at_global_position"):
+		return 0.0
+	var contact_variant = LiquidManager.get_liquid_contact_at_global_position(global_probe_pos)
+	if not (contact_variant is Dictionary):
+		return 0.0
+	var contact: Dictionary = contact_variant
+	if not bool(contact.get("in_liquid", false)):
+		return 0.0
+	if String(contact.get("type", "")) != "water":
+		return 0.0
+	return clampf(float(contact.get("amount", 0.0)), 0.0, 1.0)
+
+func _sample_water_probe_amounts() -> Dictionary:
+	var foot_probe := global_position + Vector2(0, 12)
+	var torso_probe := global_position + Vector2(0, -2)
+	var head_probe := global_position + Vector2(0, -18)
+	var foot_amount := _resolve_liquid_contact_amount(foot_probe)
+	var torso_amount := _resolve_liquid_contact_amount(torso_probe)
+	var head_amount := _resolve_liquid_contact_amount(head_probe)
+	return {
+		"foot": foot_amount,
+		"torso": torso_amount,
+		"head": head_amount,
+	}
+
+func _resolve_water_state_from_probes(previous_state: String, foot_amount: float, torso_amount: float, head_amount: float, immersion: float) -> String:
+	var target_state := WATER_STATE_DRY
+	if head_amount >= WATER_ENTER_SUBMERGED_HEAD or immersion >= 0.82:
+		target_state = WATER_STATE_SUBMERGED
+	elif torso_amount >= WATER_ENTER_SWIMMING_TORSO or immersion >= 0.46:
+		target_state = WATER_STATE_SWIMMING
+	elif foot_amount >= WATER_ENTER_WADING or immersion >= WATER_ENTER_WADING:
+		target_state = WATER_STATE_WADING
+
+	if previous_state == WATER_STATE_SUBMERGED and head_amount >= WATER_EXIT_SUBMERGED_HEAD:
+		return WATER_STATE_SUBMERGED
+	if (previous_state == WATER_STATE_SWIMMING or previous_state == WATER_STATE_SUBMERGED) and torso_amount >= WATER_EXIT_SWIMMING_TORSO:
+		if target_state == WATER_STATE_WADING or target_state == WATER_STATE_DRY:
+			return WATER_STATE_SWIMMING
+	if previous_state != WATER_STATE_DRY and foot_amount >= WATER_EXIT_WADING and target_state == WATER_STATE_DRY:
+		return WATER_STATE_WADING
+
+	return target_state
+
+func _water_motion_profile_for_state(state: String, immersion: float) -> Dictionary:
+	var clamped_immersion := clampf(immersion, 0.0, 1.0)
+	var profile := {
+		"speed_scale": 1.0,
+		"accel_scale": 1.0,
+		"gravity_scale": 1.0,
+		"buoyancy": 0.0,
+		"jump_scale": 1.0,
+		"max_fall_speed": 99999.0,
+	}
+
+	match state:
+		WATER_STATE_WADING:
+			profile["speed_scale"] = lerpf(0.92, 0.82, clamped_immersion)
+			profile["accel_scale"] = 0.86
+			profile["gravity_scale"] = 0.64
+			profile["buoyancy"] = 90.0
+			profile["jump_scale"] = 0.72
+			profile["max_fall_speed"] = 520.0
+		WATER_STATE_SWIMMING:
+			profile["speed_scale"] = lerpf(0.70, 0.58, clamped_immersion)
+			profile["accel_scale"] = 0.64
+			profile["gravity_scale"] = 0.36
+			profile["buoyancy"] = lerpf(420.0, 560.0, clamped_immersion)
+			profile["jump_scale"] = 0.52
+			profile["max_fall_speed"] = 360.0
+		WATER_STATE_SUBMERGED:
+			profile["speed_scale"] = lerpf(0.58, 0.46, clamped_immersion)
+			profile["accel_scale"] = 0.54
+			profile["gravity_scale"] = 0.28
+			profile["buoyancy"] = lerpf(600.0, 760.0, clamped_immersion)
+			profile["jump_scale"] = 0.42
+			profile["max_fall_speed"] = 260.0
+
+	return profile
+
+func _emit_water_event(event_name: String) -> void:
+	var now_ms := Time.get_ticks_msec()
+	var cooldown_ms := WATER_EVENT_COOLDOWN_MS
+	if event_name == "underwater_loop":
+		cooldown_ms = WATER_LOOP_EVENT_INTERVAL_MS
+	var next_ms := int(_water_event_next_ms.get(event_name, 0))
+	if now_ms < next_ms:
+		return
+	_water_event_next_ms[event_name] = now_ms + cooldown_ms
+
+	water_interaction_event.emit(event_name, _water_immersion)
+	if EventBus and EventBus.has_signal("player_water_interaction_event"):
+		EventBus.player_water_interaction_event.emit(event_name, _water_immersion)
+
+	if has_node("/root/AudioManager"):
+		var am = get_node("/root/AudioManager")
+		if am and am.has_method("play_sfx"):
+			match event_name:
+				"enter_water":
+					am.play_sfx("water_enter", -14.0, 0.04)
+				"exit_water":
+					am.play_sfx("water_exit", -16.0, 0.04)
+				"surface_break":
+					am.play_sfx("water_surface_break", -15.0, 0.05)
+				"underwater_loop":
+					am.play_sfx("water_swim_loop", -22.0, 0.03)
+
+func _on_water_state_changed(previous_state: String, next_state: String) -> void:
+	water_state_changed.emit(previous_state, next_state, _water_immersion)
+	if EventBus and EventBus.has_signal("player_water_state_changed"):
+		EventBus.player_water_state_changed.emit(next_state, _water_immersion)
+
+	if previous_state == WATER_STATE_DRY and next_state != WATER_STATE_DRY:
+		_emit_water_event("enter_water")
+	elif previous_state != WATER_STATE_DRY and next_state == WATER_STATE_DRY:
+		_emit_water_event("exit_water")
+
+func _update_water_interaction_state(_delta: float) -> void:
+	var previous_state := _water_state
+	var previous_head_submerged := _water_head_submerged
+
+	var probes := _sample_water_probe_amounts()
+	_water_probe_foot = float(probes.get("foot", 0.0))
+	_water_probe_torso = float(probes.get("torso", 0.0))
+	_water_probe_head = float(probes.get("head", 0.0))
+	_water_immersion = clampf(_water_probe_foot * 0.25 + _water_probe_torso * 0.45 + _water_probe_head * 0.30, 0.0, 1.0)
+	_water_state = _resolve_water_state_from_probes(_water_state, _water_probe_foot, _water_probe_torso, _water_probe_head, _water_immersion)
+	_water_motion_profile = _water_motion_profile_for_state(_water_state, _water_immersion)
+	_water_head_submerged = _water_probe_head >= WATER_ENTER_SUBMERGED_HEAD
+
+	if previous_state != _water_state:
+		_on_water_state_changed(previous_state, _water_state)
+
+	if previous_head_submerged != _water_head_submerged:
+		_emit_water_event("surface_break")
+
+	if (_water_state == WATER_STATE_SWIMMING or _water_state == WATER_STATE_SUBMERGED) and velocity.length() >= 45.0:
+		_emit_water_event("underwater_loop")
+
+func _apply_water_vertical_forces(delta: float, allow_swim_input: bool) -> void:
+	var gravity_scale := float(_water_motion_profile.get("gravity_scale", 1.0))
+	var buoyancy := float(_water_motion_profile.get("buoyancy", 0.0))
+	var max_fall_speed := float(_water_motion_profile.get("max_fall_speed", 99999.0))
+
+	velocity.y += GRAVITY * gravity_scale * delta
+	velocity.y -= buoyancy * maxf(_water_immersion, 0.2) * delta
+
+	if allow_swim_input and (_water_state == WATER_STATE_SWIMMING or _water_state == WATER_STATE_SUBMERGED) and Input.is_action_pressed("space"):
+		velocity.y = move_toward(velocity.y, -WATER_SWIM_UP_MAX_SPEED, WATER_SWIM_UP_ACCEL * delta)
+
+	if velocity.y > max_fall_speed:
+		velocity.y = max_fall_speed
 
 func _attempt_execution() -> void:
 	var enemies = get_tree().get_nodes_in_group("npcs")

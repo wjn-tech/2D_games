@@ -5,6 +5,7 @@ const WorldTopologyScript = preload("res://src/systems/world/world_topology.gd")
 const LiquidManagerScript = preload("res://src/systems/world/liquid_manager.gd")
 const WorldChunkScript = preload("res://src/systems/world/world_chunk.gd")
 const PlayerScript = preload("res://scenes/player.gd")
+const InfiniteChunkManagerScript = preload("res://src/systems/world/infinite_chunk_manager.gd")
 
 func _init() -> void:
 	_run_all()
@@ -37,6 +38,9 @@ func _run_all() -> void:
 	_test_worldgen_liquid_seed_contract()
 	_test_worldgen_performance_guardrail_smoke()
 	_test_planetary_preload_domain_contract()
+	_test_compact_precomputed_resolution_hit_contract()
+	_test_compact_corruption_legacy_fallback_contract()
+	_test_precomputed_regenerate_fallback_contract()
 	_test_liquid_extension_interface()
 	_test_liquid_downward_micro_trickle_no_deadzone()
 	_test_liquid_cooldown_ready_scheduler()
@@ -93,6 +97,33 @@ func _dispose_world_topology_fixture(fixture: Dictionary) -> void:
 		if is_instance_valid(topology_node):
 			topology_node.get_parent().remove_child(topology_node)
 			topology_node.free()
+
+func _make_chunk_manager_fixture() -> Dictionary:
+	var manager = InfiniteChunkManagerScript.new()
+	manager.name = "InfiniteChunkManagerTest_%d" % Time.get_ticks_msec()
+	get_root().add_child(manager)
+	return {
+		"manager": manager,
+	}
+
+func _dispose_chunk_manager_fixture(fixture: Dictionary) -> void:
+	if fixture.has("manager") and fixture["manager"] is Node:
+		var manager_node: Node = fixture["manager"]
+		if is_instance_valid(manager_node):
+			manager_node.get_parent().remove_child(manager_node)
+			manager_node.free()
+
+func _remove_file_if_exists(path: String) -> void:
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(path)
+
+func _cleanup_precomputed_artifacts(manager, signature: String, coord: Vector2i) -> void:
+	if manager == null:
+		return
+	var compact_path := manager._get_precomputed_chunk_compact_path(signature, coord)
+	var legacy_path := manager._get_precomputed_chunk_legacy_path(signature, coord)
+	_remove_file_if_exists(compact_path)
+	_remove_file_if_exists(legacy_path)
 
 func _is_ore_tile(atlas: Vector2i) -> bool:
 	var ore_tiles: Array[Vector2i] = [
@@ -651,6 +682,99 @@ func _test_planetary_preload_domain_contract() -> void:
 	topology.reset_to_legacy(12345)
 	var legacy_domain = topology.get_preload_domain_definition()
 	_assert_true(not bool(legacy_domain.get("required", true)), "legacy topology should fallback without mandatory full preload")
+
+func _test_compact_precomputed_resolution_hit_contract() -> void:
+	var fixture = _make_chunk_manager_fixture()
+	var manager = fixture.get("manager", null)
+	if manager == null:
+		_failures.append("chunk manager fixture missing for compact hit contract")
+		_dispose_chunk_manager_fixture(fixture)
+		return
+
+	var signature := "compact_hit_%d" % Time.get_ticks_msec()
+	var identity := {
+		"topology_mode": "planetary_v1",
+		"primary_seed": 902311,
+	}
+	var coord := Vector2i(2, 5)
+	var cells := {
+		0: {
+			Vector2i(1, 1): {"source": 1, "atlas": Vector2i(2, 0)},
+		}
+	}
+	_assert_true(manager._save_precomputed_chunk_cells(signature, coord, cells, identity), "compact hit contract should save precomputed cells")
+	var resolved: Dictionary = manager._resolve_precomputed_chunk_cells(signature, identity, coord)
+	_assert_true(bool(resolved.get("hit", false)), "compact hit contract should resolve precomputed cells")
+	_assert_eq(String(resolved.get("branch", "")), "compact", "compact hit contract should prefer compact branch")
+	var resolved_cells_variant = resolved.get("cells", {})
+	_assert_true(resolved_cells_variant is Dictionary, "compact hit contract should return dictionary cells")
+	if resolved_cells_variant is Dictionary:
+		var resolved_cells: Dictionary = resolved_cells_variant
+		_assert_true(resolved_cells.has(0), "compact hit contract should contain layer 0 payload")
+
+	_cleanup_precomputed_artifacts(manager, signature, coord)
+	_dispose_chunk_manager_fixture(fixture)
+
+func _test_compact_corruption_legacy_fallback_contract() -> void:
+	var fixture = _make_chunk_manager_fixture()
+	var manager = fixture.get("manager", null)
+	if manager == null:
+		_failures.append("chunk manager fixture missing for compact corruption fallback contract")
+		_dispose_chunk_manager_fixture(fixture)
+		return
+
+	var signature := "compact_corrupt_%d" % Time.get_ticks_msec()
+	var identity := {
+		"topology_mode": "planetary_v1",
+		"primary_seed": 778899,
+	}
+	var coord := Vector2i(3, 7)
+	var cells := {
+		0: {
+			Vector2i(2, 2): {"source": 1, "atlas": Vector2i(2, 0)},
+		}
+	}
+	_assert_true(manager._save_precomputed_chunk_cells(signature, coord, cells, identity), "compact corruption fallback should save baseline artifacts")
+
+	var compact_path := manager._get_precomputed_chunk_compact_path(signature, coord)
+	var compact_file := FileAccess.open(compact_path, FileAccess.WRITE)
+	if compact_file != null:
+		compact_file.store_string("corrupt")
+		compact_file.close()
+
+	var resolved: Dictionary = manager._resolve_precomputed_chunk_cells(signature, identity, coord)
+	_assert_true(bool(resolved.get("hit", false)), "compact corruption fallback should still resolve via fallback")
+	_assert_eq(String(resolved.get("branch", "")), "legacy", "compact corruption fallback should use legacy branch")
+	var stats: Dictionary = manager.get_precomputed_resolution_stats()
+	_assert_true(int(stats.get("compact_corrupt", 0)) >= 1, "compact corruption fallback should increment compact_corrupt counter")
+	_assert_true(int(stats.get("legacy", 0)) >= 1, "compact corruption fallback should increment legacy counter")
+
+	_cleanup_precomputed_artifacts(manager, signature, coord)
+	_dispose_chunk_manager_fixture(fixture)
+
+func _test_precomputed_regenerate_fallback_contract() -> void:
+	var fixture = _make_chunk_manager_fixture()
+	var manager = fixture.get("manager", null)
+	if manager == null:
+		_failures.append("chunk manager fixture missing for regenerate fallback contract")
+		_dispose_chunk_manager_fixture(fixture)
+		return
+
+	var signature := "compact_miss_%d" % Time.get_ticks_msec()
+	var identity := {
+		"topology_mode": "planetary_v1",
+		"primary_seed": 556677,
+	}
+	var coord := Vector2i(4, 9)
+	_cleanup_precomputed_artifacts(manager, signature, coord)
+
+	var resolved: Dictionary = manager._resolve_precomputed_chunk_cells(signature, identity, coord)
+	_assert_true(not bool(resolved.get("hit", true)), "regenerate fallback should report miss")
+	_assert_eq(String(resolved.get("branch", "")), "regenerate", "regenerate fallback should use regenerate branch")
+	var stats: Dictionary = manager.get_precomputed_resolution_stats()
+	_assert_true(int(stats.get("regenerate", 0)) >= 1, "regenerate fallback should increment regenerate counter")
+
+	_dispose_chunk_manager_fixture(fixture)
 
 func _test_liquid_extension_interface() -> void:
 	var manager = LiquidManagerScript.new()

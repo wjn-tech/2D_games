@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="BaseItem" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/core/resources/base_item.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://icon.svg" id="2_icon"]
+
+[resource]
+script = ExtResource("1_script")
+id = "skeleton_king_core"
+display_name = "骸王核心"
+description = "骷髅王王冠中淬炼出的骨铸核心。"
+item_type = "BossCore"
+icon = ExtResource("2_icon")
+max_stack = 99
+stackable = true
+value = 120
+quality_grade = "Epic"

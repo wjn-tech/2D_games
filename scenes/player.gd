@@ -34,17 +34,30 @@ const AIR_DRAG_COEFF = 0.000001
 const FALL_GRAVITY_GROWTH = 0.9
 const STEP_HEIGHT = 18.0 # 自动上台阶的高度（略大于一个图块高度）
 const FALL_PRELOAD_SPEED_THRESHOLD = 900.0
+const TERMINAL_FALL_SPEED = 1280.0
 const FALL_PRELOAD_DISTANCE_MIN = 128.0
 const FALL_PRELOAD_DISTANCE_MAX = 896.0
 const FALL_PRELOAD_FRAME_INTERVAL = 6
+const EXTREME_STREAM_REFRESH_INTERVAL = 1
+const FAST_FALL_STREAM_REFRESH_INTERVAL = 2
+const HIGH_SPEED_STREAM_REFRESH_INTERVAL = 2
+const NORMAL_STREAM_REFRESH_INTERVAL = 4
+const STREAM_PRESSURE_SPEED_THRESHOLD = 520.0
+const STREAM_PRESSURE_SPEED_THRESHOLD_EXTREME = 900.0
 const WALK_AHEAD_PRELOAD_DISTANCE = 192.0
 const WALK_AHEAD_PRELOAD_FRAME_INTERVAL = 8
+const WALK_AHEAD_PRELOAD_DISTANCE_MAX = 768.0
+const WALK_AHEAD_PRELOAD_DISTANCE_FACTOR = 0.45
+const EMERGENCY_SYNC_LOAD_COOLDOWN_MS = 90
+const WALK_SYNC_GUARD_MIN_SPEED = 24.0
+const WALK_SYNC_GUARD_COOLDOWN_MS = 120
 const FOOTSTEP_INTERVAL_BASE = 0.24
 const FOOTSTEP_INTERVAL_FAST = 0.16
 const PLAYER_FEET_OFFSET = 8.0
 const TERRAIN_RECOVERY_COOLDOWN = 0.15
 const FREEFALL_RESCUE_TIME = 3.0
 const FREEFALL_RESCUE_MIN_SPEED = 900.0
+const FREEFALL_RESCUE_CHUNK_MISS_TIME = 1.2
 
 const WATER_STATE_DRY := "dry"
 const WATER_STATE_WADING := "wading"
@@ -62,12 +75,15 @@ const WATER_SWIM_UP_ACCEL := 920.0
 const WATER_SWIM_UP_MAX_SPEED := 220.0
 const WATER_EVENT_COOLDOWN_MS := 220
 const WATER_LOOP_EVENT_INTERVAL_MS := 380
+const MINA_CONTROL_DURATION := 10.0
+const MINA_ATTACK_MULTIPLIER_FLOOR := 0.2
 
 @export var interaction_area: Area2D
 
 const WandRendererScene = preload("res://src/systems/magic/wand_renderer.tscn")
 
 var current_wand: WandData
+var _last_equipped_wand_snapshot: WandData = null
 var weapon_pivot: Marker2D
 var wand_sprite: Sprite2D
 var projectile_spawn_point: Marker2D
@@ -87,6 +103,11 @@ var _last_streaming_chunk_coord: Variant = null
 var _last_fall_preload_chunk_coord: Variant = null
 var _fast_fall_streaming_active: bool = false
 var _last_walk_preload_chunk_coord: Variant = null
+var _last_emergency_sync_chunk_coord: Variant = null
+var _last_emergency_sync_load_msec: int = 0
+var _last_walk_sync_guard_chunk_coord: Variant = null
+var _last_walk_sync_guard_msec: int = 0
+var _freefall_chunk_miss_time: float = 0.0
 var _footstep_timer: float = 0.0
 var _water_state: String = WATER_STATE_DRY
 var _water_immersion: float = 0.0
@@ -104,11 +125,100 @@ var _water_motion_profile: Dictionary = {
 	"max_fall_speed": 99999.0,
 }
 var _water_jump_ramp_scale: float = 1.0
+var _poison_remaining_time: float = 0.0
+var _poison_tick_interval: float = 1.0
+var _poison_tick_timer: float = 0.0
+var _poison_tick_max_hp_percent: float = 0.0
+var _mina_projectile_lock_time: float = 0.0
+var _mina_input_inversion_time: float = 0.0
+var _mina_gravity_flip_time: float = 0.0
+var _mina_angina_time: float = 0.0
+var _mina_angina_original_max_health: float = -1.0
+var _mina_attack_multiplier: float = 1.0
+var _mina_projectile_lock_feedback_cooldown: float = 0.0
 
 func set_gravity_enabled(enabled: bool) -> void:
 	_gravity_enabled = enabled
 	if not enabled:
 		velocity.y = 0
+
+func apply_mina_angina(duration: float = MINA_CONTROL_DURATION) -> void:
+	if attributes == null or attributes.data == null:
+		return
+	if _mina_angina_time <= 0.0:
+		_mina_angina_original_max_health = maxf(1.0, float(attributes.data.max_health))
+	_mina_angina_time = maxf(_mina_angina_time, duration)
+	var reduced_max := maxf(1.0, _mina_angina_original_max_health * 0.5)
+	attributes.data.max_health = reduced_max
+	if attributes.data.health > reduced_max:
+		attributes.data.health = reduced_max
+
+func apply_mina_projectile_lock(duration: float = MINA_CONTROL_DURATION) -> void:
+	_mina_projectile_lock_time = maxf(_mina_projectile_lock_time, duration)
+
+func apply_mina_input_inversion(duration: float = MINA_CONTROL_DURATION) -> void:
+	_mina_input_inversion_time = maxf(_mina_input_inversion_time, duration)
+
+func apply_mina_gravity_flip(duration: float = MINA_CONTROL_DURATION) -> void:
+	_mina_gravity_flip_time = maxf(_mina_gravity_flip_time, duration)
+
+func apply_mina_attack_reduction_step() -> void:
+	_mina_attack_multiplier = maxf(MINA_ATTACK_MULTIPLIER_FLOOR, _mina_attack_multiplier * 0.8)
+
+func get_combat_damage_multiplier() -> float:
+	return maxf(MINA_ATTACK_MULTIPLIER_FLOOR, _mina_attack_multiplier)
+
+func clear_mina_combat_debuffs() -> void:
+	_mina_projectile_lock_time = 0.0
+	_mina_input_inversion_time = 0.0
+	_mina_gravity_flip_time = 0.0
+	_mina_angina_time = 0.0
+	_mina_projectile_lock_feedback_cooldown = 0.0
+	_mina_attack_multiplier = 1.0
+	if attributes and attributes.data and _mina_angina_original_max_health > 0.0:
+		attributes.data.max_health = _mina_angina_original_max_health
+		attributes.data.health = minf(attributes.data.health, attributes.data.max_health)
+	_mina_angina_original_max_health = -1.0
+
+func _is_mina_projectile_locked() -> bool:
+	return _mina_projectile_lock_time > 0.0
+
+func _is_mina_input_inverted() -> bool:
+	return _mina_input_inversion_time > 0.0
+
+func _get_current_gravity_direction() -> float:
+	return -1.0 if _mina_gravity_flip_time > 0.0 else 1.0
+
+func _clamp_terminal_velocity_signed(limit: float) -> void:
+	var gravity_dir := _get_current_gravity_direction()
+	if gravity_dir > 0.0:
+		if velocity.y > limit:
+			velocity.y = limit
+	else:
+		if velocity.y < -limit:
+			velocity.y = -limit
+
+func _process_mina_combat_debuffs(delta: float) -> void:
+	if _mina_projectile_lock_time > 0.0:
+		_mina_projectile_lock_time = maxf(0.0, _mina_projectile_lock_time - delta)
+	if _mina_input_inversion_time > 0.0:
+		_mina_input_inversion_time = maxf(0.0, _mina_input_inversion_time - delta)
+	if _mina_gravity_flip_time > 0.0:
+		_mina_gravity_flip_time = maxf(0.0, _mina_gravity_flip_time - delta)
+	if _mina_projectile_lock_feedback_cooldown > 0.0:
+		_mina_projectile_lock_feedback_cooldown = maxf(0.0, _mina_projectile_lock_feedback_cooldown - delta)
+
+	if _mina_angina_time > 0.0:
+		_mina_angina_time = maxf(0.0, _mina_angina_time - delta)
+		if attributes and attributes.data and _mina_angina_original_max_health > 0.0:
+			var reduced_max := maxf(1.0, _mina_angina_original_max_health * 0.5)
+			attributes.data.max_health = reduced_max
+			attributes.data.health = minf(attributes.data.health, reduced_max)
+	elif _mina_angina_original_max_health > 0.0:
+		if attributes and attributes.data:
+			attributes.data.max_health = _mina_angina_original_max_health
+			attributes.data.health = minf(attributes.data.health, attributes.data.max_health)
+		_mina_angina_original_max_health = -1.0
 
 # Inventory
 var inventory: InventoryManager
@@ -238,7 +348,8 @@ func _ready() -> void:
 	else:
 		camera = Camera2D.new()
 		add_child(camera)
-		camera.make_current()
+
+	camera.make_current()
 	
 	if not camera.get_script():
 		camera.set_script(GameCameraScript)
@@ -301,6 +412,10 @@ func take_damage(amount: float, _type: String = "physical") -> void:
 		print("Player takes damage: ", amount, " | New HP: ", attributes.data.health)
 		# Basic death check
 		if attributes.data.health <= 0:
+			var boss_encounter_manager = _find_boss_encounter_manager()
+			if boss_encounter_manager and boss_encounter_manager.has_method("handle_player_death"):
+				if boss_encounter_manager.handle_player_death(self):
+					return
 			print("Player Health depleted! Triggering Reincarnation...")
 			LifespanManager.trigger_instant_death(attributes.data, "战斗死亡")
 			
@@ -312,6 +427,42 @@ func take_damage(amount: float, _type: String = "physical") -> void:
 	if camera and camera.has_method("shake"):
 		camera.shake(0.4, 15.0) # Increased shake on player hit for awareness
 
+func apply_poison_effect(duration: float, tick_interval: float, max_hp_percent_per_tick: float) -> void:
+	if duration <= 0.0 or max_hp_percent_per_tick <= 0.0:
+		return
+	_poison_remaining_time = maxf(_poison_remaining_time, duration)
+	_poison_tick_interval = clampf(tick_interval, 0.1, 5.0)
+	if _poison_tick_timer <= 0.0:
+		_poison_tick_timer = _poison_tick_interval
+	else:
+		_poison_tick_timer = minf(_poison_tick_timer, _poison_tick_interval)
+	_poison_tick_max_hp_percent = maxf(_poison_tick_max_hp_percent, max_hp_percent_per_tick)
+
+func _process_poison_status(delta: float) -> void:
+	if _poison_remaining_time <= 0.0:
+		return
+	_poison_remaining_time = maxf(0.0, _poison_remaining_time - delta)
+	_poison_tick_timer -= delta
+
+	while _poison_tick_timer <= 0.0 and _poison_remaining_time > 0.0:
+		_poison_tick_timer += _poison_tick_interval
+		var max_health_value := _get_player_max_health()
+		if max_health_value <= 0.0:
+			continue
+		var poison_damage := maxf(1.0, max_health_value * _poison_tick_max_hp_percent)
+		take_damage(poison_damage, "poison")
+		if UIManager:
+			UIManager.show_floating_text("Poison", global_position + Vector2(0, -44), Color(0.5, 1.0, 0.45))
+
+	if _poison_remaining_time <= 0.0:
+		_poison_tick_max_hp_percent = 0.0
+		_poison_tick_timer = 0.0
+
+func _get_player_max_health() -> float:
+	if attributes and attributes.data:
+		return float(attributes.data.max_health)
+	return 0.0
+
 func apply_knockback(impulse: Vector2) -> void:
 	# Y axis handles impulse directly (gravity logic compatible)
 	velocity.y += impulse.y
@@ -322,10 +473,16 @@ func apply_knockback(impulse: Vector2) -> void:
 		velocity.y = -150 # Small hop if grounded and hit horizontally
 
 func _trigger_damage_vignette() -> void:
-	var hud = get_tree().get_first_node_in_group("hud") # Ensure HUD is grouped
+	var tree := get_tree()
+	if tree == null:
+		return
+
+	var hud = tree.get_first_node_in_group("hud") # Ensure HUD is grouped
 	if hud and hud.has_method("show_damage_vignette"):
 		hud.show_damage_vignette()
 	else:
+		if not is_inside_tree():
+			return
 		# Fallback: Flash player modualte
 		var tween = create_tween()
 		tween.tween_property(self, "modulate", Color(1, 0.4, 0.4), 0.1)
@@ -377,6 +534,7 @@ func _on_equipped_item_changed(item: Resource):
 	if is_wand:
 		if bm: bm.cancel_building()
 		current_wand = item.wand_data
+		_cache_current_wand_snapshot()
 		if wand_sprite: wand_sprite.visible = true
 		_update_wand_visual()
 	elif item is TileItemData or (item and item.has_meta("building_resource")) or (item and (item.id == "workbench" or item.id == "workbench_item")):
@@ -385,6 +543,7 @@ func _on_equipped_item_changed(item: Resource):
 			_try_place_held_item() # 内部已经处理了建筑启动逻辑
 		
 		# Clear wand status since we hold a building item
+		_cache_current_wand_snapshot()
 		current_wand = null
 		if wand_sprite and item: 
 			wand_sprite.visible = true
@@ -401,11 +560,13 @@ func _on_equipped_item_changed(item: Resource):
 			wand_sprite.z_index = 5
 	elif item == null:
 		# Unequipped
+		_cache_current_wand_snapshot()
 		current_wand = null
 		if bm and bm.is_building(): bm.cancel_building()
 		if wand_sprite: wand_sprite.visible = false
 	elif item and (item.has_meta("building_resource") or item.id == "workbench" or item.id == "workbench_item"):
 		# 建筑类物品：立即进入建造预览模式
+		_cache_current_wand_snapshot()
 		current_wand = null
 		if wand_sprite: 
 			wand_sprite.visible = true
@@ -428,6 +589,7 @@ func _on_equipped_item_changed(item: Resource):
 			elif item.has_meta("building_resource"):
 				bm.start_building(item.get_meta("building_resource"))
 	else:
+		_cache_current_wand_snapshot()
 		current_wand = null
 		if wand_sprite: 
 			wand_sprite.texture = null
@@ -458,6 +620,17 @@ func get_equipped_wand():
 		if item and (item is WandItem or item.get("wand_data") != null):
 			return item
 	return null
+
+func get_last_known_wand_snapshot() -> WandData:
+	if current_wand:
+		return current_wand.duplicate(true)
+	if _last_equipped_wand_snapshot:
+		return _last_equipped_wand_snapshot.duplicate(true)
+	return null
+
+func _cache_current_wand_snapshot() -> void:
+	if current_wand:
+		_last_equipped_wand_snapshot = current_wand.duplicate(true)
 
 func _toggle_wand_editor():
 	if UIManager:
@@ -571,22 +744,40 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 func _physics_process(delta: float) -> void:
+	_process_poison_status(delta)
+	_process_mina_combat_debuffs(delta)
+	up_direction = Vector2.UP if _get_current_gravity_direction() > 0.0 else Vector2.DOWN
+
+	var in_independent_encounter := false
+	var boss_encounter_manager = _find_boss_encounter_manager()
+	if boss_encounter_manager and boss_encounter_manager.has_method("is_player_in_active_encounter"):
+		in_independent_encounter = bool(boss_encounter_manager.is_player_in_active_encounter(self))
 	var is_fast_fall_streaming := (not is_on_floor() and velocity.y > FALL_PRELOAD_SPEED_THRESHOLD)
 	var horizontal_stream_bias: int = 0
 	if abs(velocity.x) > 25.0:
 		horizontal_stream_bias = 1 if velocity.x > 0.0 else -1
 	var allow_stream_unload: bool = abs(velocity.x) < 35.0
-	var stream_vertical_radius: int = 1
+	var stream_vertical_radius: int = 2
 	if velocity.y > 280.0:
-		stream_vertical_radius = 2
-	if _fast_fall_streaming_active and not is_fast_fall_streaming and InfiniteChunkManager:
+		stream_vertical_radius = 3
+	if not in_independent_encounter and _fast_fall_streaming_active and not is_fast_fall_streaming and InfiniteChunkManager:
 		# 离开高速坠落状态后立即恢复完整邻域，统一回收临时保留区块。
 		InfiniteChunkManager.update_player_vicinity(global_position, -1, allow_stream_unload, horizontal_stream_bias, stream_vertical_radius)
 		_last_streaming_chunk_coord = InfiniteChunkManager.get_chunk_coord(global_position)
-	_fast_fall_streaming_active = is_fast_fall_streaming
+	_fast_fall_streaming_active = is_fast_fall_streaming if not in_independent_encounter else false
 
 	# --- 无限地图更新 ---
-	if InfiniteChunkManager and Engine.get_frames_drawn() % 10 == 0:
+	var max_component_speed: float = maxf(absf(velocity.x), absf(velocity.y))
+	var is_extreme_streaming_speed: bool = max_component_speed >= STREAM_PRESSURE_SPEED_THRESHOLD_EXTREME
+	var is_high_speed_streaming: bool = is_fast_fall_streaming or max_component_speed >= STREAM_PRESSURE_SPEED_THRESHOLD
+	var stream_refresh_interval: int = NORMAL_STREAM_REFRESH_INTERVAL
+	if is_extreme_streaming_speed:
+		stream_refresh_interval = EXTREME_STREAM_REFRESH_INTERVAL
+	elif is_high_speed_streaming:
+		stream_refresh_interval = HIGH_SPEED_STREAM_REFRESH_INTERVAL
+	elif is_fast_fall_streaming:
+		stream_refresh_interval = FAST_FALL_STREAM_REFRESH_INTERVAL
+	if not in_independent_encounter and InfiniteChunkManager and Engine.get_frames_drawn() % stream_refresh_interval == 0:
 		var current_chunk := InfiniteChunkManager.get_chunk_coord(global_position)
 		var should_refresh_vicinity: bool = (_last_streaming_chunk_coord == null or current_chunk != _last_streaming_chunk_coord)
 		# 在低速/停下时定期触发一次邻域维护，回收移动期暂缓卸载的区块。
@@ -594,9 +785,15 @@ func _physics_process(delta: float) -> void:
 			should_refresh_vicinity = true
 
 		if should_refresh_vicinity:
-			# 高速坠落时改为小半径且禁用卸载，避免空中频繁卸载/重载导致卡顿。
-			if is_fast_fall_streaming:
-				InfiniteChunkManager.update_player_vicinity(global_position, 1, false, horizontal_stream_bias, 2)
+			# 高速运动阶段扩大前向加载并暂停卸载，保证加载速度不落后于玩家位移速度。
+			if is_high_speed_streaming:
+				var fast_fall_vertical_radius: int = maxi(4, stream_vertical_radius + 1)
+				var fast_radius_x: int = 1
+				if absf(velocity.x) > 420.0:
+					fast_radius_x = 2
+				if is_extreme_streaming_speed:
+					fast_radius_x = 3
+				InfiniteChunkManager.update_player_vicinity(global_position, fast_radius_x, false, horizontal_stream_bias, fast_fall_vertical_radius)
 			else:
 				InfiniteChunkManager.update_player_vicinity(global_position, -1, allow_stream_unload, horizontal_stream_bias, stream_vertical_radius)
 			_last_streaming_chunk_coord = current_chunk
@@ -624,12 +821,15 @@ func _physics_process(delta: float) -> void:
 		if not is_on_floor():
 			if _gravity_enabled:
 				if _water_state == WATER_STATE_DRY:
-					velocity.y += GRAVITY * delta
+					velocity.y += GRAVITY * delta * _get_current_gravity_direction()
+					_clamp_terminal_velocity_signed(TERMINAL_FALL_SPEED)
 				else:
 					_apply_water_vertical_forces(delta, false)
-		_mitigate_fast_fall_chunk_gaps()
+		if not in_independent_encounter:
+			_mitigate_fast_fall_chunk_gaps()
 		move_and_slide()
-		_recover_from_terrain_embed()
+		if not in_independent_encounter:
+			_recover_from_terrain_embed()
 		return
 		
 	# --- 动作处理 ---
@@ -658,6 +858,8 @@ func _physics_process(delta: float) -> void:
 	var direction := 0.0
 	if not movement_locked:
 		direction = Input.get_axis("left", "right")
+		if _is_mina_input_inverted():
+			direction = -direction
 		
 	var accel_scale := float(_water_motion_profile.get("accel_scale", 1.0))
 	var target_speed_x = direction * SPEED * float(_water_motion_profile.get("speed_scale", 1.0))
@@ -696,42 +898,48 @@ func _physics_process(delta: float) -> void:
 		# 	get_node("/root/AudioManager").play_sfx("jump", -8.0, 0.2)
 
 	if jump_ramp_timer > 0.0:
-		velocity.y += JUMP_VELOCITY * _water_jump_ramp_scale * (delta / JUMP_RAMP_TIME)
+		velocity.y += JUMP_VELOCITY * _water_jump_ramp_scale * (delta / JUMP_RAMP_TIME) * _get_current_gravity_direction()
 		jump_ramp_timer = max(0.0, jump_ramp_timer - delta)
 
 	if not is_on_floor():
 		if _gravity_enabled:
 			if _water_state == WATER_STATE_DRY:
-				if velocity.y < 0:
+				var gravity_dir := _get_current_gravity_direction()
+				if velocity.y * gravity_dir < 0.0:
 					var is_holding_jump = (not movement_locked and Input.is_action_pressed("space"))
 					var g_mult = GRAVITY_HOLD_MULTIPLIER if is_holding_jump else GRAVITY_RELEASE_MULTIPLIER
-					velocity.y += GRAVITY * g_mult * delta
+					velocity.y += GRAVITY * g_mult * delta * gravity_dir
 				else:
 					fall_time += delta
 					var dynamic_fall_multiplier = clamp(GRAVITY_FALL_MULTIPLIER + fall_time * FALL_GRAVITY_GROWTH, GRAVITY_FALL_MULTIPLIER, 4.5)
-					velocity.y += GRAVITY * dynamic_fall_multiplier * delta
+					velocity.y += GRAVITY * dynamic_fall_multiplier * delta * gravity_dir
 			else:
 				_apply_water_vertical_forces(delta, not movement_locked)
+
+		if _water_state == WATER_STATE_DRY:
+			_clamp_terminal_velocity_signed(TERMINAL_FALL_SPEED)
 
 	# --- 空气阻力 ---
 	if velocity.length() > 0.0:
 		velocity += (-velocity.normalized() * AIR_DRAG_COEFF * velocity.length_squared()) * delta
 
-	_mitigate_fast_fall_chunk_gaps()
-	_mitigate_walk_chunk_gaps()
+	if not in_independent_encounter:
+		_mitigate_fast_fall_chunk_gaps()
+		_mitigate_walk_chunk_gaps()
 
 	# --- 物理执行与翻转 ---
 	var was_on_floor = is_on_floor()
 	move_and_slide()
 
 	# World Wrapping Logic (Planetary Mode)
-	if has_node("/root/WorldTopology"):
+	if not in_independent_encounter and has_node("/root/WorldTopology"):
 		var topology = get_node("/root/WorldTopology")
 		if topology.has_method("is_planetary") and topology.is_planetary():
 			# Single Source of Truth for Wrapping
 			global_position.x = topology.wrap_x(global_position.x)
 
-	_recover_from_terrain_embed()
+	if not in_independent_encounter:
+		_recover_from_terrain_embed()
 	
 	# 落地音效
 	if not was_on_floor and is_on_floor():
@@ -781,7 +989,9 @@ func _physics_process(delta: float) -> void:
 	if is_on_wall() and was_on_floor:
 		_handle_step_up()
 
-	_recover_from_long_freefall()
+	if not in_independent_encounter:
+		_update_freefall_chunk_miss_timer(delta)
+		_recover_from_long_freefall()
 
 func _resolve_liquid_contact_amount(global_probe_pos: Vector2) -> float:
 	if not LiquidManager or not LiquidManager.has_method("get_liquid_contact_at_global_position"):
@@ -927,15 +1137,16 @@ func _apply_water_vertical_forces(delta: float, allow_swim_input: bool) -> void:
 	var gravity_scale := float(_water_motion_profile.get("gravity_scale", 1.0))
 	var buoyancy := float(_water_motion_profile.get("buoyancy", 0.0))
 	var max_fall_speed := float(_water_motion_profile.get("max_fall_speed", 99999.0))
+	var gravity_dir := _get_current_gravity_direction()
 
-	velocity.y += GRAVITY * gravity_scale * delta
-	velocity.y -= buoyancy * maxf(_water_immersion, 0.2) * delta
+	velocity.y += GRAVITY * gravity_scale * delta * gravity_dir
+	velocity.y -= buoyancy * maxf(_water_immersion, 0.2) * delta * gravity_dir
 
 	if allow_swim_input and (_water_state == WATER_STATE_SWIMMING or _water_state == WATER_STATE_SUBMERGED) and Input.is_action_pressed("space"):
-		velocity.y = move_toward(velocity.y, -WATER_SWIM_UP_MAX_SPEED, WATER_SWIM_UP_ACCEL * delta)
+		velocity.y = move_toward(velocity.y, -WATER_SWIM_UP_MAX_SPEED * gravity_dir, WATER_SWIM_UP_ACCEL * delta)
 
-	if velocity.y > max_fall_speed:
-		velocity.y = max_fall_speed
+	if velocity.y * gravity_dir > max_fall_speed:
+		velocity.y = max_fall_speed * gravity_dir
 
 func _attempt_execution() -> void:
 	var enemies = get_tree().get_nodes_in_group("npcs")
@@ -955,6 +1166,8 @@ func _attempt_execution() -> void:
 
 func _handle_step_up() -> void:
 	var direction = Input.get_axis("left", "right")
+	if _is_mina_input_inverted():
+		direction = -direction
 	if direction == 0: return
 	
 	# 1. 向上探测：检查头顶是否有空间
@@ -986,30 +1199,137 @@ func _mitigate_fast_fall_chunk_gaps() -> void:
 
 	var feet_pos = global_position + Vector2(0, PLAYER_FEET_OFFSET)
 	var lookahead = clamp(velocity.y * 0.25, FALL_PRELOAD_DISTANCE_MIN, FALL_PRELOAD_DISTANCE_MAX)
-	var preload_coord := InfiniteChunkManager.get_chunk_coord(feet_pos + Vector2(0, lookahead))
-	if _last_fall_preload_chunk_coord != null and preload_coord == _last_fall_preload_chunk_coord:
+	var current_coord: Vector2i = InfiniteChunkManager.get_chunk_coord(feet_pos)
+	var preload_coord: Vector2i = InfiniteChunkManager.get_chunk_coord(feet_pos + Vector2(0, lookahead))
+	if _last_fall_preload_chunk_coord != null and preload_coord == _last_fall_preload_chunk_coord and preload_coord.y <= current_coord.y:
 		return
 
 	_last_fall_preload_chunk_coord = preload_coord
-	InfiniteChunkManager.prime_required_chunks([preload_coord])
+	var preload_targets: Array = []
+	var y_start: int = current_coord.y + 1
+	var y_end: int = preload_coord.y
+	if y_end < y_start:
+		y_start = y_end
+		y_end = current_coord.y + 1
+	var max_depth_span: int = 6
+	var y_cursor: int = y_start
+	while y_cursor <= y_end and preload_targets.size() < max_depth_span:
+		preload_targets.append(Vector2i(preload_coord.x, y_cursor))
+		y_cursor += 1
+
+	# 高速下落且有横向速度时，预热一列侧向区块，减少对角坠落时的空白带。
+	if abs(velocity.x) > 120.0:
+		var side_x: int = preload_coord.x + (1 if velocity.x > 0.0 else -1)
+		var side_targets: Array = []
+		for target in preload_targets:
+			if target is Vector2i:
+				side_targets.append(Vector2i(side_x, target.y))
+		preload_targets.append_array(side_targets)
+
+	if preload_targets.is_empty():
+		preload_targets.append(preload_coord)
+	InfiniteChunkManager.prime_required_chunks(preload_targets)
+	_try_emergency_sync_stream_guard(feet_pos + Vector2(0, lookahead), preload_coord)
 
 func _mitigate_walk_chunk_gaps() -> void:
 	if not InfiniteChunkManager:
 		return
-	if not is_on_floor() or abs(velocity.x) < 40.0:
+	var horizontal_speed: float = absf(velocity.x)
+	if not is_on_floor() or horizontal_speed < 40.0:
 		_last_walk_preload_chunk_coord = null
 		return
-	if Engine.get_frames_drawn() % WALK_AHEAD_PRELOAD_FRAME_INTERVAL != 0:
+
+	var preload_interval := WALK_AHEAD_PRELOAD_FRAME_INTERVAL
+	if horizontal_speed > STREAM_PRESSURE_SPEED_THRESHOLD_EXTREME:
+		preload_interval = 2
+	elif horizontal_speed > STREAM_PRESSURE_SPEED_THRESHOLD:
+		preload_interval = 4
+	if Engine.get_frames_drawn() % preload_interval != 0:
 		return
 
 	var ahead_dir := 1.0 if velocity.x > 0.0 else -1.0
-	var ahead_pos := global_position + Vector2(ahead_dir * WALK_AHEAD_PRELOAD_DISTANCE, PLAYER_FEET_OFFSET)
-	var preload_coord := InfiniteChunkManager.get_chunk_coord(ahead_pos)
+	var lookahead_distance := clampf(horizontal_speed * WALK_AHEAD_PRELOAD_DISTANCE_FACTOR, WALK_AHEAD_PRELOAD_DISTANCE, WALK_AHEAD_PRELOAD_DISTANCE_MAX)
+	var feet_pos := global_position + Vector2(0, PLAYER_FEET_OFFSET)
+	var current_coord: Vector2i = InfiniteChunkManager.get_chunk_coord(feet_pos)
+	var ahead_pos := global_position + Vector2(ahead_dir * lookahead_distance, PLAYER_FEET_OFFSET)
+	var preload_coord: Vector2i = InfiniteChunkManager.get_chunk_coord(ahead_pos)
 	if _last_walk_preload_chunk_coord != null and preload_coord == _last_walk_preload_chunk_coord:
 		return
 
 	_last_walk_preload_chunk_coord = preload_coord
-	InfiniteChunkManager.prime_required_chunks([preload_coord])
+	var preload_targets: Array = []
+	var direction_sign: int = 1 if preload_coord.x >= current_coord.x else -1
+	var x_cursor: int = current_coord.x + direction_sign
+	var max_forward_span: int = 5
+	while direction_sign > 0 and x_cursor <= preload_coord.x and preload_targets.size() < max_forward_span:
+		preload_targets.append(Vector2i(x_cursor, current_coord.y))
+		x_cursor += 1
+	while direction_sign < 0 and x_cursor >= preload_coord.x and preload_targets.size() < max_forward_span:
+		preload_targets.append(Vector2i(x_cursor, current_coord.y))
+		x_cursor -= 1
+
+	if preload_targets.is_empty():
+		preload_targets.append(preload_coord)
+	InfiniteChunkManager.prime_required_chunks(preload_targets)
+	_try_emergency_sync_stream_guard(ahead_pos, preload_coord)
+	_try_walk_sync_stream_guard(ahead_pos, preload_coord, horizontal_speed)
+
+func _try_emergency_sync_stream_guard(target_world_pos: Vector2, target_chunk: Vector2i) -> void:
+	if not InfiniteChunkManager:
+		return
+	if not InfiniteChunkManager.has_method("force_load_at_world_pos"):
+		return
+	if not InfiniteChunkManager.has_method("is_chunk_loaded"):
+		return
+
+	var max_component_speed := maxf(absf(velocity.x), absf(velocity.y))
+	if max_component_speed < STREAM_PRESSURE_SPEED_THRESHOLD_EXTREME:
+		return
+
+	if bool(InfiniteChunkManager.is_chunk_loaded(target_chunk)):
+		return
+
+	var now_msec := Time.get_ticks_msec()
+	if _last_emergency_sync_chunk_coord != null and target_chunk == _last_emergency_sync_chunk_coord and now_msec - _last_emergency_sync_load_msec < EMERGENCY_SYNC_LOAD_COOLDOWN_MS:
+		return
+
+	InfiniteChunkManager.force_load_at_world_pos(target_world_pos)
+	_last_emergency_sync_chunk_coord = target_chunk
+	_last_emergency_sync_load_msec = now_msec
+
+func _try_walk_sync_stream_guard(target_world_pos: Vector2, target_chunk: Vector2i, horizontal_speed: float) -> void:
+	if not InfiniteChunkManager:
+		return
+	if not InfiniteChunkManager.has_method("force_load_at_world_pos"):
+		return
+	if not InfiniteChunkManager.has_method("is_chunk_loaded"):
+		return
+	if not is_on_floor() or horizontal_speed < WALK_SYNC_GUARD_MIN_SPEED:
+		return
+	if bool(InfiniteChunkManager.is_chunk_loaded(target_chunk)):
+		return
+
+	var now_msec := Time.get_ticks_msec()
+	if _last_walk_sync_guard_chunk_coord != null and target_chunk == _last_walk_sync_guard_chunk_coord and now_msec - _last_walk_sync_guard_msec < WALK_SYNC_GUARD_COOLDOWN_MS:
+		return
+
+	InfiniteChunkManager.force_load_at_world_pos(target_world_pos)
+	_last_walk_sync_guard_chunk_coord = target_chunk
+	_last_walk_sync_guard_msec = now_msec
+
+func _update_freefall_chunk_miss_timer(delta: float) -> void:
+	if not InfiniteChunkManager or not InfiniteChunkManager.has_method("is_world_pos_chunk_loaded"):
+		_freefall_chunk_miss_time = 0.0
+		return
+	if is_on_floor() or velocity.y < FREEFALL_RESCUE_MIN_SPEED:
+		_freefall_chunk_miss_time = 0.0
+		return
+
+	var probe_pos := global_position + Vector2(0, PLAYER_FEET_OFFSET)
+	if bool(InfiniteChunkManager.is_world_pos_chunk_loaded(probe_pos)):
+		_freefall_chunk_miss_time = 0.0
+	else:
+		_freefall_chunk_miss_time += delta
 
 func _recover_from_terrain_embed() -> void:
 	if not InfiniteChunkManager or _terrain_recovery_timer > 0.0:
@@ -1030,6 +1350,8 @@ func _recover_from_long_freefall() -> void:
 		return
 	if is_on_floor() or fall_time < FREEFALL_RESCUE_TIME or velocity.y < FREEFALL_RESCUE_MIN_SPEED:
 		return
+	if _freefall_chunk_miss_time < FREEFALL_RESCUE_CHUNK_MISS_TIME:
+		return
 	if not _has_safe_ground_position:
 		return
 
@@ -1048,7 +1370,10 @@ func _recover_from_long_freefall() -> void:
 	print("Player: freefall rescue triggered at ", global_position)
 
 func _is_embedded_in_terrain() -> bool:
-	var gen = get_tree().get_first_node_in_group("world_generator")
+	var tree := get_tree()
+	if tree == null:
+		return false
+	var gen = tree.get_first_node_in_group("world_generator")
 	if not gen or not gen.layer_0:
 		return false
 
@@ -1087,6 +1412,11 @@ func _handle_continuous_actions() -> void:
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		# 如果装备了魔杖，优先使用魔杖，且阻止挖掘/近战？
 		if current_wand:
+			if _is_mina_projectile_locked():
+				if _mina_projectile_lock_feedback_cooldown <= 0.0 and UIManager:
+					UIManager.show_floating_text("投射封锁", global_position + Vector2(0, -34), Color(1.0, 0.4, 0.4))
+					_mina_projectile_lock_feedback_cooldown = 0.8
+				return
 			if action_cooldown <= 0.0:
 				var cast_transform = get_spell_spawn_transform()
 				var dir = cast_transform.get("direction", Vector2.RIGHT)
@@ -1278,6 +1608,11 @@ func _try_place_held_item() -> void:
 		return
 
 func _interact() -> void:
+	var boss_encounter_manager = _find_boss_encounter_manager()
+	if boss_encounter_manager and boss_encounter_manager.has_method("try_start_encounter_from_player"):
+		if boss_encounter_manager.try_start_encounter_from_player(self):
+			return
+
 	if not interaction_area:
 		return
 		
@@ -1301,6 +1636,9 @@ func _interact() -> void:
 			body.get_parent().interact(self)
 			return
 
+func _find_boss_encounter_manager() -> Node:
+	return get_node_or_null("/root/BossEncounterManager")
+
 func _perform_combat_action() -> void:
 	if action_cooldown > 0: return
 	
@@ -1320,14 +1658,15 @@ func _perform_combat_action() -> void:
 	var results = space_state.intersect_point(query)
 	if results.size() > 0:
 		var target = results[0].collider
+		var attack_damage := 10.0 * get_combat_damage_multiplier()
 		
 		# Improved Combat Feedback: Use CombatManager
 		if CombatManager:
 			# Consider windup time? For now, instant hit is fine for 2D feeling unless we have complex animation
-			CombatManager.deal_damage(self, target, 10, "physical") 
+			CombatManager.deal_damage(self, target, attack_damage, "physical") 
 			print("Player: 攻击实体: ", target.name)
 		elif target.has_method("take_damage"):
-			target.take_damage(10) # Fallback
+			target.take_damage(attack_damage) # Fallback
 			print("Player: 攻击实体: ", target.name)
 			
 		action_cooldown = ACTION_INTERVAL

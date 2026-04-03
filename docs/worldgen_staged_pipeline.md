@@ -20,6 +20,32 @@ This document records the implemented Terraria-core stage family sequencing and 
   - `structures_and_micro_biomes`
   - `liquid_settle_and_cleanup`
 
+### Structure Injection Guard (2026-04)
+- Runtime buried-ruins overlay injection in `InfiniteChunkManager._apply_structures` is now default-disabled (`ENABLE_BURIED_RUINS := false`).
+- Reason: this overlay path is not part of the authoritative worldgen/precompute chain and can produce deterministic but confusing fixed-shape artifacts that appear/disappear with chunk streaming.
+- If structure experiments are re-enabled later, they should be migrated into the canonical `WorldGenerator.generate_chunk_cells(...)` pipeline to keep preload/runtime parity.
+
+### Surface Feature Coordinate Fix (2026-04)
+- Fixed `_apply_surface_features` coordinate-space bug: surface `top_y` is now converted from global Y to chunk-local Y before writing into chunk result dictionaries.
+- Added in-chunk bounds guards (`0 <= local_x/local_y < 64`) for all feature writes to prevent cross-chunk stray writes.
+- This removes "floating micro-platform" artifacts that previously appeared/disappeared when unrelated chunks streamed in/out.
+
+### Precomputed Invalidation Update (2026-04)
+- Bumped precomputed storage schema to `2` and tightened legacy fallback validation (schema/signature/coord/identity must match).
+- Purpose: prevent stale precomputed artifacts generated under older buggy rules from being reused after generator fixes.
+
+### Runtime Streaming Guard (2026-04)
+- To prevent visible half-baked chunk states while digging, chunks within player-visible neighborhood are now generated with full pipeline in one pass (`generate_chunk_cells(..., false)`) instead of `critical -> enrichment` split.
+- Fast-fall consistency update: player-visible neighborhood no longer downgrades to `critical` during high-speed fall; near-player chunks stay on full pipeline to avoid direction-dependent solid/void switching.
+- Throughput guard: streaming scheduler now scales critical chunk builds per frame by player velocity pressure (normal/high/extreme), and player-side vicinity refresh + walk-ahead priming also tighten under high-speed movement to avoid outrun gaps.
+- Hard safety guard: player dry-state fall speed now has a terminal cap (`TERMINAL_FALL_SPEED = 1280`) so physics cannot outrun guaranteed chunk readiness budget.
+- Extreme-speed valve: if target chunk is still not loaded under extreme speed, player-side guard triggers emergency synchronous load for target world position with cooldown, prioritizing zero-void continuity over transient spike risk.
+- Emergency sync consistency update: `force_load_at_world_pos(...)` now uses full generation (with immediate internals refresh) instead of critical-only preload, preventing topology mismatches after unload/reload.
+- Walking continuity guard: even at normal walk speeds, ahead chunk miss now triggers low-frequency sync guard to prevent stepping into visible unloaded strips.
+- Freefall rescue guard: long-fall rescue now requires sustained chunk-miss evidence before teleporting back to safe ground, preventing false-positive pullback during valid deep descent.
+- Distant chunks still use two-phase streaming for frame-budget safety.
+- Moving-state enrichment cooldown is reduced (`10 -> 4` frames) to shorten the time that non-visible chunks remain in critical-only state.
+
 ## Conflict Rule
 - Default: later stage overrides earlier stage output.
 - Whitelist preserve zones:

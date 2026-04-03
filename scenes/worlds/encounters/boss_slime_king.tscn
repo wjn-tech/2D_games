@@ -1,0 +1,162 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://src/systems/boss/boss_encounter_scene.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/entities/boss/slime_king.tscn" id="2_boss"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_floor"]
+size = Vector2(1240, 56)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_wall"]
+size = Vector2(48, 620)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_gate"]
+size = Vector2(24, 180)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_ceiling"]
+size = Vector2(1240, 44)
+
+[node name="BossSlimeEncounter" type="Node2D"]
+script = ExtResource("1_script")
+encounter_id = "slime_king"
+encounter_title = "Slime King"
+reward_core_id = "slime_king_core"
+boss_scene = ExtResource("2_boss")
+is_finale = false
+scale = Vector2(4, 4)
+theme_primary_color = Color(0.11, 0.22, 0.16, 0.95)
+theme_accent_color = Color(0.45, 1, 0.58, 0.96)
+theme_fog_intensity = 0.42
+theme_particle_profile = "spore"
+
+[node name="Background" type="Node2D" parent="."]
+
+[node name="FarLayer" type="Node2D" parent="Background"]
+
+[node name="BackdropFar" type="Polygon2D" parent="Background/FarLayer"]
+color = Color(0.05, 0.1, 0.08, 0.94)
+polygon = PackedVector2Array(-680, -380, 680, -380, 680, 260, -680, 260)
+
+[node name="FarCanopyLeft" type="Polygon2D" parent="Background/FarLayer"]
+color = Color(0.09, 0.2, 0.14, 0.56)
+polygon = PackedVector2Array(-650, -320, -460, -300, -420, -120, -620, -130)
+
+[node name="FarCanopyRight" type="Polygon2D" parent="Background/FarLayer"]
+color = Color(0.09, 0.2, 0.14, 0.56)
+polygon = PackedVector2Array(650, -320, 460, -300, 420, -120, 620, -130)
+
+[node name="MidLayer" type="Node2D" parent="Background"]
+
+[node name="BackdropMid" type="Polygon2D" parent="Background/MidLayer"]
+color = Color(0.12, 0.23, 0.18, 0.88)
+polygon = PackedVector2Array(-640, -340, 640, -340, 640, 230, -640, 230)
+
+[node name="MidMoundLeft" type="Polygon2D" parent="Background/MidLayer"]
+color = Color(0.18, 0.34, 0.26, 0.5)
+polygon = PackedVector2Array(-520, 78, -230, 78, -170, 174, -560, 174)
+
+[node name="MidMoundRight" type="Polygon2D" parent="Background/MidLayer"]
+color = Color(0.18, 0.34, 0.26, 0.5)
+polygon = PackedVector2Array(520, 78, 230, 78, 170, 174, 560, 174)
+
+[node name="AtmosphereDrift" type="Node2D" parent="Background/MidLayer" groups=["encounter_ambience_optional"]]
+
+[node name="HazeBand" type="Polygon2D" parent="Background/MidLayer/AtmosphereDrift"]
+color = Color(0.28, 0.48, 0.34, 0.2)
+polygon = PackedVector2Array(-620, 40, 620, 40, 620, 170, -620, 170)
+
+[node name="ForeLayer" type="Node2D" parent="Background"]
+
+[node name="ForeSilhouetteLeft" type="Polygon2D" parent="Background/ForeLayer"]
+color = Color(0.09, 0.16, 0.12, 0.68)
+polygon = PackedVector2Array(-620, -300, -540, -300, -470, 180, -620, 180)
+
+[node name="ForeSilhouetteRight" type="Polygon2D" parent="Background/ForeLayer"]
+color = Color(0.09, 0.16, 0.12, 0.68)
+polygon = PackedVector2Array(620, -300, 540, -300, 470, 180, 620, 180)
+
+[node name="ForeDrift" type="Node2D" parent="Background/ForeLayer" groups=["encounter_ambience_optional"]]
+
+[node name="ForeMist" type="Polygon2D" parent="Background/ForeLayer/ForeDrift"]
+color = Color(0.46, 0.74, 0.58, 0.16)
+polygon = PackedVector2Array(-620, 66, 620, 66, 620, 208, -620, 208)
+
+[node name="Arena" type="Node2D" parent="."]
+
+[node name="Floor" type="StaticBody2D" parent="Arena"]
+collision_layer = 1
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Arena/Floor"]
+position = Vector2(0, 128)
+shape = SubResource("RectangleShape2D_floor")
+
+[node name="Ceiling" type="StaticBody2D" parent="Arena"]
+collision_layer = 1
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Arena/Ceiling"]
+position = Vector2(0, -300)
+shape = SubResource("RectangleShape2D_ceiling")
+
+[node name="LeftWall" type="StaticBody2D" parent="Arena"]
+collision_layer = 1
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Arena/LeftWall"]
+position = Vector2(-620, -40)
+shape = SubResource("RectangleShape2D_wall")
+
+[node name="RightWall" type="StaticBody2D" parent="Arena"]
+collision_layer = 1
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Arena/RightWall"]
+position = Vector2(620, -40)
+shape = SubResource("RectangleShape2D_wall")
+
+[node name="Gates" type="Node2D" parent="."]
+
+[node name="LeftGate" type="StaticBody2D" parent="Gates" groups=["boss_gate"]]
+collision_layer = 1
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Gates/LeftGate"]
+position = Vector2(-290, 18)
+shape = SubResource("RectangleShape2D_gate")
+
+[node name="Visual" type="Polygon2D" parent="Gates/LeftGate"]
+position = Vector2(-290, 18)
+color = Color(0.52, 0.98, 0.62, 0.92)
+polygon = PackedVector2Array(-12, -90, 12, -90, 12, 90, -12, 90)
+
+[node name="Glow" type="Polygon2D" parent="Gates/LeftGate" groups=["encounter_ambience_optional"]]
+position = Vector2(-290, 18)
+color = Color(0.62, 1, 0.72, 0.42)
+polygon = PackedVector2Array(-20, -96, 20, -96, 20, 96, -20, 96)
+
+[node name="RightGate" type="StaticBody2D" parent="Gates" groups=["boss_gate"]]
+collision_layer = 1
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Gates/RightGate"]
+position = Vector2(290, 18)
+shape = SubResource("RectangleShape2D_gate")
+
+[node name="Visual" type="Polygon2D" parent="Gates/RightGate"]
+position = Vector2(290, 18)
+color = Color(0.52, 0.98, 0.62, 0.92)
+polygon = PackedVector2Array(-12, -90, 12, -90, 12, 90, -12, 90)
+
+[node name="Glow" type="Polygon2D" parent="Gates/RightGate" groups=["encounter_ambience_optional"]]
+position = Vector2(290, 18)
+color = Color(0.62, 1, 0.72, 0.42)
+polygon = PackedVector2Array(-20, -96, 20, -96, 20, 96, -20, 96)
+
+[node name="PlayerSpawn" type="Marker2D" parent="."]
+position = Vector2(-200, 72)
+
+[node name="IntroFocus" type="Marker2D" parent="."]
+position = Vector2(0, -120)
+
+[node name="BossSpawn" type="Marker2D" parent="."]
+position = Vector2(220, 70)

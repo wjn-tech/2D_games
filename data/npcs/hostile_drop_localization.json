@@ -1,0 +1,194 @@
+{
+  "schema": "hostile-drop-localization.v1",
+  "description": "Localization mapping for hostile drop items (signature + common materials).",
+  "key_contract": {
+    "signature": "ITEM_HOSTILE_<MONSTER>_<TOKEN>",
+    "common_material": "ITEM_HOSTILE_MAT_<TOKEN>"
+  },
+  "signature_drops": [
+    {
+      "item_id": "slime_essence",
+      "translation_key": "ITEM_HOSTILE_SLIME_ESSENCE",
+      "zh": "史莱姆精华",
+      "en": "Slime Essence"
+    },
+    {
+      "item_id": "bog_core",
+      "translation_key": "ITEM_HOSTILE_BOG_CORE",
+      "zh": "沼泽泥核",
+      "en": "Bog Core"
+    },
+    {
+      "item_id": "rotten_talisman",
+      "translation_key": "ITEM_HOSTILE_ZOMBIE_TALISMAN",
+      "zh": "腐朽护符",
+      "en": "Rotten Talisman"
+    },
+    {
+      "item_id": "bone_fragment",
+      "translation_key": "ITEM_HOSTILE_SKELETON_FRAGMENT",
+      "zh": "骨片",
+      "en": "Bone Fragment"
+    },
+    {
+      "item_id": "echo_wing",
+      "translation_key": "ITEM_HOSTILE_CAVEBAT_WING",
+      "zh": "回音翼膜",
+      "en": "Echo Wing"
+    },
+    {
+      "item_id": "frost_gland",
+      "translation_key": "ITEM_HOSTILE_FROSTBAT_GLAND",
+      "zh": "霜寒腺体",
+      "en": "Frost Gland"
+    },
+    {
+      "item_id": "antlion_mandible",
+      "translation_key": "ITEM_HOSTILE_ANTLION_MANDIBLE",
+      "zh": "蚁狮颚钳",
+      "en": "Antlion Mandible"
+    },
+    {
+      "item_id": "void_eyeball",
+      "translation_key": "ITEM_HOSTILE_DEMONEYE_EYEBALL",
+      "zh": "虚空魔眼",
+      "en": "Void Eyeball"
+    }
+  ],
+  "common_materials": [
+    {
+      "item_id": "gelatin_residue",
+      "translation_key": "ITEM_HOSTILE_MAT_GELATIN_RESIDUE",
+      "zh": "胶质残渣",
+      "en": "Gelatin Residue"
+    },
+    {
+      "item_id": "arcane_dust",
+      "translation_key": "ITEM_HOSTILE_MAT_ARCANE_DUST",
+      "zh": "奥术尘",
+      "en": "Arcane Dust"
+    },
+    {
+      "item_id": "toxic_slurry",
+      "translation_key": "ITEM_HOSTILE_MAT_TOXIC_SLURRY",
+      "zh": "毒沼浆",
+      "en": "Toxic Slurry"
+    },
+    {
+      "item_id": "tainted_flesh",
+      "translation_key": "ITEM_HOSTILE_MAT_TAINTED_FLESH",
+      "zh": "污染腐肉",
+      "en": "Tainted Flesh"
+    },
+    {
+      "item_id": "torn_cloth",
+      "translation_key": "ITEM_HOSTILE_MAT_TORN_CLOTH",
+      "zh": "破败布片",
+      "en": "Torn Cloth"
+    },
+    {
+      "item_id": "bone_dust",
+      "translation_key": "ITEM_HOSTILE_MAT_BONE_DUST",
+      "zh": "骨尘",
+      "en": "Bone Dust"
+    },
+    {
+      "item_id": "cursed_powder",
+      "translation_key": "ITEM_HOSTILE_MAT_CURSED_POWDER",
+      "zh": "咒蚀粉末",
+      "en": "Cursed Powder"
+    },
+    {
+      "item_id": "bat_fur",
+      "translation_key": "ITEM_HOSTILE_MAT_BAT_FUR",
+      "zh": "蝠绒",
+      "en": "Bat Fur"
+    },
+    {
+      "item_id": "sonar_membrane_shard",
+      "translation_key": "ITEM_HOSTILE_MAT_SONAR_SHARD",
+      "zh": "声呐膜片",
+      "en": "Sonar Membrane Shard"
+    },
+    {
+      "item_id": "frozen_membrane",
+      "translation_key": "ITEM_HOSTILE_MAT_FROZEN_MEMBRANE",
+      "zh": "冻膜",
+      "en": "Frozen Membrane"
+    },
+    {
+      "item_id": "chill_dust",
+      "translation_key": "ITEM_HOSTILE_MAT_CHILL_DUST",
+      "zh": "寒霜尘",
+      "en": "Chill Dust"
+    },
+    {
+      "item_id": "chitin_fragment",
+      "translation_key": "ITEM_HOSTILE_MAT_CHITIN_FRAGMENT",
+      "zh": "几丁碎片",
+      "en": "Chitin Fragment"
+    },
+    {
+      "item_id": "desert_resin",
+      "translation_key": "ITEM_HOSTILE_MAT_DESERT_RESIN",
+      "zh": "沙蜡树脂",
+      "en": "Desert Resin"
+    },
+    {
+      "item_id": "shadow_ichor",
+      "translation_key": "ITEM_HOSTILE_MAT_SHADOW_ICHOR",
+      "zh": "影蚀体液",
+      "en": "Shadow Ichor"
+    },
+    {
+      "item_id": "arcane_shard",
+      "translation_key": "ITEM_HOSTILE_MAT_ARCANE_SHARD",
+      "zh": "奥术碎晶",
+      "en": "Arcane Shard"
+    }
+  ],
+  "boss_progression_items": [
+    {
+      "item_id": "slime_king_sigil",
+      "translation_key": "ITEM_BOSS_SLIME_KING_SIGIL",
+      "zh": "黏王召唤证",
+      "en": "Slime King Sigil"
+    },
+    {
+      "item_id": "skeleton_king_sigil",
+      "translation_key": "ITEM_BOSS_SKELETON_KING_SIGIL",
+      "zh": "骸王召唤证",
+      "en": "Skeleton King Sigil"
+    },
+    {
+      "item_id": "eye_king_sigil",
+      "translation_key": "ITEM_BOSS_EYE_KING_SIGIL",
+      "zh": "魔眼王召唤证",
+      "en": "Eye King Sigil"
+    },
+    {
+      "item_id": "slime_king_core",
+      "translation_key": "ITEM_BOSS_SLIME_KING_CORE",
+      "zh": "黏王核心",
+      "en": "Slime King Core"
+    },
+    {
+      "item_id": "skeleton_king_core",
+      "translation_key": "ITEM_BOSS_SKELETON_KING_CORE",
+      "zh": "骸王核心",
+      "en": "Skeleton King Core"
+    },
+    {
+      "item_id": "eye_king_core",
+      "translation_key": "ITEM_BOSS_EYE_KING_CORE",
+      "zh": "魔眼王核心",
+      "en": "Eye King Core"
+    },
+    {
+      "item_id": "forbidden_key",
+      "translation_key": "ITEM_BOSS_FORBIDDEN_KEY",
+      "zh": "禁忌钥匙",
+      "en": "Forbidden Key"
+    }
+  ]
+}

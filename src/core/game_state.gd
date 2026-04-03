@@ -83,16 +83,7 @@ func unlock_spell(spell_id: String) -> void:
 
 func _load_databases() -> void:
 	# 加载物品数据库
-	var item_dir = DirAccess.open("res://data/items/")
-	if item_dir:
-		item_dir.list_dir_begin()
-		var file_name = item_dir.get_next()
-		while file_name != "":
-			if not item_dir.current_is_dir() and file_name.ends_with(".tres"):
-				var item = load("res://data/items/" + file_name)
-				if item is BaseItem:
-					item_db[item.id] = item
-			file_name = item_dir.get_next()
+	_load_item_resources_recursive("res://data/items/")
 	
 	# 加载配方数据库
 	var recipe_dir = DirAccess.open("res://data/recipes/")
@@ -121,6 +112,24 @@ func _load_databases() -> void:
 				b_name = b_dir.get_next()
 
 	print("GameState: 已加载 ", item_db.size(), " 个物品, ", recipe_db.size(), " 个配方 和 ", building_db.size(), " 个建筑资源")
+
+func _load_item_resources_recursive(dir_path: String) -> void:
+	var item_dir := DirAccess.open(dir_path)
+	if item_dir == null:
+		return
+
+	item_dir.list_dir_begin()
+	var entry := item_dir.get_next()
+	while entry != "":
+		if item_dir.current_is_dir():
+			if entry != "." and entry != "..":
+				_load_item_resources_recursive(dir_path.path_join(entry))
+		elif entry.ends_with(".tres"):
+			var item_path := dir_path.path_join(entry)
+			var item = load(item_path)
+			if item is BaseItem:
+				item_db[item.id] = item
+		entry = item_dir.get_next()
 
 func _create_inventory_manager() -> Node:
 	var mgr = load("res://src/systems/inventory/inventory_manager.gd").new()

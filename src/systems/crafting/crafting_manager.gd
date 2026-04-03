@@ -19,6 +19,11 @@ func unlock_all_recipes() -> void:
 func _load_all_recipes() -> void:
 	# 清空旧数据防止重复加载
 	all_recipes.clear()
+	if GameState:
+		if GameState.get("recipe_db") == null:
+			GameState.recipe_db = {}
+		else:
+			GameState.recipe_db.clear()
 	
 	# Load a default icon for testing
 	var default_icon =  preload("res://icon.svg")
@@ -85,8 +90,44 @@ func _load_all_recipes() -> void:
 	
 	# 5. 法杖杖芯 (钻石)
 	_add_billet_recipe("wand_billet_diamond", "钻石法杖胚", "diamond", default_icon, "workbench", Color.CYAN, 0.2)
+
+	# 6. Boss progression recipes
+	_add_boss_progression_recipes()
 	
 	print("CraftingManager: Loaded %d recipes." % all_recipes.size())
+
+func _add_resource_recipe(item_resource_path: String, ingredients: Dictionary, station: String = "") -> void:
+	if not ResourceLoader.exists(item_resource_path):
+		push_warning("CraftingManager: Missing item resource for recipe: %s" % item_resource_path)
+		return
+	var item = load(item_resource_path)
+	if not (item is BaseItem):
+		push_warning("CraftingManager: Invalid BaseItem recipe resource: %s" % item_resource_path)
+		return
+
+	var recipe = CraftingRecipe.new()
+	recipe.result_item = item
+	recipe.ingredients = ingredients.duplicate(true)
+	recipe.required_station = station
+	all_recipes.append(recipe)
+
+	if GameState.get("recipe_db") != null:
+		GameState.recipe_db[item.id] = recipe
+
+func _add_boss_progression_recipes() -> void:
+	_add_resource_recipe("res://data/items/boss/slime_king_sigil.tres", {"slime_essence": 10}, "workbench")
+	_add_resource_recipe("res://data/items/boss/skeleton_king_sigil.tres", {"bone_fragment": 10}, "workbench")
+	_add_resource_recipe("res://data/items/boss/eye_king_sigil.tres", {"void_eyeball": 10}, "workbench")
+	_add_resource_recipe(
+		"res://data/items/boss/forbidden_key.tres",
+		{
+			"arcane_dust": 10,
+			"slime_king_core": 1,
+			"skeleton_king_core": 1,
+			"eye_king_core": 1,
+		},
+		"workbench"
+	)
 
 func _add_building_recipe(id: String, resource_path: String, station: String = "") -> void:
 	var build_res = load(resource_path) as BuildingResource
@@ -166,6 +207,7 @@ func _add_billet_recipe(id: String, name: String, ore_id: String, icon: Texture2
 	all_recipes.append(recipe)	
 	if GameState.get("recipe_db") != null:
 		GameState.recipe_db[id] = recipe
+
 func get_item_by_id(id: String) -> BaseItem:
 	for r in all_recipes:
 		if r.result_item.id == id:
@@ -177,6 +219,8 @@ func get_handcrafting_recipes() -> Array[CraftingRecipe]:
 	var available_stations = _get_nearby_stations()
 	
 	for recipe in all_recipes:
+		if recipe == null or recipe.result_item == null:
+			continue
 		if recipe.required_station == "" or recipe.required_station in available_stations:
 			result.append(recipe)
 	return result
@@ -200,8 +244,10 @@ func _get_nearby_stations() -> Array[String]:
 	for body in bodies:
 		if body.is_in_group("workbench") or body.is_in_group("housing_table") or body.name.to_lower().contains("workbench"):
 			if "workbench" not in stations: stations.append("workbench")
-			
-	var areas = interaction_area.get_overlapping_areas()
+
+	var areas := []
+	if interaction_area:
+		areas = interaction_area.get_overlapping_areas()
 	for area in areas:
 		var p = area.get_parent()
 		var is_wb = area.is_in_group("workbench") or area.is_in_group("housing_table")

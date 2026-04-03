@@ -4,7 +4,7 @@ class_name SpellProcessor
 class SpellRunner extends Node:
 	var schedule: Array = []
 	var current_time: float = 0.0
-	var casting_source: Node2D
+	var casting_source: Node = null
 	var wand_data: WandData
 	var world_parent: Node
 	var origin_position: Vector2 = Vector2.ZERO
@@ -20,11 +20,14 @@ class SpellRunner extends Node:
 			if trigger_time <= current_time:
 				var spawn_position = origin_position
 				var spawn_direction = origin_direction
+				var live_source: Node2D = null
+				if is_instance_valid(casting_source) and casting_source is Node2D:
+					live_source = casting_source as Node2D
 				if follow_source_transform:
-					var live_transform = SpellProcessor._resolve_emission_transform(casting_source, origin_position, origin_direction)
+					var live_transform = SpellProcessor._resolve_emission_transform(live_source, origin_position, origin_direction)
 					spawn_position = live_transform.get("position", origin_position)
 					spawn_direction = live_transform.get("direction", origin_direction)
-				SpellProcessor._spawn_emission_record(event.get("record", {}), world_parent, spawn_position, spawn_direction, casting_source, wand_data)
+				SpellProcessor._spawn_emission_record(event.get("record", {}), world_parent, spawn_position, spawn_direction, live_source, wand_data)
 			else:
 				remaining.append(event)
 
@@ -224,7 +227,7 @@ static func _build_trigger_continuation(instr: SpellInstruction, summary: Dictio
 	_evaluate_tier(instr.child_tier, payload_ctx, instr.child_mode, continuation["emissions"], summary, false)
 	return continuation
 
-static func _schedule_emissions(emissions: Array, position: Vector2, direction: Vector2, source: Node2D, world_context: Node, wand_data: WandData = null, recharge_duration: float = -1.0, follow_source_transform: bool = false) -> void:
+static func _schedule_emissions(emissions: Array, position: Vector2, direction: Vector2, source: Node = null, world_context: Node = null, wand_data: WandData = null, recharge_duration: float = -1.0, follow_source_transform: bool = false) -> void:
 	if emissions.is_empty():
 		if recharge_duration >= 0.0 and wand_data:
 			wand_data.trigger_recharge(recharge_duration)
@@ -232,10 +235,13 @@ static func _schedule_emissions(emissions: Array, position: Vector2, direction: 
 
 	var normalized_direction = _normalize_direction(direction)
 	var delayed_events: Array = []
+	var source_node2d: Node2D = null
+	if is_instance_valid(source) and source is Node2D:
+		source_node2d = source as Node2D
 	for record in emissions:
 		var fire_delay = float(record.get("fire_delay", 0.0))
 		if fire_delay <= 0.0:
-			_spawn_emission_record(record, world_context, position, normalized_direction, source, wand_data)
+			_spawn_emission_record(record, world_context, position, normalized_direction, source_node2d, wand_data)
 		else:
 			delayed_events.append({"delay": fire_delay, "record": record})
 
@@ -255,14 +261,15 @@ static func _schedule_emissions(emissions: Array, position: Vector2, direction: 
 	runner.recharge_duration = recharge_duration
 	world_context.add_child(runner)
 
-static func _resolve_emission_transform(source: Node2D, fallback_position: Vector2, fallback_direction: Vector2) -> Dictionary:
+static func _resolve_emission_transform(source: Node = null, fallback_position: Vector2 = Vector2.ZERO, fallback_direction: Vector2 = Vector2.RIGHT) -> Dictionary:
 	var resolved_position = fallback_position
 	var resolved_direction = _normalize_direction(fallback_direction)
-	if not source:
+	if not is_instance_valid(source) or not (source is Node2D):
 		return {"position": resolved_position, "direction": resolved_direction}
+	var source_node := source as Node2D
 
-	if source.has_method("get_spell_spawn_transform"):
-		var spawn_transform = source.call("get_spell_spawn_transform")
+	if source_node.has_method("get_spell_spawn_transform"):
+		var spawn_transform = source_node.call("get_spell_spawn_transform")
 		if spawn_transform is Dictionary:
 			if spawn_transform.get("position") is Vector2:
 				resolved_position = spawn_transform.get("position")
@@ -270,11 +277,11 @@ static func _resolve_emission_transform(source: Node2D, fallback_position: Vecto
 				resolved_direction = _normalize_direction(spawn_transform.get("direction"))
 			return {"position": resolved_position, "direction": resolved_direction}
 
-	resolved_position = source.global_position
-	resolved_direction = Vector2.RIGHT.rotated(source.global_rotation)
+	resolved_position = source_node.global_position
+	resolved_direction = Vector2.RIGHT.rotated(source_node.global_rotation)
 	return {"position": resolved_position, "direction": _normalize_direction(resolved_direction)}
 
-static func _spawn_emission_record(record: Dictionary, parent: Node, position: Vector2, direction: Vector2, source: Node2D = null, wand_data: WandData = null) -> void:
+static func _spawn_emission_record(record: Dictionary, parent: Node, position: Vector2, direction: Vector2, source: Node = null, wand_data: WandData = null) -> void:
 	var instr = record.get("instruction") as SpellInstruction
 	if not instr:
 		return
@@ -295,8 +302,13 @@ static func _spawn_emission_record(record: Dictionary, parent: Node, position: V
 	attach_parent.add_child(spawned_node)
 
 	spawned_node.global_position = position
-	if source and "caster" in spawned_node:
-		spawned_node.caster = source
+	var source_node2d: Node2D = null
+	if is_instance_valid(source) and source is Node2D:
+		source_node2d = source as Node2D
+	if source_node2d and "caster" in spawned_node:
+		spawned_node.caster = source_node2d
+	if source_node2d and spawned_node is PhysicsBody2D and source_node2d is PhysicsBody2D:
+		(spawned_node as PhysicsBody2D).add_collision_exception_with(source_node2d)
 
 	var applied_modifiers = record.get("applied_modifiers", [])
 	var spread = _get_total_spread(applied_modifiers)
@@ -309,17 +321,25 @@ static func _spawn_emission_record(record: Dictionary, parent: Node, position: V
 		spawned_node.rotation = normalized_direction.angle()
 
 	var final_params = _build_final_params(instr.params, applied_modifiers)
-	if source and "caster" in spawned_node:
-		spawned_node.caster = source
+	if source_node2d and source_node2d.has_method("get_combat_damage_multiplier"):
+		var damage_multiplier := maxf(0.0, float(source_node2d.call("get_combat_damage_multiplier")))
+		final_params["damage"] = float(final_params.get("damage", 10.0)) * damage_multiplier
+	if source_node2d and "caster" in spawned_node:
+		spawned_node.caster = source_node2d
 
 	if spawned_node.has_method("setup"):
 		spawned_node.setup(final_params, applied_modifiers)
 
 	if spawned_node is CharacterBody2D and LayerManager:
 		var source_layer = LayerManager.active_layer
-		if source and source.has_meta("current_layer"):
-			source_layer = int(source.get_meta("current_layer"))
-		spawned_node.collision_mask = LayerManager.get_world_bit(source_layer) | LayerManager.LAYER_NPC
+		if source_node2d and source_node2d.has_meta("current_layer"):
+			source_layer = int(source_node2d.get_meta("current_layer"))
+		var target_mask := LayerManager.LAYER_PLAYER | LayerManager.LAYER_NPC
+		if source_node2d and source_node2d.is_in_group("player"):
+			target_mask = LayerManager.LAYER_NPC
+		elif source_node2d and source_node2d.is_in_group("npcs"):
+			target_mask = LayerManager.LAYER_PLAYER
+		spawned_node.collision_mask = LayerManager.get_world_bit(source_layer) | target_mask
 
 	var continuation = record.get("continuation", {})
 	if continuation is Dictionary and spawned_node.has_method("setup_trigger"):

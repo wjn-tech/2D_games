@@ -1,0 +1,24 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://src/systems/boss/mina_finale.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/visuals/MinimalistEntity.tscn" id="2_visual"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_body"]
+size = Vector2(24, 44)
+
+[node name="MinaFinale" type="CharacterBody2D"]
+collision_layer = 32
+collision_mask = 17
+script = ExtResource("1_script")
+
+[node name="MinimalistEntity" parent="." instance=ExtResource("2_visual")]
+position = Vector2(0, -22)
+shape = 0
+color = Color(0.95, 0.58, 0.95, 1)
+size = Vector2(20, 40)
+outline_width = 2.4
+pulse_speed = 2.4
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+position = Vector2(0, -22)
+shape = SubResource("RectangleShape2D_body")

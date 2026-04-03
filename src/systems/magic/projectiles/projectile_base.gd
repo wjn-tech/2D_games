@@ -64,6 +64,9 @@ const VFX_SCENES = {
 	"teleport": { "impact": null }
 }
 
+func _ready() -> void:
+	add_to_group("magic_projectiles")
+
 func setup(params: Dictionary, mods: Array):
 	modifiers = mods
 	
@@ -383,11 +386,15 @@ func _process_blackhole(delta: float):
 	var space = get_world_2d().direct_space_state
 	_blackhole_query.transform = Transform2D(0.0, global_position)
 	_blackhole_query.exclude = [get_rid()]
+	if is_instance_valid(caster):
+		_blackhole_query.exclude.append(caster.get_rid())
 
 	var results = space.intersect_shape(_blackhole_query, BLACKHOLE_QUERY_LIMIT)
 	for res in results:
 		var target = res.collider
 		if not is_instance_valid(target) or target == self:
+			continue
+		if target == caster:
 			continue
 		
 		var to_bh = global_position - target.global_position
@@ -446,6 +453,8 @@ func _on_hit(col: KinematicCollision2D):
 		return
 
 	var collider = col.get_collider()
+	if collider == caster:
+		return
 	var hit_enemy = false
 	
 	if collider.has_method("take_damage"):
@@ -521,6 +530,8 @@ func _explode():
 	var results = space.intersect_shape(query)
 	for res in results:
 		var c = res.collider
+		if c == caster:
+			continue
 		if c.has_method("take_damage") and c != self:
 			c.take_damage(30.0, "explosion")
 

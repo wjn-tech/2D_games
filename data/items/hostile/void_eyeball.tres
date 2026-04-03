@@ -1,0 +1,16 @@
+﻿[gd_resource type="Resource" script_class="BaseItem" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/core/resources/base_item.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://icon.svg" id="2_icon"]
+
+[resource]
+script = ExtResource("1_script")
+id = "void_eyeball"
+display_name = "虚空眼球"
+description = "仍在微弱脉动的异常眼球组织。"
+item_type = "Material"
+icon = ExtResource("2_icon")
+max_stack = 99
+stackable = true
+value = 16
+quality_grade = "Common"

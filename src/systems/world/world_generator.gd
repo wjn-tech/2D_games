@@ -2813,35 +2813,51 @@ func _should_carve_accessible_cave(global_x: int, global_y: int, surface_base: f
 	return _should_carve_accessible_cave_with_context(global_x, global_y, surface_base, lane_y, cave_info, is_spawn_protected, surface_biome)
 
 func _apply_surface_features(coord: Vector2i, result: Dictionary, column_contexts: Array) -> void:
+	var chunk_origin_y := coord.y * 64
 	for x in range(3, 61):
 		var global_x = coord.x * 64 + x
 		var column_context: Dictionary = column_contexts[x]
 		var surface_base = float(column_context.get("surface_base", 300.0))
-		var top_y = int(floor(surface_base))
-		var feature = _get_surface_feature_tag_from_context(global_x, top_y, top_y, int(column_context.get("surface_biome", BiomeType.FOREST)))
+		var global_top_y = int(floor(surface_base))
+		var top_y = global_top_y - chunk_origin_y
+		if top_y < -8 or top_y > 72:
+			continue
+		var feature = _get_surface_feature_tag_from_context(global_x, global_top_y, global_top_y, int(column_context.get("surface_biome", BiomeType.FOREST)))
 		if feature == SURFACE_FEATURE_NONE:
 			continue
-		if _is_in_structure_forbidden_zone(global_x, top_y):
+		if _is_in_structure_forbidden_zone(global_x, global_top_y):
 			continue
 
 		match feature:
 			SURFACE_FEATURE_DESERT_SPIRE:
 				for h in range(1, 4):
-					result[0][Vector2i(x, top_y - h)] = {"source": tile_source_id, "atlas": biome_params[BiomeType.DESERT]["stone_block"]}
+					var p := Vector2i(x, top_y - h)
+					if p.y >= 0 and p.y < 64:
+						result[0][p] = {"source": tile_source_id, "atlas": biome_params[BiomeType.DESERT]["stone_block"]}
 			SURFACE_FEATURE_FROST_SPIRE:
 				for h in range(1, 5):
-					result[0][Vector2i(x, top_y - h)] = {"source": tile_source_id, "atlas": biome_params[BiomeType.TUNDRA]["stone_block"]}
+					var p := Vector2i(x, top_y - h)
+					if p.y >= 0 and p.y < 64:
+						result[0][p] = {"source": tile_source_id, "atlas": biome_params[BiomeType.TUNDRA]["stone_block"]}
 			SURFACE_FEATURE_MUD_MOUND:
 				for ox in range(-1, 2):
-					result[0][Vector2i(x + ox, top_y - 1)] = {"source": tile_source_id, "atlas": biome_params[BiomeType.SWAMP]["surface_block"]}
+					var p := Vector2i(x + ox, top_y - 1)
+					if p.x >= 0 and p.x < 64 and p.y >= 0 and p.y < 64:
+						result[0][p] = {"source": tile_source_id, "atlas": biome_params[BiomeType.SWAMP]["surface_block"]}
 			SURFACE_FEATURE_GRASS_KNOLL:
-				result[0][Vector2i(x, top_y - 1)] = {"source": grass_dirt_source_id, "atlas": grass_tile}
+				var p := Vector2i(x, top_y - 1)
+				if p.y >= 0 and p.y < 64:
+					result[0][p] = {"source": grass_dirt_source_id, "atlas": grass_tile}
 			SURFACE_FEATURE_STONE_OUTCROP:
 				for ox in range(-1, 2):
 					if ox == 0:
-						result[0][Vector2i(x + ox, top_y - 1)] = {"source": tile_source_id, "atlas": stone_tile}
+						var p := Vector2i(x + ox, top_y - 1)
+						if p.x >= 0 and p.x < 64 and p.y >= 0 and p.y < 64:
+							result[0][p] = {"source": tile_source_id, "atlas": stone_tile}
 					elif abs(ox) == 1 and (noise_surface_feature.get_noise_2d(global_x + ox, 20) > -0.2):
-						result[0][Vector2i(x + ox, top_y)] = {"source": tile_source_id, "atlas": stone_tile}
+						var p := Vector2i(x + ox, top_y)
+						if p.x >= 0 and p.x < 64 and p.y >= 0 and p.y < 64:
+							result[0][p] = {"source": tile_source_id, "atlas": stone_tile}
 
 const ORE_DEPOSIT_FAMILY_CLUSTER := "cluster"
 

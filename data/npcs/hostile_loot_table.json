@@ -1,0 +1,163 @@
+{
+  "schema": "hostile-loot-table.v1",
+  "description": "Hostile loot table for signature and common monster materials.",
+  "global_fallback": {
+    "common_pool": [
+      {
+        "item_id": "arcane_dust",
+        "chance": 0.18,
+        "min_qty": 1,
+        "max_qty": 1
+      }
+    ]
+  },
+  "terrain_block_item_ids": [
+    "grass",
+    "dirt",
+    "stone",
+    "sand",
+    "snow",
+    "mud",
+    "ice",
+    "hard_rock",
+    "wood"
+  ],
+  "monster_type_defaults": {
+    "slime": {
+      "signature_drop": {
+        "item_id": "slime_essence",
+        "chance": 0.78,
+        "min_qty": 1,
+        "max_qty": 2
+      },
+      "common_pool": [
+        {"item_id": "gelatin_residue", "chance": 0.42, "min_qty": 1, "max_qty": 2},
+        {"item_id": "arcane_dust", "chance": 0.28, "min_qty": 1, "max_qty": 1}
+      ]
+    },
+    "bog_slime": {
+      "signature_drop": {
+        "item_id": "bog_core",
+        "chance": 0.73,
+        "min_qty": 1,
+        "max_qty": 2
+      },
+      "common_pool": [
+        {"item_id": "toxic_slurry", "chance": 0.40, "min_qty": 1, "max_qty": 2},
+        {"item_id": "arcane_dust", "chance": 0.22, "min_qty": 1, "max_qty": 1}
+      ]
+    },
+    "zombie": {
+      "signature_drop": {
+        "item_id": "rotten_talisman",
+        "chance": 0.66,
+        "min_qty": 1,
+        "max_qty": 1
+      },
+      "common_pool": [
+        {"item_id": "tainted_flesh", "chance": 0.48, "min_qty": 1, "max_qty": 2},
+        {"item_id": "torn_cloth", "chance": 0.31, "min_qty": 1, "max_qty": 1}
+      ]
+    },
+    "skeleton": {
+      "signature_drop": {
+        "item_id": "bone_fragment",
+        "chance": 0.74,
+        "min_qty": 1,
+        "max_qty": 3
+      },
+      "common_pool": [
+        {"item_id": "bone_dust", "chance": 0.46, "min_qty": 1, "max_qty": 2},
+        {"item_id": "cursed_powder", "chance": 0.24, "min_qty": 1, "max_qty": 1}
+      ]
+    },
+    "cave_bat": {
+      "signature_drop": {
+        "item_id": "echo_wing",
+        "chance": 0.64,
+        "min_qty": 1,
+        "max_qty": 2
+      },
+      "common_pool": [
+        {"item_id": "bat_fur", "chance": 0.44, "min_qty": 1, "max_qty": 2},
+        {"item_id": "sonar_membrane_shard", "chance": 0.25, "min_qty": 1, "max_qty": 1}
+      ]
+    },
+    "frost_bat": {
+      "signature_drop": {
+        "item_id": "frost_gland",
+        "chance": 0.70,
+        "min_qty": 1,
+        "max_qty": 2
+      },
+      "common_pool": [
+        {"item_id": "frozen_membrane", "chance": 0.41, "min_qty": 1, "max_qty": 2},
+        {"item_id": "chill_dust", "chance": 0.30, "min_qty": 1, "max_qty": 1}
+      ]
+    },
+    "antlion": {
+      "signature_drop": {
+        "item_id": "antlion_mandible",
+        "chance": 0.76,
+        "min_qty": 1,
+        "max_qty": 2
+      },
+      "common_pool": [
+        {"item_id": "chitin_fragment", "chance": 0.45, "min_qty": 1, "max_qty": 2},
+        {"item_id": "desert_resin", "chance": 0.27, "min_qty": 1, "max_qty": 1}
+      ]
+    },
+    "demon_eye": {
+      "signature_drop": {
+        "item_id": "void_eyeball",
+        "chance": 0.60,
+        "min_qty": 1,
+        "max_qty": 1
+      },
+      "common_pool": [
+        {"item_id": "shadow_ichor", "chance": 0.38, "min_qty": 1, "max_qty": 2},
+        {"item_id": "arcane_shard", "chance": 0.28, "min_qty": 1, "max_qty": 1}
+      ]
+    }
+  },
+  "rule_overrides": {
+    "skeleton_underworld_legion": {
+      "monster_type": "skeleton",
+      "signature_drop": {
+        "item_id": "bone_fragment",
+        "chance": 0.82,
+        "min_qty": 1,
+        "max_qty": 3
+      },
+      "common_pool": [
+        {"item_id": "bone_dust", "chance": 0.46, "min_qty": 1, "max_qty": 2},
+        {"item_id": "cursed_powder", "chance": 0.34, "min_qty": 1, "max_qty": 1}
+      ]
+    },
+    "cave_bat_underworld_swarm": {
+      "monster_type": "cave_bat",
+      "signature_drop": {
+        "item_id": "echo_wing",
+        "chance": 0.70,
+        "min_qty": 1,
+        "max_qty": 2
+      },
+      "common_pool": [
+        {"item_id": "bat_fur", "chance": 0.44, "min_qty": 1, "max_qty": 2},
+        {"item_id": "sonar_membrane_shard", "chance": 0.37, "min_qty": 1, "max_qty": 1}
+      ]
+    }
+  },
+  "spawn_rule_to_monster_type": {
+    "slime_surface_forest_plains": "slime",
+    "bog_slime_swamp_surface_underground": "bog_slime",
+    "zombie_surface_forest_plains": "zombie",
+    "skeleton_underground_cavern": "skeleton",
+    "cave_bat_underground_cavern": "cave_bat",
+    "skeleton_underworld_legion": "skeleton",
+    "cave_bat_underworld_swarm": "cave_bat",
+    "antlion_desert_surface_day": "antlion",
+    "frost_bat_tundra_multi_depth": "frost_bat",
+    "demon_eye_surface_night": "demon_eye"
+  }
+}

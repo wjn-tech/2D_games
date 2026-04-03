@@ -274,7 +274,7 @@ func start_new_game() -> void:
 	get_tree().paused = true
 	
 	var new_seed = _generate_fresh_world_seed()
-	var runtime_world_path := "user://saves/runtime_new_game/world_deltas/"
+	var runtime_world_path := "user://saves/runtime_new_game/world_deltas/world_%d/" % abs(new_seed)
 	if GameState:
 		# 清空 meta 但保留种子
 		for meta_key in GameState.get_meta_list():
@@ -289,6 +289,8 @@ func start_new_game() -> void:
 	if InfiniteChunkManager: InfiniteChunkManager.restart()
 	if SaveManager:
 		SaveManager.current_slot_id = -1
+		if SaveManager.has_method("clear_world_binding"):
+			SaveManager.clear_world_binding()
 		if SaveManager.has_method("stop_autosave"):
 			SaveManager.stop_autosave()
 	if InfiniteChunkManager and InfiniteChunkManager.has_method("clear_save_root_data"):

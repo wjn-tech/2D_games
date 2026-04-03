@@ -1,0 +1,42 @@
+{
+  "schema": "terrain-taxonomy.v1",
+  "description": "Authoritative 31 terrain classes for strict hostile spawn coverage validation.",
+  "terrains": [
+    {"id": "forest_surface", "map_biomes": ["FOREST"], "depth_bands": ["surface"], "cave_regions": ["Surface"], "underworld_regions": ["none"], "feature_tags": ["Any"]},
+    {"id": "plains_surface", "map_biomes": ["PLAINS"], "depth_bands": ["surface"], "cave_regions": ["Surface"], "underworld_regions": ["none"], "feature_tags": ["Any"]},
+    {"id": "desert_surface", "map_biomes": ["DESERT"], "depth_bands": ["surface"], "cave_regions": ["Surface"], "underworld_regions": ["none"], "feature_tags": ["Any"]},
+    {"id": "tundra_surface", "map_biomes": ["TUNDRA"], "depth_bands": ["surface"], "cave_regions": ["Surface"], "underworld_regions": ["none"], "feature_tags": ["Any"]},
+    {"id": "swamp_surface", "map_biomes": ["SWAMP"], "depth_bands": ["surface"], "cave_regions": ["Surface"], "underworld_regions": ["none"], "feature_tags": ["Any"]},
+
+    {"id": "underground_common", "map_biomes": ["UNDERGROUND"], "depth_bands": ["shallow_underground"], "cave_regions": ["Tunnel", "Chamber", "Connector"], "underworld_regions": ["none"], "feature_tags": ["Any"]},
+    {"id": "underground_desert", "map_biomes": ["UNDERGROUND_DESERT"], "depth_bands": ["shallow_underground"], "cave_regions": ["Tunnel", "Chamber", "Connector"], "underworld_regions": ["none"], "feature_tags": ["Any"]},
+    {"id": "underground_tundra", "map_biomes": ["UNDERGROUND_TUNDRA"], "depth_bands": ["shallow_underground"], "cave_regions": ["Tunnel", "Chamber", "Connector"], "underworld_regions": ["none"], "feature_tags": ["Any"]},
+    {"id": "underground_swamp", "map_biomes": ["UNDERGROUND_SWAMP"], "depth_bands": ["shallow_underground"], "cave_regions": ["Tunnel", "Chamber", "Connector"], "underworld_regions": ["none"], "feature_tags": ["Any"]},
+
+    {"id": "surface_cave_segment", "map_biomes": ["FOREST", "PLAINS", "DESERT", "TUNDRA", "SWAMP"], "depth_bands": ["surface"], "cave_regions": ["Surface"], "underworld_regions": ["none"], "feature_tags": ["Any"]},
+    {"id": "tunnel_corridor", "map_biomes": ["UNDERGROUND", "UNDERGROUND_DESERT", "UNDERGROUND_TUNDRA", "UNDERGROUND_SWAMP"], "depth_bands": ["shallow_underground", "mid_cavern", "deep", "terminal"], "cave_regions": ["Tunnel"], "underworld_regions": ["none"], "feature_tags": ["Any"]},
+    {"id": "cave_chamber", "map_biomes": ["UNDERGROUND", "UNDERGROUND_DESERT", "UNDERGROUND_TUNDRA", "UNDERGROUND_SWAMP"], "depth_bands": ["shallow_underground", "mid_cavern", "deep", "terminal"], "cave_regions": ["Chamber"], "underworld_regions": ["none"], "feature_tags": ["Any"]},
+    {"id": "open_cavern", "map_biomes": ["UNDERGROUND", "UNDERGROUND_DESERT", "UNDERGROUND_TUNDRA", "UNDERGROUND_SWAMP"], "depth_bands": ["shallow_underground", "mid_cavern", "deep", "terminal"], "cave_regions": ["OpenCavern"], "underworld_regions": ["none"], "feature_tags": ["Any"]},
+    {"id": "pocket_cave", "map_biomes": ["UNDERGROUND", "UNDERGROUND_DESERT", "UNDERGROUND_TUNDRA", "UNDERGROUND_SWAMP"], "depth_bands": ["shallow_underground", "mid_cavern", "deep", "terminal"], "cave_regions": ["Pocket"], "underworld_regions": ["none"], "feature_tags": ["Any"]},
+    {"id": "connector_passage", "map_biomes": ["UNDERGROUND", "UNDERGROUND_DESERT", "UNDERGROUND_TUNDRA", "UNDERGROUND_SWAMP"], "depth_bands": ["shallow_underground", "mid_cavern", "deep", "terminal"], "cave_regions": ["Connector"], "underworld_regions": ["none"], "feature_tags": ["Any"]},
+    {"id": "solid_rock_mass", "map_biomes": ["UNDERGROUND", "UNDERGROUND_DESERT", "UNDERGROUND_TUNDRA", "UNDERGROUND_SWAMP"], "depth_bands": ["shallow_underground", "mid_cavern", "deep", "terminal"], "cave_regions": ["Solid"], "underworld_regions": ["none"], "feature_tags": ["Any"]},
+
+    {"id": "mid_cavern_band", "map_biomes": ["UNDERGROUND", "UNDERGROUND_DESERT", "UNDERGROUND_TUNDRA", "UNDERGROUND_SWAMP"], "depth_bands": ["mid_cavern"], "cave_regions": ["Tunnel", "Chamber", "OpenCavern", "Pocket", "Connector", "Solid"], "underworld_regions": ["none"], "feature_tags": ["Any"]},
+    {"id": "deep_band", "map_biomes": ["UNDERGROUND", "UNDERGROUND_DESERT", "UNDERGROUND_TUNDRA", "UNDERGROUND_SWAMP"], "depth_bands": ["deep"], "cave_regions": ["Tunnel", "Chamber", "OpenCavern", "Pocket", "Connector", "Solid"], "underworld_regions": ["none"], "feature_tags": ["Any"]},
+    {"id": "terminal_band", "map_biomes": ["UNDERGROUND", "UNDERGROUND_DESERT", "UNDERGROUND_TUNDRA", "UNDERGROUND_SWAMP"], "depth_bands": ["terminal"], "cave_regions": ["Tunnel", "Chamber", "OpenCavern", "Pocket", "Connector", "Solid"], "underworld_regions": ["none"], "feature_tags": ["Any"]},
+
+    {"id": "underworld_route", "map_biomes": ["UNDERGROUND", "UNDERGROUND_DESERT", "UNDERGROUND_TUNDRA", "UNDERGROUND_SWAMP"], "depth_bands": ["deep", "terminal"], "cave_regions": ["Tunnel", "Chamber", "OpenCavern", "Pocket", "Connector", "Solid"], "underworld_regions": ["route"], "feature_tags": ["Any"]},
+    {"id": "underworld_floor", "map_biomes": ["UNDERGROUND", "UNDERGROUND_DESERT", "UNDERGROUND_TUNDRA", "UNDERGROUND_SWAMP"], "depth_bands": ["deep", "terminal"], "cave_regions": ["Tunnel", "Chamber", "OpenCavern", "Pocket", "Connector", "Solid"], "underworld_regions": ["floor"], "feature_tags": ["Any"]},
+    {"id": "underworld_cliff", "map_biomes": ["UNDERGROUND", "UNDERGROUND_DESERT", "UNDERGROUND_TUNDRA", "UNDERGROUND_SWAMP"], "depth_bands": ["deep", "terminal"], "cave_regions": ["Tunnel", "Chamber", "OpenCavern", "Pocket", "Connector", "Solid"], "underworld_regions": ["cliff"], "feature_tags": ["Any"]},
+    {"id": "underworld_island", "map_biomes": ["UNDERGROUND", "UNDERGROUND_DESERT", "UNDERGROUND_TUNDRA", "UNDERGROUND_SWAMP"], "depth_bands": ["deep", "terminal"], "cave_regions": ["Tunnel", "Chamber", "OpenCavern", "Pocket", "Connector", "Solid"], "underworld_regions": ["island"], "feature_tags": ["Any"]},
+    {"id": "underworld_cavity", "map_biomes": ["UNDERGROUND", "UNDERGROUND_DESERT", "UNDERGROUND_TUNDRA", "UNDERGROUND_SWAMP"], "depth_bands": ["deep", "terminal"], "cave_regions": ["Tunnel", "Chamber", "OpenCavern", "Pocket", "Connector", "Solid"], "underworld_regions": ["cavity"], "feature_tags": ["Any"]},
+    {"id": "underworld_hard_floor", "map_biomes": ["UNDERGROUND", "UNDERGROUND_DESERT", "UNDERGROUND_TUNDRA", "UNDERGROUND_SWAMP"], "depth_bands": ["deep", "terminal"], "cave_regions": ["Tunnel", "Chamber", "OpenCavern", "Pocket", "Connector", "Solid"], "underworld_regions": ["hard_floor"], "feature_tags": ["Any"]},
+
+    {"id": "stone_outcrop_surface", "map_biomes": ["FOREST"], "depth_bands": ["surface"], "cave_regions": ["Surface"], "underworld_regions": ["none"], "feature_tags": ["StoneOutcrop"]},
+    {"id": "desert_spire_surface", "map_biomes": ["DESERT"], "depth_bands": ["surface"], "cave_regions": ["Surface"], "underworld_regions": ["none"], "feature_tags": ["DesertSpire"]},
+    {"id": "frost_spire_surface", "map_biomes": ["TUNDRA"], "depth_bands": ["surface"], "cave_regions": ["Surface"], "underworld_regions": ["none"], "feature_tags": ["FrostSpire"]},
+    {"id": "mud_mound_surface", "map_biomes": ["SWAMP"], "depth_bands": ["surface"], "cave_regions": ["Surface"], "underworld_regions": ["none"], "feature_tags": ["MudMound"]},
+    {"id": "grass_knoll_surface", "map_biomes": ["PLAINS"], "depth_bands": ["surface"], "cave_regions": ["Surface"], "underworld_regions": ["none"], "feature_tags": ["GrassKnoll"]},
+    {"id": "none_feature_surface", "map_biomes": ["FOREST", "PLAINS", "DESERT", "TUNDRA", "SWAMP"], "depth_bands": ["surface"], "cave_regions": ["Surface"], "underworld_regions": ["none"], "feature_tags": ["None"]}
+  ]
+}

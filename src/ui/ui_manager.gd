@@ -56,6 +56,16 @@ func clear_all_references() -> void:
 	blocking_windows.clear()
 	is_ui_focused = false
 
+func _get_active_window_if_valid(window_name: String) -> Control:
+	if not active_windows.has(window_name):
+		return null
+	var cached_window = active_windows[window_name]
+	if is_instance_valid(cached_window) and cached_window is Control:
+		return cached_window
+	active_windows.erase(window_name)
+	blocking_windows.erase(window_name)
+	return null
+
 ## 打开窗口
 func open_window(window_name: String, scene_path: String, blocks_input: bool = true) -> Control:
 	print("UIManager: 尝试打开窗口: ", window_name, " 路径: ", scene_path)
@@ -63,11 +73,7 @@ func open_window(window_name: String, scene_path: String, blocks_input: bool = t
 	var window: Control = null
 	
 	# 1. 优先从已激活窗口中找
-	if active_windows.has(window_name):
-		window = active_windows[window_name]
-		if not is_instance_valid(window):
-			active_windows.erase(window_name)
-			window = null
+	window = _get_active_window_if_valid(window_name)
 	
 	# 2. 检查场景中是否已经存在该节点 (针对 Master Scene 预置节点)
 	if not window:
@@ -388,12 +394,7 @@ func close_window(window_name: String) -> void:
 				active_windows[window_name] = found
 
 	var window: Control = null
-	if active_windows.has(window_name):
-		var potential_window = active_windows[window_name]
-		if is_instance_valid(potential_window):
-			window = potential_window
-		else:
-			active_windows.erase(window_name)
+	window = _get_active_window_if_valid(window_name)
 
 	if not is_instance_valid(window):
 		active_windows.erase(window_name)
@@ -490,7 +491,7 @@ func close_all_windows(only_blocking: bool = true, exclude: Array = []) -> void:
 
 ## 切换窗口状态
 func toggle_window(window_name: String, scene_path: String, blocks_input: bool = true) -> void:
-	if active_windows.has(window_name):
+	if _get_active_window_if_valid(window_name) != null:
 		close_window(window_name)
 	else:
 		open_window(window_name, scene_path, blocks_input)

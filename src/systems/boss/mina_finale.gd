@@ -5,6 +5,7 @@ const WAND_PIVOT_OFFSET := Vector2(0, -12)
 const WAND_MUZZLE_OFFSET := Vector2(48, 0)
 const CONTROL_EFFECT_DURATION := 10.0
 const CONTROL_WINDOW_INTERVAL := 4.2
+const CONTROL_MECHANIC_COOLDOWN := 9.0
 const PERIODIC_INVULNERABLE_INTERVAL := 10.0
 const PERIODIC_INVULNERABLE_DURATION := 2.2
 const THRESHOLD_INVULNERABLE_DURATION := 3.0
@@ -27,6 +28,14 @@ var _invulnerable_remaining: float = 0.0
 var _devour_damage_multiplier: float = 1.0
 var _devoured_projectile_count: int = 0
 var _next_health_threshold_ratio: float = 0.8
+var _mechanic_cooldowns := {
+	"swap": 0.0,
+	"angina": 0.0,
+	"projectile_lock": 0.0,
+	"input_inversion": 0.0,
+	"gravity_flip": 0.0,
+}
+var _devour_feedback_cooldown: float = 0.0
 var _rng := RandomNumberGenerator.new()
 
 func _ready() -> void:
@@ -59,6 +68,9 @@ func apply_player_snapshot(player_health: float, wand_item: Resource) -> void:
 	_devour_damage_multiplier = 1.0
 	_devoured_projectile_count = 0
 	_next_health_threshold_ratio = 0.8
+	for key in _mechanic_cooldowns.keys():
+		_mechanic_cooldowns[key] = 0.0
+	_devour_feedback_cooldown = 0.0
 
 	if _snapshot_wand_data and _snapshot_wand_data.embryo:
 		var recharge = float(_snapshot_wand_data.embryo.get("recharge_time"))
@@ -123,8 +135,14 @@ func get_combat_damage_multiplier() -> float:
 func _is_invulnerable() -> bool:
 	return _invulnerable_remaining > 0.0
 
-func _activate_invulnerable_window(duration: float) -> void:
+func _activate_invulnerable_window(duration: float, source: String = "") -> void:
+	var was_invulnerable := _invulnerable_remaining > 0.0
 	_invulnerable_remaining = maxf(_invulnerable_remaining, duration)
+	if not was_invulnerable and UIManager:
+		var tag := "吞噬防护"
+		if source == "threshold":
+			tag = "阈值防护"
+		UIManager.show_floating_text(tag, global_position + Vector2(0, -52), Color(0.85, 0.93, 1.0))
 
 func _update_encounter_mechanics(delta: float) -> void:
 	if not combat_active:
@@ -132,10 +150,14 @@ func _update_encounter_mechanics(delta: float) -> void:
 
 	_control_window_timer = maxf(0.0, _control_window_timer - delta)
 	_periodic_invulnerable_timer -= delta
+	if _devour_feedback_cooldown > 0.0:
+		_devour_feedback_cooldown = maxf(0.0, _devour_feedback_cooldown - delta)
+	for key in _mechanic_cooldowns.keys():
+		_mechanic_cooldowns[key] = maxf(0.0, float(_mechanic_cooldowns.get(key, 0.0)) - delta)
 	if _periodic_invulnerable_timer <= 0.0:
 		while _periodic_invulnerable_timer <= 0.0:
 			_periodic_invulnerable_timer += PERIODIC_INVULNERABLE_INTERVAL
-		_activate_invulnerable_window(PERIODIC_INVULNERABLE_DURATION)
+		_activate_invulnerable_window(PERIODIC_INVULNERABLE_DURATION, "periodic")
 
 	if _invulnerable_remaining > 0.0:
 		_invulnerable_remaining = maxf(0.0, _invulnerable_remaining - delta)
@@ -152,30 +174,75 @@ func _process_health_threshold_effects() -> void:
 		return
 	var ratio := current_health / max_health
 	while _next_health_threshold_ratio > 0.0 and ratio <= _next_health_threshold_ratio + 0.0001:
-		_activate_invulnerable_window(THRESHOLD_INVULNERABLE_DURATION)
+		_activate_invulnerable_window(THRESHOLD_INVULNERABLE_DURATION, "threshold")
 		if player_ref and is_instance_valid(player_ref) and player_ref.has_method("apply_mina_attack_reduction_step"):
 			player_ref.apply_mina_attack_reduction_step()
+			if UIManager and player_ref.has_method("get_combat_damage_multiplier"):
+				var player_multiplier := float(player_ref.call("get_combat_damage_multiplier"))
+				UIManager.show_floating_text("攻击衰减 x%.2f" % player_multiplier, player_ref.global_position + Vector2(0, -52), Color(1.0, 0.7, 0.45))
 		_next_health_threshold_ratio = maxf(0.0, _next_health_threshold_ratio - 0.2)
 
 func _trigger_control_disruption_skill() -> void:
 	if player_ref == null or not is_instance_valid(player_ref):
 		return
-	var roll := _rng.randi_range(0, 4)
-	match roll:
-		0:
+	var weighted_pool: Array[String] = []
+	if _is_mechanic_available("swap"):
+		weighted_pool.append("swap")
+	if _is_mechanic_available("angina") and (not player_ref.has_method("is_mina_angina_active") or not bool(player_ref.call("is_mina_angina_active"))):
+		weighted_pool.append("angina")
+		weighted_pool.append("angina")
+	if _is_mechanic_available("projectile_lock") and (not player_ref.has_method("is_mina_projectile_lock_active") or not bool(player_ref.call("is_mina_projectile_lock_active"))):
+		weighted_pool.append("projectile_lock")
+	if _is_mechanic_available("input_inversion") and (not player_ref.has_method("is_mina_input_inversion_active") or not bool(player_ref.call("is_mina_input_inversion_active"))):
+		weighted_pool.append("input_inversion")
+	if _is_mechanic_available("gravity_flip") and (not player_ref.has_method("is_mina_gravity_flip_active") or not bool(player_ref.call("is_mina_gravity_flip_active"))):
+		weighted_pool.append("gravity_flip")
+
+	if weighted_pool.is_empty():
+		if _is_mechanic_available("swap"):
+			_apply_selected_mechanic("swap")
+		return
+
+	var selected := weighted_pool[_rng.randi_range(0, weighted_pool.size() - 1)]
+	_apply_selected_mechanic(selected)
+
+func _is_mechanic_available(mechanic_id: String) -> bool:
+	return float(_mechanic_cooldowns.get(mechanic_id, 0.0)) <= 0.0
+
+func _set_mechanic_cooldown(mechanic_id: String, duration: float = CONTROL_MECHANIC_COOLDOWN) -> void:
+	_mechanic_cooldowns[mechanic_id] = maxf(float(_mechanic_cooldowns.get(mechanic_id, 0.0)), duration)
+
+func _apply_selected_mechanic(mechanic_id: String) -> void:
+	match mechanic_id:
+		"swap":
+			if UIManager:
+				UIManager.show_floating_text("空间扰动", global_position + Vector2(0, -42), Color(0.72, 0.9, 1.0))
 			_try_swap_positions_with_player()
-		1:
+			_set_mechanic_cooldown("swap")
+		"angina":
 			if player_ref.has_method("apply_mina_angina"):
 				player_ref.apply_mina_angina(CONTROL_EFFECT_DURATION)
-		2:
+				if UIManager:
+					UIManager.show_floating_text("心绞痛", player_ref.global_position + Vector2(0, -42), Color(1.0, 0.55, 0.55))
+				_set_mechanic_cooldown("angina")
+		"projectile_lock":
 			if player_ref.has_method("apply_mina_projectile_lock"):
 				player_ref.apply_mina_projectile_lock(CONTROL_EFFECT_DURATION)
-		3:
+				if UIManager:
+					UIManager.show_floating_text("禁射", player_ref.global_position + Vector2(0, -42), Color(1.0, 0.45, 0.45))
+				_set_mechanic_cooldown("projectile_lock")
+		"input_inversion":
 			if player_ref.has_method("apply_mina_input_inversion"):
 				player_ref.apply_mina_input_inversion(CONTROL_EFFECT_DURATION)
-		4:
+				if UIManager:
+					UIManager.show_floating_text("输入颠倒", player_ref.global_position + Vector2(0, -42), Color(1.0, 0.8, 0.5))
+				_set_mechanic_cooldown("input_inversion")
+		"gravity_flip":
 			if player_ref.has_method("apply_mina_gravity_flip"):
 				player_ref.apply_mina_gravity_flip(CONTROL_EFFECT_DURATION)
+				if UIManager:
+					UIManager.show_floating_text("重力翻转", player_ref.global_position + Vector2(0, -42), Color(0.72, 0.9, 1.0))
+				_set_mechanic_cooldown("gravity_flip")
 
 func _try_swap_positions_with_player() -> void:
 	if player_ref == null or not is_instance_valid(player_ref):
@@ -225,6 +292,9 @@ func _try_devour_projectile(candidate: Node) -> void:
 		candidate.queue_free()
 		_devoured_projectile_count += 1
 		_devour_damage_multiplier = minf(DEVOUR_DAMAGE_CAP, _devour_damage_multiplier * (1.0 + DEVOUR_DAMAGE_STEP))
+		if UIManager and _devour_feedback_cooldown <= 0.0:
+			UIManager.show_floating_text("吞噬 +1%%", global_position + Vector2(0, -30), Color(0.74, 0.95, 1.0))
+			_devour_feedback_cooldown = 0.25
 
 func _resolve_snapshot_wand_data(wand_snapshot: Variant) -> WandData:
 	if wand_snapshot == null:

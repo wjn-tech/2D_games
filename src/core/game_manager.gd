@@ -48,11 +48,23 @@ const STARTUP_STAGE_LABELS := {
 }
 
 const GAMEPLAY_SCENE_PATH := "res://scenes/main.tscn"
+const MIN_LOADING_OVERLAY_VISIBLE_SEC := 0.9
+const STARTUP_SCENE_READY_MAX_WAIT_FRAMES := 360
+const STARTUP_PLAYER_READY_MAX_WAIT_FRAMES := 180
+const STARTUP_SCENE_SWITCH_RETRY_COUNT := 4
+const STARTUP_SCENE_SWITCH_RETRY_DELAY_SEC := 0.12
+const PLAYER_SCENE_PATH := "res://scenes/player.tscn"
 
 var _startup_stage_progress: Dictionary = {}
 var _startup_current_stage: String = ""
 var _startup_stage_status: String = ""
 var _world_startup_ready: bool = false
+var _loading_overlay_shown_at_msec: int = 0
+var _pending_startup_scene_path: String = ""
+var _last_startup_abort_reason: String = ""
+var _last_startup_abort_source: String = ""
+var _last_startup_abort_time_msec: int = 0
+var _startup_emergency_recovered: bool = false
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -111,6 +123,7 @@ func change_state(new_state: State) -> void:
 				loading_player.process_mode = Node.PROCESS_MODE_DISABLED
 			if UIManager and UIManager.has_method("show_loading_overlay"):
 				UIManager.show_loading_overlay("世界加载中", String(STARTUP_STAGE_LABELS.get("scene_stable", "稳定场景")), _calculate_startup_progress(), _startup_stage_status)
+				_mark_loading_overlay_shown()
 		State.PLAYING:
 			get_tree().paused = false
 			# 1. 强力清理并探测 UI
@@ -253,6 +266,10 @@ func reset_game_state() -> void:
 func start_new_game() -> void:
 	if _is_starting_new_game:
 		return
+	_last_startup_abort_reason = ""
+	_last_startup_abort_source = ""
+	_last_startup_abort_time_msec = 0
+	_startup_emergency_recovered = false
 	
 	# 先重置所有旧状态
 	reset_game_state()
@@ -267,6 +284,7 @@ func start_new_game() -> void:
 		await UIManager.play_fade(true, 0.3)
 		if UIManager.has_method("show_loading_overlay"):
 			UIManager.show_loading_overlay("世界加载中", "切换游戏场景", 0.0, "正在创建新的世界会话...")
+			_mark_loading_overlay_shown()
 	if EventBus:
 		EventBus.player_input_enabled.emit(false)
 	
@@ -304,39 +322,24 @@ func start_new_game() -> void:
 	
 	# 2. 执行场景切换
 	current_state = State.GAME_OVER 
-	
-	# 场景切换需要时间，延时 0.2 秒通常足以避开引擎切换时的不稳定期
-	var tree = get_tree()
+	_pending_startup_scene_path = GAMEPLAY_SCENE_PATH
+	get_tree().paused = false
 
-	var error = get_tree().change_scene_to_file(GAMEPLAY_SCENE_PATH)
-	if error == OK:
-		# 使用计时器进行一次性延迟初始化，避免在场景过渡帧内运行逻辑
-		tree.create_timer(0.2).timeout.connect(_on_reload_finished)
+	var scene_switched := await _switch_to_startup_scene(_pending_startup_scene_path, "new_game")
+	if scene_switched:
+		await _on_reload_finished()
 	else:
-		get_tree().paused = false
-		
-		# 如果存档包含特定场景路径，切换到该场景
-		if GameState.has_meta("pending_scene_path"):
-			var scene_path = GameState.get_meta("pending_scene_path")
-			GameState.remove_meta("pending_scene_path")
-			if scene_path != get_tree().current_scene.scene_file_path:
-				get_tree().change_scene_to_file(scene_path)
-			else:
-				get_tree().reload_current_scene()
-		else:
-			get_tree().reload_current_scene()
-			
-		# 场景加载是异步的，我们需要通过定时器来等待加载完成
-		# 如果使用 change_scene_to_file，通常 SceneTree 会在下一帧完成切换
-		var timer = get_tree().create_timer(0.2)
-		# 尝试解绑旧连接以免重复
-		if timer.timeout.is_connected(_on_reload_finished):
-			timer.timeout.disconnect(_on_reload_finished)
-		
-		timer.timeout.connect(_on_reload_finished)
+		_pending_startup_scene_path = ""
+		_is_starting_new_game = false
+		_world_startup_ready = false
+		await _abort_startup_to_menu("切换目标场景失败，无法开始新游戏。", "switch_scene_new_game")
 
 func load_game(slot_id: int) -> void:
 	if _is_starting_new_game: return
+	_last_startup_abort_reason = ""
+	_last_startup_abort_source = ""
+	_last_startup_abort_time_msec = 0
+	_startup_emergency_recovered = false
 	
 	reset_game_state()
 	_is_starting_new_game = true
@@ -353,6 +356,7 @@ func load_game(slot_id: int) -> void:
 		await UIManager.play_fade(true, 0.3)
 		if UIManager.has_method("show_loading_overlay"):
 			UIManager.show_loading_overlay("世界加载中", "切换游戏场景", 0.0, "正在读取存档并切换到目标场景...")
+			_mark_loading_overlay_shown()
 	if EventBus:
 		EventBus.player_input_enabled.emit(false)
 	
@@ -363,20 +367,39 @@ func load_game(slot_id: int) -> void:
 	if GameState.has_meta("pending_scene_path"):
 		scene_path = GameState.get_meta("pending_scene_path")
 		GameState.remove_meta("pending_scene_path")
-	
-	var error = get_tree().change_scene_to_file(scene_path)
-	if error == OK:
-		get_tree().create_timer(0.2).timeout.connect(_on_reload_finished)
+	_pending_startup_scene_path = scene_path
+	get_tree().paused = false
+
+	var scene_switched := await _switch_to_startup_scene(_pending_startup_scene_path, "load_game")
+	if scene_switched:
+		await _on_reload_finished()
 	else:
+		_pending_startup_scene_path = ""
 		_is_starting_new_game = false
-		get_tree().paused = false
-		print("GameManager: Failed to change scene during load.")
+		_world_startup_ready = false
+		await _abort_startup_to_menu("切换目标场景失败，无法读取存档。", "switch_scene_load_game")
 
 func _on_reload_finished() -> void:
+	get_tree().paused = false
+	var scene_ready := await _wait_for_expected_startup_scene_ready()
+	if not scene_ready:
+		var retry_scene := _pending_startup_scene_path.strip_edges()
+		if retry_scene == "":
+			retry_scene = GAMEPLAY_SCENE_PATH
+		var retry_switched := await _switch_to_startup_scene(retry_scene, "startup_recover")
+		if retry_switched:
+			scene_ready = await _wait_for_expected_startup_scene_ready()
+
+	if not scene_ready:
+		_is_starting_new_game = false
+		_world_startup_ready = false
+		await _abort_startup_to_menu("目标场景加载超时，无法完成世界启动。", "reload_scene_ready_timeout")
+		return
+
 	_is_starting_new_game = false
 	_world_startup_ready = false
 	print("GameManager: 场景重载完毕，正在初始化...")
-	get_tree().paused = false
+	_pending_startup_scene_path = ""
 	change_state(State.LOADING_WORLD)
 	_reset_startup_progress()
 	_report_startup_progress("scene_stable", 1.0, "场景已稳定，正在恢复世界入口状态...")
@@ -562,21 +585,35 @@ func _restore_player_data_after_reload() -> bool:
 func _complete_world_startup() -> void:
 	var scene_root = get_tree().current_scene
 	if not scene_root:
-		await _abort_startup_to_menu("当前场景尚未就绪，无法完成世界启动。")
-		return
+		for i in range(STARTUP_SCENE_READY_MAX_WAIT_FRAMES):
+			await get_tree().process_frame
+			scene_root = get_tree().current_scene
+			if scene_root:
+				break
+		if not scene_root:
+			await _abort_startup_to_menu("当前场景尚未就绪，无法完成世界启动。", "startup_scene_missing")
+			return
 
 	var world_gen = _find_world_generator(scene_root)
 	if not world_gen:
-		await _abort_startup_to_menu("未找到 WorldGenerator，无法初始化世界。")
-		return
+		for i in range(90):
+			await get_tree().process_frame
+			world_gen = _find_world_generator(scene_root)
+			if world_gen:
+				break
+	if not world_gen:
+		push_warning("GameManager: 未找到 WorldGenerator，回退到无生成器兼容启动路径。")
 
-	_apply_pending_world_seed(world_gen)
-	_report_startup_progress("world_bootstrap", 0.15, "正在初始化世界生成器...")
-	if world_gen.has_method("start_generation"):
-		world_gen.start_generation()
-	elif world_gen.has_method("generate_world"):
-		world_gen.generate_world()
-	_report_startup_progress("world_bootstrap", 0.65, "世界生成器已完成关键启动。")
+	if world_gen:
+		_apply_pending_world_seed(world_gen)
+		_report_startup_progress("world_bootstrap", 0.15, "正在初始化世界生成器...")
+		if world_gen.has_method("start_generation"):
+			world_gen.start_generation()
+		elif world_gen.has_method("generate_world"):
+			world_gen.generate_world()
+		_report_startup_progress("world_bootstrap", 0.65, "世界生成器已完成关键启动。")
+	else:
+		_report_startup_progress("world_bootstrap", 0.65, "未检测到世界生成器，使用兼容启动路径。")
 
 	_restore_pending_buildings()
 	_report_startup_progress("world_bootstrap", 1.0, "关键世界对象已恢复。")
@@ -584,13 +621,17 @@ func _complete_world_startup() -> void:
 	var preload_gate := await _run_startup_full_preload_gate()
 	if not bool(preload_gate.get("ok", false)):
 		var reason_code := String(preload_gate.get("reason_code", "PRELOAD_FAILED"))
-		var progress_snapshot = preload_gate.get("progress_snapshot", {})
-		await _abort_startup_to_menu("全量预加载失败: reason=%s progress=%s" % [reason_code, str(progress_snapshot)])
-		return
+		push_warning("GameManager: 全量预加载失败，回退到兼容出生区预热路径。reason=%s" % reason_code)
+		_report_startup_progress("full_world_preload", 1.0, "全量预加载失败，已切换兼容预热路径。")
+		preload_gate = {
+			"ok": true,
+			"required": false,
+			"legacy_fallback": true,
+		}
 
-	var player = get_tree().get_first_node_in_group("player")
+	var player := await _resolve_startup_player(scene_root)
 	if not player:
-		await _abort_startup_to_menu("未找到玩家节点，无法完成启动。")
+		await _abort_startup_to_menu("未找到玩家节点，无法完成启动。", "startup_player_missing")
 		return
 
 	var startup_spawn := _resolve_startup_spawn_context(scene_root, world_gen)
@@ -598,8 +639,8 @@ func _complete_world_startup() -> void:
 		startup_spawn["requires_chunk_warmup"] = false
 	var spawn_ready := await _prepare_spawn_area(player, startup_spawn)
 	if not spawn_ready:
-		await _abort_startup_to_menu("出生区域预热超时，已取消进入世界。")
-		return
+		push_warning("GameManager: 出生区域预热超时，回退到直接放置玩家。")
+		await _spawn_player_safely(player, Vector2(startup_spawn.get("position", Vector2.ZERO)), false)
 
 	_report_startup_progress("gameplay_handoff", 0.5, "正在释放 HUD、实体层与玩家输入...")
 	_world_startup_ready = true
@@ -610,11 +651,26 @@ func _complete_world_startup() -> void:
 	_report_startup_progress("gameplay_handoff", 1.0, "世界已准备完成。")
 
 	if UIManager:
+		await _await_min_loading_overlay_visibility()
 		if is_new_game:
 			await UIManager.hide_loading_overlay(0.2)
 		else:
 			await UIManager.play_fade(false, 0.35)
 			await UIManager.hide_loading_overlay(0.2)
+
+
+func _mark_loading_overlay_shown() -> void:
+	_loading_overlay_shown_at_msec = Time.get_ticks_msec()
+
+
+func _await_min_loading_overlay_visibility() -> void:
+	if _loading_overlay_shown_at_msec <= 0:
+		return
+	var elapsed_sec := float(Time.get_ticks_msec() - _loading_overlay_shown_at_msec) / 1000.0
+	var remain_sec := MIN_LOADING_OVERLAY_VISIBLE_SEC - elapsed_sec
+	if remain_sec > 0.0:
+		await get_tree().create_timer(remain_sec).timeout
+	_loading_overlay_shown_at_msec = 0
 
 func _find_world_generator(scene_root: Node) -> Node:
 	var world_gen = scene_root.find_child("WorldGenerator", true, false)
@@ -859,9 +915,17 @@ func _restore_pending_buildings() -> void:
 		if instance.has_method("load_custom_data"):
 			instance.load_custom_data(b_info.get("custom_data", {}))
 
-func _abort_startup_to_menu(message: String) -> void:
+func _abort_startup_to_menu(message: String, source: String = "unknown") -> void:
 	_world_startup_ready = false
-	push_error("GameManager: 启动失败 - %s" % message)
+	_pending_startup_scene_path = ""
+	_last_startup_abort_reason = message
+	_last_startup_abort_source = source
+	_last_startup_abort_time_msec = Time.get_ticks_msec()
+	push_error("GameManager: 启动失败 - %s (source=%s state=%d)" % [message, source, int(current_state)])
+
+	if await _try_emergency_startup_handoff(message):
+		return
+
 	if UIManager and UIManager.has_method("show_loading_failure"):
 		UIManager.show_loading_failure(message)
 	await get_tree().create_timer(1.1).timeout
@@ -894,3 +958,149 @@ func _spawn_player_safely(player: Node2D, target_pos: Vector2, restore_process: 
 
 func is_world_startup_ready() -> bool:
 	return _world_startup_ready
+
+
+func _switch_to_startup_scene(scene_path: String, context: String) -> bool:
+	var target := scene_path.strip_edges()
+	if target == "":
+		push_warning("GameManager: startup scene is empty. context=%s" % context)
+		return false
+
+	var last_error := OK
+	for attempt in range(STARTUP_SCENE_SWITCH_RETRY_COUNT):
+		last_error = get_tree().change_scene_to_file(target)
+		if last_error == OK:
+			return true
+		push_warning("GameManager: change_scene_to_file failed (%d) attempt=%d/%d context=%s target=%s" % [last_error, attempt + 1, STARTUP_SCENE_SWITCH_RETRY_COUNT, context, target])
+		await get_tree().process_frame
+		await get_tree().create_timer(STARTUP_SCENE_SWITCH_RETRY_DELAY_SEC).timeout
+
+	push_error("GameManager: change_scene_to_file exhausted retries. context=%s target=%s last_error=%d" % [context, target, last_error])
+	return false
+
+
+func _scene_has_startup_markers(scene_root: Node) -> bool:
+	if not scene_root:
+		return false
+	if get_tree().get_first_node_in_group("player"):
+		return true
+	if scene_root.find_child("Player", true, false):
+		return true
+	if scene_root.find_child("WorldGenerator", true, false):
+		return true
+	if scene_root.find_child("Entities", true, false):
+		return true
+	return false
+
+
+func _wait_for_expected_startup_scene_ready() -> bool:
+	var expected := _pending_startup_scene_path.strip_edges()
+	if expected == "":
+		var current = get_tree().current_scene
+		return current != null and _scene_has_startup_markers(current)
+
+	for i in range(STARTUP_SCENE_READY_MAX_WAIT_FRAMES):
+		var scene_root = get_tree().current_scene
+		if scene_root and String(scene_root.scene_file_path) == expected:
+			return true
+		await get_tree().process_frame
+
+	var current_scene = get_tree().current_scene
+	if current_scene:
+		if _scene_has_startup_markers(current_scene):
+			push_warning("GameManager: startup scene path mismatch but markers detected. expected=%s current=%s" % [expected, String(current_scene.scene_file_path)])
+			return true
+		push_warning("GameManager: startup scene mismatch. expected=%s current=%s" % [expected, String(current_scene.scene_file_path)])
+	else:
+		push_warning("GameManager: startup scene missing after wait. expected=%s" % expected)
+	return false
+
+
+func _resolve_startup_player(scene_root: Node) -> Node2D:
+	var player = get_tree().get_first_node_in_group("player")
+	if player and player is Node2D:
+		return player
+
+	for i in range(STARTUP_PLAYER_READY_MAX_WAIT_FRAMES):
+		await get_tree().process_frame
+		player = get_tree().get_first_node_in_group("player")
+		if player and player is Node2D:
+			return player
+
+	var fallback_player = scene_root.find_child("Player", true, false)
+	if fallback_player and fallback_player is Node2D:
+		return fallback_player
+
+	if not ResourceLoader.exists(PLAYER_SCENE_PATH):
+		return null
+
+	var player_scene = ResourceLoader.load(PLAYER_SCENE_PATH)
+	if not player_scene or not (player_scene is PackedScene):
+		return null
+
+	var entities = scene_root.find_child("Entities", true, false)
+	if not entities:
+		var entities_root := Node2D.new()
+		entities_root.name = "Entities"
+		scene_root.add_child(entities_root)
+		entities = entities_root
+
+	var spawned = (player_scene as PackedScene).instantiate()
+	entities.add_child(spawned)
+	if spawned is Node2D:
+		(spawned as Node2D).global_position = Vector2.ZERO
+		push_warning("GameManager: startup fallback spawned Player instance.")
+		return spawned
+
+	spawned.queue_free()
+	return null
+
+
+func _try_emergency_startup_handoff(message: String) -> bool:
+	var startup_window := current_state == State.LOADING_WORLD or current_state == State.GAME_OVER
+	if not startup_window:
+		return false
+
+	var scene_root := get_tree().current_scene
+	if not _scene_has_startup_markers(scene_root):
+		for i in range(120):
+			await get_tree().process_frame
+			scene_root = get_tree().current_scene
+			if _scene_has_startup_markers(scene_root):
+				break
+		if not _scene_has_startup_markers(scene_root):
+			return false
+
+	var player := await _resolve_startup_player(scene_root)
+	if not player:
+		return false
+
+	push_warning("GameManager: startup failure recovered by emergency handoff. reason=%s" % message)
+	_startup_emergency_recovered = true
+	_report_startup_progress("gameplay_handoff", 0.75, "检测到启动异常，已切换兼容接管路径...")
+	_world_startup_ready = true
+	change_state(State.PLAYING)
+	player.process_mode = Node.PROCESS_MODE_INHERIT
+	if EventBus:
+		EventBus.player_input_enabled.emit(true)
+
+	if UIManager:
+		await _await_min_loading_overlay_visibility()
+		if UIManager.has_method("hide_loading_overlay"):
+			await UIManager.hide_loading_overlay(0.12)
+		elif UIManager.has_method("dismiss_loading_overlay"):
+			UIManager.dismiss_loading_overlay()
+
+	return true
+
+
+func get_startup_debug_snapshot() -> Dictionary:
+	return {
+		"current_state": int(current_state),
+		"is_starting_new_game": _is_starting_new_game,
+		"pending_scene": _pending_startup_scene_path,
+		"last_abort_reason": _last_startup_abort_reason,
+		"last_abort_source": _last_startup_abort_source,
+		"last_abort_time_msec": _last_startup_abort_time_msec,
+		"emergency_recovered": _startup_emergency_recovered,
+	}

@@ -1,74 +1,228 @@
 extends Control
 
-@onready var start_button: Button = $CenterContainer/VBoxContainer/StartButton
-@onready var load_button: Button = $CenterContainer/VBoxContainer/LoadButton
-@onready var settings_button: Button = $CenterContainer/VBoxContainer/SettingsButton
-@onready var exit_button: Button = $CenterContainer/VBoxContainer/ExitButton
-@onready var title_label: Control = $CenterContainer/VBoxContainer/Title
+const MENU_SHELL_THEME_PATH := "res://assets/ui/start_menu_shell/menu_theme.json"
+const WEB_MENU_RESOURCE_PATH := "res://ui/web/main_menu_shell/index.html"
 
-var welcome_label: Label
+@onready var center_group: Control = $CenterContainer
+@onready var title_label: Label = $CenterContainer/MainColumn/Title
+@onready var subtitle_label: Label = $CenterContainer/MainColumn/SubTitle
+@onready var button_column: VBoxContainer = $CenterContainer/MainColumn/ButtonColumn
+@onready var start_button: Button = $CenterContainer/MainColumn/ButtonColumn/StartButton
+@onready var load_button: Button = $CenterContainer/MainColumn/ButtonColumn/LoadButton
+@onready var settings_button: Button = $CenterContainer/MainColumn/ButtonColumn/SettingsButton
+@onready var exit_button: Button = $CenterContainer/MainColumn/ButtonColumn/ExitButton
+@onready var overlay_rect: ColorRect = $BackdropTint
+@onready var left_decor: VBoxContainer = $DecorLayer/LeftDecor
+@onready var right_decor: VBoxContainer = $DecorLayer/RightDecor
+@onready var bottom_left_label: Label = $BottomLeftStatus
+@onready var bottom_right_line1: Label = $BottomRightInfo/Line1
+@onready var bottom_right_line2: Label = $BottomRightInfo/Line2
+
+var menu_shell_tokens: Dictionary = {}
 var _hidden_backgrounds: Array = []
-var ui_palette: Dictionary = {}
-var _debug_title_compare: bool = false
-var _use_viewport_title: bool = false
+var _menu_webview_node: Node = null
+var _web_menu_active: bool = false
+var _action_locked: bool = false
+
 
 func _ready() -> void:
-	# 确保菜单全屏并置于最顶层
 	anchor_right = 1.0
 	anchor_bottom = 1.0
 	offset_right = 0
 	offset_bottom = 0
-	
-	# DISABLED: Theme override to allow new Main Menu theme to work
-	# var start_theme_path = "res://ui/theme/theme_startmenu.tres"
-	# if ResourceLoader.exists(start_theme_path):
-	# 	var st = ResourceLoader.load(start_theme_path)
-	# 	if st:
-	# 		self.theme = st
 
-	# Update Title Size for Shader Gradient
-	if title_label:
-		# Connect to resized signal
-		if not title_label.resized.is_connected(_on_title_resized):
-			title_label.resized.connect(_on_title_resized)
-		
-		# Initial delay to ensure layout is computed
-		await get_tree().process_frame
-		await get_tree().process_frame
-		_on_title_resized()
+	menu_shell_tokens = _load_menu_shell_theme_tokens()
+	_apply_menu_shell_theme_tokens()
+	_sync_button_labels()
+	_connect_button_signals()
 
-	# Replace built-in Buttons with RoundedTextureButton instances to avoid rectangular artifacts
-	# _replace_buttons_with_rounded()
-
-	# Ensure an enhanced starfield + nebula background is present
-	# _ensure_starfield_background()
-
-	# DISABLED: This function dynamically rebuilds the UI (changes title to GradientTitle custom control, changes button text based on saves).
-	# Because the user reported visual glitches ("flashing", "different gradient") and unexpected text changes ("New Start"),
-	# we disable this entire block to ensure the MainMenu matches the scene file (WYSWYG).
-	# _setup_smart_ui()
-
-	# create decorative magic circle behind title
-	# _create_magic_circle()
-
-	# apply gradient shader to title label if available
-	# _apply_title_gradient()
-
-	# hide other scene backgrounds so our menu background is the only visible one
+	_web_menu_active = _try_setup_web_menu_webview()
+	_set_native_menu_visible(not _web_menu_active)
 	_hide_external_backgrounds()
-	
-	# Override Overlay mouse filter to ensure it doesn't block input
-	var ov_node = get_node_or_null("Overlay")
-	if ov_node and ov_node is Control:
-		ov_node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if _web_menu_active:
+		_sync_web_menu_state()
+	else:
+		_play_entrance_animation()
 
-	# 递归修复背景遮挡导致按钮失效的问题
-	_fix_mouse_filter(self)
+	if not visibility_changed.is_connected(_on_visibility_changed):
+		visibility_changed.connect(_on_visibility_changed)
 
-	# Ensure specific containers are PASS or IGNORE
-	if $CenterContainer: $CenterContainer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	if $CenterContainer/VBoxContainer: $CenterContainer/VBoxContainer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	
+
+func _load_menu_shell_theme_tokens() -> Dictionary:
+	if not FileAccess.file_exists(MENU_SHELL_THEME_PATH):
+		return {}
+	var file := FileAccess.open(MENU_SHELL_THEME_PATH, FileAccess.READ)
+	if file == null:
+		return {}
+	var raw := file.get_as_text()
+	file.close()
+	var parsed = JSON.parse_string(raw)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return {}
+	return parsed
+
+
+func _theme_float(key: String, fallback: float) -> float:
+	if not menu_shell_tokens.has(key):
+		return fallback
+	var value = menu_shell_tokens.get(key)
+	if typeof(value) == TYPE_FLOAT or typeof(value) == TYPE_INT:
+		return float(value)
+	if typeof(value) == TYPE_STRING and String(value).is_valid_float():
+		return String(value).to_float()
+	return fallback
+
+
+func _theme_color(key: String, fallback: Color) -> Color:
+	if not menu_shell_tokens.has(key):
+		return fallback
+	var value = menu_shell_tokens.get(key)
+	if typeof(value) == TYPE_COLOR:
+		return value
+	if typeof(value) == TYPE_STRING:
+		return Color.from_string(String(value), fallback)
+	if typeof(value) == TYPE_ARRAY:
+		var arr: Array = value
+		if arr.size() >= 3:
+			var alpha := float(arr[3]) if arr.size() > 3 else 1.0
+			return Color(float(arr[0]), float(arr[1]), float(arr[2]), alpha)
+	return fallback
+
+
+func _build_stylebox(bg: Color, border: Color, border_width: int, radius: int, shadow_alpha: float) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = bg
+	style.border_color = border
+	style.border_width_left = border_width
+	style.border_width_top = border_width
+	style.border_width_right = border_width
+	style.border_width_bottom = border_width
+	style.corner_radius_top_left = radius
+	style.corner_radius_top_right = radius
+	style.corner_radius_bottom_left = radius
+	style.corner_radius_bottom_right = radius
+	style.shadow_color = Color(0.0, 0.0, 0.0, shadow_alpha)
+	style.shadow_size = 12
+	return style
+
+
+func _apply_menu_shell_theme_tokens() -> void:
+	overlay_rect.color = _theme_color("overlay_bg", Color(0.02, 0.03, 0.10, 0.58))
+
+	var title_size := int(clampi(int(_theme_float("title_size", 112.0)), 84, 144))
+	var subtitle_size := int(clampi(int(_theme_float("subtitle_size", 34.0)), 22, 48))
+	title_label.add_theme_font_size_override("font_size", title_size)
+	title_label.add_theme_color_override("font_color", _theme_color("title_color", Color(0.74, 0.62, 1.0, 1.0)))
+	subtitle_label.add_theme_font_size_override("font_size", subtitle_size)
+	subtitle_label.add_theme_color_override("font_color", _theme_color("subtitle_color", Color(0.79, 0.73, 0.94, 1.0)))
+	subtitle_label.text = String(menu_shell_tokens.get("subtitle_text", "✦ 一场跨越星系的冒险 ✦"))
+
+	var button_width := _theme_float("button_width", 560.0)
+	button_column.custom_minimum_size = Vector2(button_width, 0.0)
+	button_column.add_theme_constant_override("separation", int(clampi(int(_theme_float("button_spacing", 16.0)), 10, 30)))
+
+	start_button.custom_minimum_size = Vector2(button_width, _theme_float("primary_button_height", 82.0))
+	start_button.add_theme_font_size_override("font_size", int(clampi(int(_theme_float("primary_button_font_size", 44.0)), 34, 56)))
+	start_button.add_theme_color_override("font_color", _theme_color("primary_button_text", Color(0.98, 0.96, 0.92, 1.0)))
+	start_button.add_theme_color_override("font_hover_color", _theme_color("primary_button_text", Color(1.0, 0.99, 0.95, 1.0)))
+	start_button.add_theme_color_override("font_pressed_color", _theme_color("primary_button_text_pressed", Color(0.95, 0.94, 0.88, 1.0)))
+	start_button.add_theme_color_override("icon_normal_color", _theme_color("primary_button_icon", Color(0.98, 0.96, 0.92, 1.0)))
+	start_button.add_theme_color_override("icon_hover_color", _theme_color("primary_button_icon", Color(1.0, 1.0, 1.0, 1.0)))
+	start_button.add_theme_color_override("icon_pressed_color", _theme_color("primary_button_icon", Color(0.95, 0.94, 0.88, 1.0)))
+
+	for secondary in [load_button, settings_button, exit_button]:
+		secondary.custom_minimum_size = Vector2(button_width, _theme_float("secondary_button_height", 66.0))
+		secondary.add_theme_font_size_override("font_size", int(clampi(int(_theme_float("secondary_button_font_size", 38.0)), 28, 46)))
+		secondary.add_theme_color_override("font_color", _theme_color("secondary_button_text", Color(0.88, 0.87, 0.96, 1.0)))
+		secondary.add_theme_color_override("font_hover_color", _theme_color("secondary_button_text_hover", Color(1.0, 0.98, 1.0, 1.0)))
+		secondary.add_theme_color_override("font_pressed_color", _theme_color("secondary_button_text_pressed", Color(0.82, 0.81, 0.92, 1.0)))
+		secondary.add_theme_color_override("icon_normal_color", _theme_color("secondary_button_icon", Color(0.84, 0.80, 0.97, 1.0)))
+		secondary.add_theme_color_override("icon_hover_color", _theme_color("secondary_button_icon_hover", Color(0.95, 0.92, 1.0, 1.0)))
+		secondary.add_theme_color_override("icon_pressed_color", _theme_color("secondary_button_icon", Color(0.84, 0.80, 0.97, 1.0)))
+
+	var border_width := int(clampi(int(_theme_float("button_border_width", 2.0)), 1, 4))
+	var radius := int(clampi(int(_theme_float("button_radius", 10.0)), 6, 18))
+
+	var primary_normal := _build_stylebox(
+		_theme_color("primary_button_bg", Color(0.88, 0.58, 0.04, 1.0)),
+		_theme_color("primary_button_border", Color(0.96, 0.86, 0.12, 1.0)),
+		border_width,
+		radius,
+		0.30
+	)
+	var primary_hover := _build_stylebox(
+		_theme_color("primary_button_hover_bg", Color(0.94, 0.64, 0.08, 1.0)),
+		_theme_color("primary_button_border", Color(0.98, 0.90, 0.22, 1.0)),
+		border_width,
+		radius,
+		0.35
+	)
+	var primary_pressed := _build_stylebox(
+		_theme_color("primary_button_pressed_bg", Color(0.82, 0.50, 0.05, 1.0)),
+		_theme_color("primary_button_border", Color(0.95, 0.82, 0.15, 1.0)),
+		border_width,
+		radius,
+		0.22
+	)
+	start_button.add_theme_stylebox_override("normal", primary_normal)
+	start_button.add_theme_stylebox_override("hover", primary_hover)
+	start_button.add_theme_stylebox_override("pressed", primary_pressed)
+	start_button.add_theme_stylebox_override("focus", primary_hover)
+
+	var secondary_normal := _build_stylebox(
+		_theme_color("secondary_button_bg", Color(0.08, 0.12, 0.27, 0.92)),
+		_theme_color("secondary_button_border", Color(0.43, 0.30, 0.88, 1.0)),
+		border_width,
+		radius,
+		0.18
+	)
+	var secondary_hover := _build_stylebox(
+		_theme_color("secondary_button_hover_bg", Color(0.10, 0.15, 0.33, 0.95)),
+		_theme_color("secondary_button_border_hover", Color(0.56, 0.42, 0.96, 1.0)),
+		border_width,
+		radius,
+		0.24
+	)
+	var secondary_pressed := _build_stylebox(
+		_theme_color("secondary_button_pressed_bg", Color(0.07, 0.11, 0.22, 0.95)),
+		_theme_color("secondary_button_border", Color(0.43, 0.30, 0.88, 1.0)),
+		border_width,
+		radius,
+		0.14
+	)
+	for secondary_btn in [load_button, settings_button, exit_button]:
+		secondary_btn.add_theme_stylebox_override("normal", secondary_normal.duplicate())
+		secondary_btn.add_theme_stylebox_override("hover", secondary_hover.duplicate())
+		secondary_btn.add_theme_stylebox_override("pressed", secondary_pressed.duplicate())
+		secondary_btn.add_theme_stylebox_override("focus", secondary_hover.duplicate())
+
+	var decor_color := _theme_color("decor_color", Color(0.56, 0.36, 0.95, 0.92))
+	for segment in left_decor.get_children():
+		if segment is ColorRect:
+			segment.color = decor_color
+	for segment in right_decor.get_children():
+		if segment is ColorRect:
+			segment.color = decor_color
+
+	bottom_left_label.text = String(menu_shell_tokens.get("bottom_left_text", "宇宙状态: 在线"))
+	bottom_right_line1.text = String(menu_shell_tokens.get("bottom_right_line1", "Version 1.0.0 Beta"))
+	bottom_right_line2.text = String(menu_shell_tokens.get("bottom_right_line2", "© 2025 星海工作室"))
+	var bottom_color := _theme_color("bottom_text_color", Color(0.67, 0.68, 0.86, 0.92))
+	bottom_left_label.add_theme_color_override("font_color", bottom_color)
+	bottom_right_line1.add_theme_color_override("font_color", bottom_color)
+	bottom_right_line2.add_theme_color_override("font_color", bottom_color)
+
+
+func _sync_button_labels() -> void:
+	start_button.text = "开始游戏"
+	settings_button.text = "游戏设置"
+	exit_button.text = "退出游戏"
+
+	var has_save := _has_any_save_slot()
+	load_button.text = "继续游戏" if has_save else "加载存档"
+
+
+func _connect_button_signals() -> void:
 	if not start_button.is_connected("pressed", Callable(self, "_on_start_pressed")):
 		start_button.pressed.connect(Callable(self, "_on_start_pressed"))
 	if not load_button.is_connected("pressed", Callable(self, "_on_load_pressed")):
@@ -77,1502 +231,509 @@ func _ready() -> void:
 		settings_button.pressed.connect(Callable(self, "_on_settings_pressed"))
 	if not exit_button.is_connected("pressed", Callable(self, "_on_exit_pressed")):
 		exit_button.pressed.connect(Callable(self, "_on_exit_pressed"))
-	
-	# 监听可见性变化，确保从游戏返回时恢复颜色
-	visibility_changed.connect(_on_visibility_changed)
-	
-	# 初始状态
-	_on_visibility_changed()
 
-	# 强制应用简单标题渲染（直接在 title_label 上），确保能立刻看到效果
-	_force_simple_title()
-	
-	# REMOVED: Deleted startup sound test that caused unexpected noise.
-	# Audio is now handled solely by user interaction.
-	
-	# Restored UI Sound Effects (without visual interference)
-	# REMOVED: Manually connecting sound signals here. 
-	# They are now handled centrally in ui_button_hover.gd for better consistency.
-	for btn in [start_button, load_button, settings_button, exit_button]:
-		if btn:
-			# Ensure button children don't block input
-			for child in btn.get_children():
-				if child is Control:
-					child.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-	# DISABLED: Legacy hover effects (interferes with new Tween script)
-	# for btn in [start_button, load_button, settings_button, exit_button]:
-	# 	btn.mouse_entered.connect(Callable(self, "_on_button_hover").bind(btn))
-	# 	btn.mouse_exited.connect(Callable(self, "_on_button_unhover").bind(btn))
+func _has_any_save_slot() -> bool:
+	var save_manager := _get_save_manager()
+	if save_manager and save_manager.has_method("get_slot_info"):
+		for i in range(1, 4):
+			var slot_info = save_manager.call("get_slot_info", i)
+			if typeof(slot_info) == TYPE_DICTIONARY and not (slot_info as Dictionary).is_empty():
+				return true
 
-	# DISABLED: Legacy button glow
-	# Ensure glow backgrounds for buttons
-	# for btn in [start_button, load_button, settings_button, exit_button]:
-	# 	_ensure_button_glow(btn)
-
-	# Debug: report whether DynamicBackground child is present and its script
-	var dbg = get_node_or_null("DynamicBackground")
-	if dbg:
-		print("MainMenu: found DynamicBackground child ->", dbg, " script:", dbg.get_script())
-		# listen for period changes to update button glow/colors
-		if dbg.has_signal("period_changed"):
-			dbg.connect("period_changed", Callable(self, "_on_bg_period_changed"))
-		# ensure preset applied if the DynamicBackground supports it
-		if dbg.has_method("_load_and_apply_preset"):
-			var pp = ""
-			if dbg.has_method("get"):
-				# try read exported preset_path; safe-check type
-				pp = dbg.get("preset_path")
-				if typeof(pp) != TYPE_STRING:
-					pp = ""
-			if not pp or pp == "":
-				pp = "res://assets/ui/presets/day.tres"
-			dbg.call("_load_and_apply_preset", pp)
-		# if instance exposes sky_rect, print its binding status
-		if dbg.has_method("get"):
-			var bound = null
-			if dbg.has_node("SkyLayer"):
-				bound = dbg.get_node("SkyLayer")
-			print("MainMenu: DynamicBackground SkyLayer bound:", bound != null)
-	else:
-		print("MainMenu: DynamicBackground child NOT found in scene")
-
-	# DEBUG: temporarily clear the Overlay to reveal background during debugging
-	# Ensure Overlay alpha is preserved; only hide it if DynamicBackground explicitly requested debug visibility
-	var ov = get_node_or_null("Overlay")
-	if ov and ov is ColorRect and dbg and dbg.has_method("get"):
-		var dbg_hide = false
-		if dbg :
-			dbg_hide = dbg.get("enable_debug_prints")
-		if dbg_hide:
-			ov.color = Color(0,0,0,0)
-
-	# report sky material (if instance exists)
-	dbg = get_node_or_null("DynamicBackground")
-	if dbg and dbg.has_node("SkyLayer"):
-		var sky = dbg.get_node("SkyLayer")
-		# attempt to ensure shader attached (no verbose prints)
-		if dbg.has_method("force_attach_shader"):
-			dbg.call("force_attach_shader")
-		# Final fallback: if still null, attach shader material directly from here
-			# If material missing, prefer to let DynamicBackground handle fallbacks; avoid creating permanent scene fallbacks here.
-			if not sky.material:
-				if dbg and dbg.has_method("apply_day_override"):
-					dbg.call("apply_day_override")
-
-	# Play Entrance Animation
-	play_entrance_animation()
-
-func play_entrance_animation() -> void:
-	# Initial state: Hide elements
-	var elements = [title_label, start_button, load_button, settings_button, exit_button]
-	if title_label:
-		title_label.modulate.a = 0.0
-		title_label.scale = Vector2(0.9, 0.9)
-		title_label.pivot_offset = title_label.size / 2
-
-	for btn in [start_button, load_button, settings_button, exit_button]:
-		if btn:
-			btn.modulate.a = 0.0
-			btn.scale = Vector2(0.8, 0.8)
-			btn.pivot_offset = btn.size / 2
-	
-	# Create tween sequence
-	var tween = create_tween()
-	tween.set_parallel(true)
-	
-	# Animate Title
-	if title_label:
-		tween.tween_property(title_label, "modulate:a", 1.0, 0.8).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-		tween.tween_property(title_label, "scale", Vector2.ONE, 0.8).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	
-	# Animate Buttons (Staggered)
-	var delay = 0.2
-	for btn in [start_button, load_button, settings_button, exit_button]:
-		if btn:
-			tween.tween_property(btn, "modulate:a", 1.0, 0.5).set_delay(delay).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-			tween.tween_property(btn, "scale", Vector2.ONE, 0.5).set_delay(delay).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-			delay += 0.1
-
-func _process(delta: float) -> void:
-	# update title shader time parameter if present
-	# compute continuous time once per frame for animated text shaders
-	var t = Time.get_ticks_msec() / 1000.0
-	if title_label and title_label.material and title_label.material is ShaderMaterial:
-		title_label.material.set_shader_parameter("time", t)
-
-	# also update any other controls using the text gradient shader (buttons / welcome label)
-	for node in [welcome_label, start_button, load_button, settings_button, exit_button]:
-		if node and node.material and node.material is ShaderMaterial:
-			node.material.set_shader_parameter("time", t)
-
-	# update starfield shader time
-	var sf = get_node_or_null("Starfield")
-	if sf and sf.material and sf.material is ShaderMaterial:
-		sf.material.set_shader_parameter("time", t)
-
-	# update viewport-rendered title if present
-	var tr = get_node_or_null("TitleRender")
-	if tr and tr.material and tr.material is ShaderMaterial:
-		tr.material.set_shader_parameter("time", t)
-
-func _create_magic_circle() -> void:
-	# Try to load an external magic circle texture (SVG/PNG). If missing, fall back to procedural Control.
-	var svg_path = "res://assets/ui/startmenu/textures/magic_circle.svg"
-	var png_path = "res://assets/ui/startmenu/textures/magic_circle.png"
-	if ResourceLoader.exists(svg_path):
-		var tex = load(svg_path)
-		if tex:
-			var tr = TextureRect.new()
-			tr.name = "MagicCircleSprite"
-			tr.texture = tex
-			tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-			tr.size = Vector2(900, 600)
-			tr.z_index = -50
-			add_child(tr)
-			move_child(tr, 0)
-			return
-	elif ResourceLoader.exists(png_path):
-		var tex = load(png_path)
-		if tex:
-			var tr = TextureRect.new()
-			tr.name = "MagicCircleSprite"
-			tr.texture = tex
-			tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-			tr.size = Vector2(900, 600)
-			tr.z_index = -50
-			add_child(tr)
-			move_child(tr, 0)
-			return
-
-	# fallback: procedural magic circle control
-	var mc = Control.new()
-	mc.name = "MagicCircle"
-	mc.set_script(load("res://ui/controls/magic_circle.gd"))
-	mc.size = Vector2(900, 600)
-	mc.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(mc)
-	move_child(mc, 0)
-
-
-func _ensure_starfield_background() -> void:
-	# Create a full-screen ColorRect using the starfield shader behind everything
-	if get_node_or_null("Starfield"):
-		return
-	var shader_path = "res://ui/shaders/starfield.shader"
-	var rect = ColorRect.new()
-	rect.name = "Starfield"
-	rect.anchor_left = 0
-	rect.anchor_top = 0
-	rect.anchor_right = 1
-	rect.anchor_bottom = 1
-	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	rect.z_index = -100
-	rect.custom_minimum_size = Vector2(1024, 768)
-	if ResourceLoader.exists(shader_path):
-		var sh = load(shader_path)
-		if sh:
-			var mat = ShaderMaterial.new()
-			mat.shader = sh
-			rect.material = mat
-			add_child(rect)
-			move_child(rect, 0)
-			# animate shader time via process
-			set_process(true)
-		else:
-			add_child(rect)
-			move_child(rect, 0)
-	else:
-		add_child(rect)
-		move_child(rect, 0)
-
-
-func _replace_title_with_viewport() -> void:
-	# if already replaced, skip
-	# If viewport-based title is disabled, remove any existing viewport artifacts and keep original label
-	if not _use_viewport_title:
-		# remove any previous viewport/render nodes
-		var tr_old = get_node_or_null("TitleRender")
-		if tr_old:
-			tr_old.queue_free()
-		var vp_old = get_node_or_null("TitleViewport")
-		if vp_old:
-			vp_old.queue_free()
-		var raw_old = get_node_or_null("TitleRaw")
-		if raw_old:
-			raw_old.queue_free()
-		if title_label:
-			title_label.visible = true
-		return
-	if get_node_or_null("TitleRender"):
-		return
-	if not title_label:
-		return
-	var parent = title_label.get_parent()
-	var idx = parent.get_children().find(title_label)
-
-	# determine viewport size from title label or fallback; prefer a wide viewport based on screen width
-	var vp_size = Vector2(900, 160)
-	var screen_w = 0
-	if get_viewport():
-		var vs = get_viewport().size
-		screen_w = int(vs.x)
-	if title_label and title_label.custom_minimum_size and title_label.custom_minimum_size.x > 0:
-		vp_size = title_label.custom_minimum_size
-	else:
-		if screen_w > 0:
-			vp_size.x = max(vp_size.x, int(screen_w * 0.6))
-
-	# create sub-viewport (Viewport is abstract in this runtime)
-	var vp = SubViewport.new()
-	vp.name = "TitleViewport"
-	vp.size = vp_size
-	# use numeric update mode (matches other SubViewport usages in project)
-	vp.render_target_update_mode = 4
-	vp.transparent_bg = true
-
-	# root control inside viewport
-	var root = Control.new()
-	root.anchor_left = 0
-	root.anchor_top = 0
-	root.anchor_right = 1
-	root.anchor_bottom = 1
-	root.custom_minimum_size = vp_size
-
-	# create label inside viewport
-	var vlabel = Label.new()
-	vlabel.name = "VP_Title"
-	vlabel.text = title_label.text
-	vlabel.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vlabel.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	vlabel.anchor_left = 0
-	vlabel.anchor_top = 0
-	vlabel.anchor_right = 1
-	vlabel.anchor_bottom = 1
-	vlabel.custom_minimum_size = vp_size
-	# ensure label renders visibly inside the SubViewport
-	vlabel.add_theme_color_override("font_color", Color(1,1,1,1))
-	vlabel.modulate = Color(1,1,1,1)
-	vlabel.visible = true
-
-	# ensure viewport root is transparent and label renders only glyphs
-	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.modulate = Color(0,0,0,0)
-
-	# attempt to assign a known project font directly so VP label actually renders
-	var pf = "res://assets/fonts/Poppins-Bold.ttf"
-	if ResourceLoader.exists(pf):
-		var fd = ResourceLoader.load(pf)
-		if fd:
-			# Try to build a Font resource by duplicating a template DynamicFont from the theme
-			var template_font = null
-			var theme_candidates = ["res://ui/theme/theme_default.tres", "res://ui/theme/theme_startmenu.tres"]
-			for tp in theme_candidates:
-				if ResourceLoader.exists(tp):
-					var tref = ResourceLoader.load(tp)
-					if tref :
-						template_font = tref.get("default_font")
-						break
-			if template_font:
-				var newf = template_font.duplicate()
-				# set font data if supported
-				if newf.has_method("set"):
-					newf.set("font_data", fd)
-					newf.set("size", 112)
-				else:
-					# best-effort fallbacks
-					if newf.has("font_data"):
-						newf.set("font_data", fd)
-					if newf.has("size"):
-						newf.set("size", 112)
-				vlabel.set("custom_fonts/font", newf)
-				vlabel.add_theme_font_override("font", newf)
-			else:
-				# fallback: assign the raw FontFile (may be acceptable on some runtimes)
-				vlabel.set("custom_fonts/font", fd)
-				vlabel.add_theme_font_override("font", fd)
-		else:
-			print("MainMenu: Poppins font resource failed to load for VP_Title")
-	else:
-		print("MainMenu: Poppins font not found for VP_Title; VP label may be blank")
-	# attempt to copy font from original title_label so rendered glyphs match
-	var copied_font = null
-	# try copying any explicit custom font applied to the original label
-	if title_label :
-		copied_font = title_label.get("custom_fonts/font")
-	# fallback: try theme override
-	if not copied_font and title_label and title_label.has_method("get_theme_font"):
-		copied_font = title_label.get_theme_font("font")
-	if copied_font:
-		var df = copied_font.duplicate()
-		# ensure a large display size for the viewport label
-		if df :
-			df.set("size", 112)
-		vlabel.set("custom_fonts/font", df)
-	vlabel.add_theme_color_override("font_color", Color(1,1,1,1))
-
-	root.add_child(vlabel)
-	vp.add_child(root)
-
-	# create a small raw preview for debugging so we can see the viewport texture before post-process
-	if not get_node_or_null("TitleRawDebug"):
-		var raw_dbg = TextureRect.new()
-		raw_dbg.name = "TitleRawDebug"
-		raw_dbg.anchor_left = 0.02
-		raw_dbg.anchor_top = 0.02
-		raw_dbg.anchor_right = 0.22
-		raw_dbg.anchor_bottom = 0.12
-		raw_dbg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		raw_dbg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		raw_dbg.z_index = 999
-		raw_dbg.modulate = Color(1,1,1,0.95)
-		add_child(raw_dbg)
-		# assign texture deferred (after viewport renders)
-		call_deferred("_assign_raw_debug_texture", vp, raw_dbg)
-
-	# create TextureRect to display processed title (we will use the viewport texture as a mask)
-	var tr = TextureRect.new()
-	tr.name = "TitleRender"
-	# do not assign texture directly; shader will sample the viewport texture as a mask
-	tr.texture = null
-	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	tr.anchor_left = title_label.anchor_left
-	tr.anchor_top = title_label.anchor_top
-	tr.anchor_right = title_label.anchor_right
-	tr.anchor_bottom = title_label.anchor_bottom
-	# ensure the displayed texture rect uses the viewport's intended size
-	tr.custom_minimum_size = vp_size
-	# request the TextureRect expand to available parent space so the texture isn't shrunk
-	tr.size_flags_horizontal = 3
-	tr.size_flags_vertical = 0
-	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	tr.z_index = title_label.z_index
-
-	# add viewport as child of this scene (not visible node tree)
-	add_child(vp)
-
-	# If debug comparison enabled, create a raw TextureRect showing the viewport texture
-	if _debug_title_compare:
-		var raw = TextureRect.new()
-		raw.name = "TitleRaw"
-		raw.texture = vp.get_texture()
-		raw.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		raw.anchor_left = title_label.anchor_left
-		raw.anchor_top = title_label.anchor_top
-		raw.anchor_right = title_label.anchor_right
-		raw.anchor_bottom = title_label.anchor_bottom
-		raw.custom_minimum_size = vp_size
-		raw.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		raw.z_index = title_label.z_index
-		raw.size_flags_horizontal = 1
-		parent.add_child(raw)
-		parent.move_child(raw, idx)
-		# then add processed tr to the right (next index)
-		parent.add_child(tr)
-		parent.move_child(tr, idx + 1)
-	else:
-		parent.add_child(tr)
-		parent.move_child(tr, idx)
-
-	# hide original label so editor still keeps it but not rendered
-	title_label.visible = false
-
-	# apply mask-based shader that uses the viewport texture as a mask
-	var mask_shader_path = "res://ui/shaders/text_gradient_mask.shader"
-	if ResourceLoader.exists(mask_shader_path):
-		var msh = load(mask_shader_path)
-		if msh:
-			var mmat = ShaderMaterial.new()
-			mmat.shader = msh
-			mmat.set_shader_parameter("top_color", Color(0.98,0.86,1.0,1.0))
-			mmat.set_shader_parameter("mid_color", Color(0.68,0.52,1.0,1.0))
-			mmat.set_shader_parameter("bottom_color", Color(0.35,0.20,0.80,1.0))
-			mmat.set_shader_parameter("noise_strength", 0.03)
-			mmat.set_shader_parameter("glow_strength", 0.9)
-			mmat.set_shader_parameter("bloom_strength", 0.9)
-			mmat.set_shader_parameter("outline_color", Color(0.02,0.01,0.04))
-			mmat.set_shader_parameter("outline_thickness", 0.012)
-			mmat.set_shader_parameter("outline_strength", 1.4)
-			# assign the viewport texture as the mask
-			var vp_tex = vp.get_texture()
-			if vp_tex:
-				mmat.set_shader_parameter("mask_tex", vp_tex)
-			tr.material = mmat
-			# keep the original label hidden but also apply the material as a fallback preview
-			if title_label:
-				title_label.material = mmat
-			# diagnostic tint so we can visually notice the processed surface during debug
-			tr.modulate = Color(1.0,1.0,1.0,1.0)
-
-	# debug prints to help diagnose why shader might not be visible at runtime
-	print("MainMenu: TitleRender created -> texture_rect:", tr, " vp_size:", vp_size, " title_label size:", title_label.custom_minimum_size)
-	if tr.material:
-		print("MainMenu: TitleRender material assigned ->", tr.material.shader)
-	else:
-		print("MainMenu: TitleRender has no material assigned - applying fallback material to ensure texture is visible")
-		# fallback to a simple material so the viewport texture is at least visible
-		var fb = CanvasItemMaterial.new()
-		tr.material = fb
-
-	# if viewport texture missing, restore original label immediately
-	var check_tex = vp.get_texture()
-	if not check_tex:
-		print("MainMenu: vp.get_texture() returned null - restoring original title")
-		_restore_title_label()
-		return
-	# print actual viewport texture size if available
-	var tex = vp.get_texture()
-	if tex:
-		# some texture implementations support get_width/get_height
-		var tw = 0
-		var th = 0
-		if tex.has_method("get_width"):
-			tw = tex.get_width()
-		if tex.has_method("get_height"):
-			th = tex.get_height()
-		print("MainMenu: vp texture size ->", tw, th)
-	else:
-		print("MainMenu: vp.get_texture() returned null")
-
-	print("MainMenu: replaced title with viewport-rendered TextureRect", tr, "vp:", vp)
-
-func _restore_title_label() -> void:
-	# Remove TitleRender and TitleViewport if present, restore original label visibility and material
-	var tr = get_node_or_null("TitleRender")
-	if tr:
-		var p = tr.get_parent()
-		tr.queue_free()
-	var vp_node = get_node_or_null("TitleViewport")
-	if vp_node:
-		vp_node.queue_free()
-	if title_label:
-		title_label.visible = true
-		# DISABLED: Clearing material resets our gradient shader!
-		# title_label.material = null
-	print("MainMenu: Restored original title label and removed viewport render")
-
-
-func _apply_mask_after_frame(vp: SubViewport, tr: TextureRect, mat: ShaderMaterial, parent: Node, idx: int) -> void:
-	# wait an idle frame to allow SubViewport to render
-	# wait one frame, then another if necessary to ensure the SubViewport has rendered
-	await get_tree().process_frame
-	# sometimes the first frame isn't enough (editor/dev machines); wait one more frame before sampling
-	await get_tree().process_frame
-	if not vp or not is_instance_valid(vp):
-		print("MainMenu: _apply_mask_after_frame - vp invalid")
-		return
-	var vp_tex = vp.get_texture()
-	# If texture still null, attempt one last time and emit detailed diagnostic before bailing
-	if not vp_tex:
-		# try forcing a render update where supported
-		if vp.has_method("update"):
-			vp.update()
-		await get_tree().process_frame
-		vp_tex = vp.get_texture()
-		if not vp_tex:
-			print("MainMenu: _apply_mask_after_frame - vp.get_texture() still null after extra wait")
-			# detailed diagnostic
-			print("MainMenu: Diagnostic -> vp valid:", is_instance_valid(vp), " vp.size:", vp.size)
-			print("MainMenu: Diagnostic -> title_label exists:", title_label != null, " title_label.visible:", title_label.visible)
-			# cleanup and restore original label to avoid disappearing title
-			if tr and is_instance_valid(tr):
-				tr.queue_free()
-			if vp and is_instance_valid(vp):
-				vp.queue_free()
-			if title_label:
-				title_label.visible = true
-			return
-	# Robust approach: assign viewport texture to TextureRect.texture and use the TEXTURE-sampling shader
-	# ensure the TextureRect is visible and receives the texture
-	tr.texture = vp_tex
-	tr.visible = true
-	# attempt to load the simpler TEXTURE-sampling shader; if load fails, fall back to a plain material
-	var simple_shader_path = "res://ui/shaders/text_gradient.shader"
-	var ssh = load(simple_shader_path)
-	var applied_shader = null
-	if ssh:
-		applied_shader = ssh
-	else:
-		# no runtime fallback here; fall back to plain texture display below
-		print("MainMenu: text_gradient.shader not found on disk; will use plain texture display")
-	
-	if applied_shader:
-		var smat = ShaderMaterial.new()
-		smat.shader = applied_shader
-		smat.set_shader_parameter("top_color", Color(0.98,0.86,1.0,1.0))
-		smat.set_shader_parameter("mid_color", Color(0.68,0.52,1.0,1.0))
-		smat.set_shader_parameter("bottom_color", Color(0.35,0.20,0.80,1.0))
-		smat.set_shader_parameter("noise_strength", 0.04)
-		smat.set_shader_parameter("glow_strength", 0.9)
-		smat.set_shader_parameter("outline_color", Color(0.02,0.01,0.04))
-		smat.set_shader_parameter("outline_thickness", 0.012)
-		smat.set_shader_parameter("outline_strength", 1.6)
-		tr.material = smat
-		# initialize time param so animated shaders start in a known state
-		if tr.material and tr.material is ShaderMaterial:
-			tr.material.set_shader_parameter("time", 0.0)
-		print("MainMenu: applied shader material to TitleRender")
-	else:
-		var cmap = CanvasItemMaterial.new()
-		tr.material = cmap
-		tr.modulate = Color(1,1,1,1)
-
-	parent.add_child(tr)
-	parent.move_child(tr, idx)
-	title_label.visible = false
-	if vp_tex and vp_tex.has_method("get_width"):
-		print("MainMenu: applied texture to TitleRender; vp texture size:", vp_tex.get_width(), vp_tex.get_height())
-	else:
-		print("MainMenu: applied texture to TitleRender; vp texture present")
-
-	# schedule a quick diagnostic to run after frame so developer can see final states
-	call_deferred("_diagnose_title_path")
-
-
-func _force_simple_title() -> void:
-	if not title_label:
-		return
-	# ensure visible
-	title_label.visible = true
-	# force assign Poppins (fallback to raw FontFile if necessary)
-	var p = "res://assets/fonts/Poppins-Bold.ttf"
-	if ResourceLoader.exists(p):
-		var fd = ResourceLoader.load(p)
-		if fd:
-			var templ = null
-			var tp = "res://ui/theme/theme_default.tres"
-			if ResourceLoader.exists(tp):
-				var tref = ResourceLoader.load(tp)
-				if tref :
-					templ = tref.get("default_font")
-			if templ:
-				var newf = templ.duplicate()
-				if newf.has_method("set"):
-					newf.set("font_data", fd)
-					newf.set("size", 112)
-				else:
-					if newf.has("font_data"):
-						newf.set("font_data", fd)
-					if newf.has("size"):
-						newf.set("size", 112)
-				title_label.set("custom_fonts/font", newf)
-			else:
-				title_label.set("custom_fonts/font", fd)
-	else:
-		print("MainMenu: Poppins not found for force-apply")
-
-	# apply simple shader directly to the label (no viewport)
-	if title_label.material:
-		print("MainMenu: title_label already has a material, skipping force-apply of text_gradient.")
-		return
-
-	# DISABLED: We use a custom shader set in the scene (gradient_vertical_shimmer.gdshader)
-	# This function was overriding it with text_gradient.shader
-	return;
-
-	var shp = "res://ui/shaders/text_gradient.shader"
-	if ResourceLoader.exists(shp):
-		var sh = ResourceLoader.load(shp)
-		if sh:
-			var mat = ShaderMaterial.new()
-			mat.shader = sh
-			mat.set_shader_parameter("top_color", Color(0.98,0.86,1.0,1.0))
-			mat.set_shader_parameter("mid_color", Color(0.68,0.52,1.0,1.0))
-			mat.set_shader_parameter("bottom_color", Color(0.35,0.20,0.80,1.0))
-			mat.set_shader_parameter("noise_strength", 0.04)
-			mat.set_shader_parameter("glow_strength", 0.9)
-			mat.set_shader_parameter("bloom_strength", 0.9)
-			mat.set_shader_parameter("outline_color", Color(0.02,0.01,0.04))
-			mat.set_shader_parameter("outline_thickness", 0.012)
-			mat.set_shader_parameter("outline_strength", 1.4)
-			title_label.material = mat
-			title_label.add_theme_color_override("font_color", Color(1,1,1,1))
-			print("MainMenu: applied simple shader to title_label")
-		else:
-			print("MainMenu: failed to load text_gradient.shader")
-	else:
-		print("MainMenu: text_gradient.shader not found")
-
-
-func _rebuild_viewport_title_force() -> void:
-	# No-op: SubViewport title pipeline removed. Title rendering uses direct Label/BBCode methods.
-	return
-
-
-func _ensure_button_glow(btn: Control) -> void:
-	if not btn: return
-	if btn.get_node_or_null("GlowRect"): return
-	# Outer glow layer (soft, sits behind the button)
-	var glow = ColorRect.new()
-	glow.name = "GlowRect"
-	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	glow.anchor_left = 0
-	glow.anchor_top = 0
-	glow.anchor_right = 1
-	glow.anchor_bottom = 1
-	# prefer shader-based glow for smoother falloff
-	var glow_mat_path = "res://ui/shaders/button_glow.shader"
-	var accent_col = ui_palette.get("accent", Color(0.435294,0.764706,1,1)) if ui_palette else Color(0.435294,0.764706,1,1)
-	var glow_col = ui_palette.get("glow", Color(0.52549,0.780392,1,1)) if ui_palette else Color(0.52549,0.780392,1,1)
-	if ResourceLoader.exists(glow_mat_path):
-		var sh = load(glow_mat_path)
-		if sh:
-			var mat = ShaderMaterial.new()
-			mat.shader = sh
-			mat.set_shader_parameter("glow_color", glow_col)
-			mat.set_shader_parameter("intensity", 0.45)
-			mat.set_shader_parameter("round_radius", 0.12)
-			mat.set_shader_parameter("falloff", 0.18)
-			glow.material = mat
-			glow.modulate = Color(1,1,1,0.04)
-			glow.z_index = -2
-			glow.scale = Vector2(1.06, 1.06)
-	else:
-		glow.color = Color(0.48, 0.78, 1.0, 0.28)
-		glow.z_index = -2
-		glow.scale = Vector2(1.08, 1.08)
-	btn.add_child(glow)
-
-	# Inner highlight layer (uses shader to simulate gradient inner glow)
-	# Remove per-button child inner highlight if present (use stylebox-based highlight instead)
-	var existing_inner = btn.get_node_or_null("InnerHighlight")
-	if existing_inner:
-		existing_inner.queue_free()
-
-	# Remove per-button inner shadow if present; rely on stylebox shadowing to avoid rectangular artifacts
-	var existing_shadow = btn.get_node_or_null("InnerShadow")
-	if existing_shadow:
-		existing_shadow.queue_free()
-
-	# Corner decorations (small brackets) to match reference if assets exist
-	if not btn.get_node_or_null("CornerTL"):
-		var corner_tl_path = "res://assets/ui/startmenu/icons/corner_tl.svg"
-		if ResourceLoader.exists(corner_tl_path):
-			var ct = TextureRect.new()
-			ct.name = "CornerTL"
-			ct.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			ct.anchor_left = 0.0
-			ct.anchor_top = 0.0
-			ct.anchor_right = 0.08
-			ct.anchor_bottom = 0.12
-			ct.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-			ct.texture = load(corner_tl_path)
-			ct.z_index = 2
-			btn.add_child(ct)
-
-	if not btn.get_node_or_null("CornerBR"):
-		var corner_br_path = "res://assets/ui/startmenu/icons/corner_br.svg"
-		if ResourceLoader.exists(corner_br_path):
-			var cb = TextureRect.new()
-			cb.name = "CornerBR"
-			cb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			cb.anchor_left = 0.92
-			cb.anchor_top = 0.88
-			cb.anchor_right = 1.0
-			cb.anchor_bottom = 1.0
-			cb.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-			cb.texture = load(corner_br_path)
-			cb.z_index = 2
-			btn.add_child(cb)
-
-	# light outer stroke overlay (subtle, placed above background but below inner highlight)
-	if not btn.get_node_or_null("OuterStroke"):
-		var stroke = ColorRect.new()
-		stroke.name = "OuterStroke"
-		stroke.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		stroke.anchor_left = 0.01
-		stroke.anchor_top = 0.01
-		stroke.anchor_right = 0.99
-		stroke.anchor_bottom = 0.99
-		# keep outer stroke transparent to avoid any visible rectangular artifacts
-		stroke.color = Color(1.0, 0.9, 1.0, 0.0)
-		stroke.z_index = -1
-		btn.add_child(stroke)
-
-func _apply_title_gradient() -> void:
-	var shader_path = "res://ui/shaders/text_gradient.shader"
-	if ResourceLoader.exists(shader_path):
-		var sh = ResourceLoader.load(shader_path)
-		if sh:
-			var mat = ShaderMaterial.new()
-			mat.shader = sh
-			# sensible defaults for a starry, purple-blue gradient
-			mat.set_shader_parameter("top_color", Color(0.98,0.86,1.0,1.0))
-			mat.set_shader_parameter("mid_color", Color(0.68,0.52,1.0,1.0))
-			mat.set_shader_parameter("bottom_color", Color(0.35,0.20,0.80,1.0))
-			mat.set_shader_parameter("noise_strength", 0.03)
-			mat.set_shader_parameter("glow_strength", 0.9)
-			mat.set_shader_parameter("bloom_strength", 0.9)
-			mat.set_shader_parameter("outline_color", Color(0.02,0.01,0.04))
-			mat.set_shader_parameter("outline_thickness", 0.012)
-			mat.set_shader_parameter("outline_strength", 1.4)
-			title_label.material = mat
-			print("MainMenu: applied shader material to title_label ->", title_label, " material:", title_label.material)
-			# fallback visual boosts in case shader doesn't render on this platform/editor
-			title_label.add_theme_color_override("font_color", Color(1.0, 0.98, 0.92))
-			title_label.modulate = Color(1,1,1,1)
-		else:
-			print("MainMenu: failed to load text_gradient.shader")
-	else:
-		print("MainMenu: text_gradient.shader not found")
-
-
-func _replace_title_with_gradient() -> void:
-	# If already replaced, skip
-	var existing = get_node_or_null("GradientTitle")
-	if existing:
-		title_label = existing
-		return
-	# ensure original title exists
-	if not title_label:
-		return
-	var parent = title_label.get_parent()
-	var idx = parent.get_children().find(title_label)
-	# load gradient title script
-	var gpath = "res://scenes/ui/controls/gradient_title.gd"
-	var gscript = null
-	if ResourceLoader.exists(gpath):
-		gscript = load(gpath)
-	if not gscript:
-		print("MainMenu: GradientTitle script not found:", gpath)
-		return
-	# instantiate and copy basic layout
-	var gt = gscript.new()
-	gt.name = title_label.name
-	gt.anchor_left = title_label.anchor_left
-	gt.anchor_top = title_label.anchor_top
-	gt.anchor_right = title_label.anchor_right
-	gt.anchor_bottom = title_label.anchor_bottom
-	gt.custom_minimum_size = title_label.custom_minimum_size
-	gt.set_title_text(title_label.text)
-	parent.add_child(gt)
-	parent.move_child(gt, idx)
-	title_label.queue_free()
-	title_label = gt
-	print("MainMenu: replaced title with GradientTitle ->", title_label)
-
-
-func _replace_buttons_with_rounded() -> void:
-	# 已经被新版设计取代，直接返回
-	return
-	# load class
-	var rb_path = "res://scenes/ui/controls/rounded_texture_button.gd"
-	if not ResourceLoader.exists(rb_path):
-		print("MainMenu: RoundedTextureButton class not found:", rb_path)
-		return
-	var rb_script = load(rb_path)
-
-	var btn_paths = {
-		"StartButton": $CenterContainer/VBoxContainer/StartButton,
-		"LoadButton": $CenterContainer/VBoxContainer/LoadButton,
-		"SettingsButton": $CenterContainer/VBoxContainer/SettingsButton,
-		"ExitButton": $CenterContainer/VBoxContainer/ExitButton,
-	}
-
-	for name in btn_paths.keys():
-		var old_btn = btn_paths[name]
-		if old_btn and is_instance_valid(old_btn):
-			var parent = old_btn.get_parent()
-			var idx = parent.get_children().find(old_btn)
-			# instantiate new rounded button
-			var nb = rb_script.new()
-			nb.name = old_btn.name
-			# copy size
-			nb.custom_minimum_size = old_btn.custom_minimum_size
-			# copy anchors
-			nb.anchor_left = old_btn.anchor_left
-			nb.anchor_top = old_btn.anchor_top
-			nb.anchor_right = old_btn.anchor_right
-			nb.anchor_bottom = old_btn.anchor_bottom
-			# Buttons don't expose get_margin/set_margin reliably in GDScript; preserve layout by
-			# keeping the same parent/child index and copying anchors + minimum size.
-			# prepare visuals using palette if available
-			# Improve default contrast: slightly lighter button fill, stronger hover
-			var bg = ui_palette.get("panel", Color(0.08,0.12,0.18,1)) if ui_palette else ui_palette.get("ui_panel", Color(0.08,0.12,0.18,1))
-			var hover = ui_palette.get("grad_top", Color(0.18,0.34,0.60,1)) if ui_palette else Color(0.18,0.34,0.60,1)
-			var pressed = ui_palette.get("bg_mid", Color(0.04,0.07,0.12,1)) if ui_palette else Color(0.04,0.07,0.12,1)
-			# Make StartButton visually primary
-			if name == "StartButton":
-				bg = ui_palette.get("primary", Color(0.16,0.48,0.92,1)) if ui_palette else Color(0.16,0.48,0.92,1)
-				hover = ui_palette.get("primary_hover", Color(0.26,0.62,1.0,1)) if ui_palette else Color(0.26,0.62,1.0,1)
-				pressed = ui_palette.get("primary_pressed", Color(0.08,0.28,0.6,1)) if ui_palette else Color(0.08,0.28,0.6,1)
-				# increase size for primary action
-				nb.custom_minimum_size = Vector2(520, 86)
-			# find icon texture if present in original
-			var icon_tex = null
-			var icon_node = old_btn.get_node_or_null("Icon")
-			if icon_node and icon_node is TextureRect:
-				icon_tex = icon_node.texture
-			parent.add_child(nb)
-			parent.move_child(nb, idx)
-			# now that node is in tree, call setup so _ready() has run and children exist
-			nb.setup(old_btn.text, icon_tex, bg, hover, pressed, old_btn.custom_minimum_size)
-			# reconnect signals to existing handlers (map StartButton -> start, etc.)
-			var base = name.replace("Button", "").to_lower()
-			var handler = "_on_" + base + "_pressed"
-			if has_method(handler):
-				nb.pressed.connect(Callable(self, handler))
-			# remove old
-			old_btn.queue_free()
-			# rebind onready vars
-			if name == "StartButton":
-				start_button = nb
-			elif name == "LoadButton":
-				load_button = nb
-			elif name == "SettingsButton":
-				settings_button = nb
-			elif name == "ExitButton":
-				exit_button = nb
-
-func _on_visibility_changed() -> void:
-	if visible:
-		modulate = Color.WHITE
-		if has_node("CenterContainer"):
-			$CenterContainer.modulate.a = 1.0
-		# 恢复按钮状态
-		if start_button: start_button.disabled = false
-		if load_button: load_button.disabled = false
-		if exit_button: exit_button.disabled = false
-		# when showing menu, ensure external backgrounds remain hidden
-		_hide_external_backgrounds()
-	else:
-		# restore backgrounds when menu hidden
-		_show_external_backgrounds()
-
-func _setup_smart_ui() -> void:
-	# 1. Personalized Welcome
-	welcome_label = Label.new()
-	var time = Time.get_time_dict_from_system()
-	var greeting = "冒险者"
-	if time.hour < 6: greeting = "夜深了"
-	elif time.hour < 12: greeting = "早上好"
-	elif time.hour < 18: greeting = "下午好"
-	else: greeting = "晚上好"
-	
-	welcome_label.text = "%s，冒险者。" % greeting
-
-	# Update title to match starry / cosmic theme and feel more like a game title
-	if title_label:
-		# if it's a Label-like node, update text; GradientTitle is RichTextLabel subclass so this will work
-		# if title_label.has_method("set_text") :
-		# 	title_label.text = "星海之旅"
-		
-		# DISABLED: This replaces our shader-enhanced Label with a different control script!
-		# We want to keep the original Title label with our verified gradient_vertical_shimmer.gdshader
-		# _replace_title_with_gradient()
-		pass
-	welcome_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	welcome_label.add_theme_color_override("font_color", Color(1.0, 0.98, 0.95))
-	# apply text gradient shader to welcome label if available
-	var _text_sh = "res://ui/shaders/text_gradient.shader"
-	if ResourceLoader.exists(_text_sh):
-		var _sh = load(_text_sh)
-		if _sh:
-			var _mat = ShaderMaterial.new()
-			_mat.shader = _sh
-			_mat.set_shader_parameter("noise_strength", 0.03)
-			welcome_label.material = _mat
-	
-	# Insert after Title
-	if title_label:
-		var container = title_label.get_parent()
-		if container:
-			container.add_child(welcome_label)
-			container.move_child(welcome_label, title_label.get_index() + 1)
-
-	# Replace title Label with a Viewport-rendered TextureRect so we can reliably apply post-process shader
-	# _replace_title_with_viewport()
-
-	# Attempt to apply Poppins if present; otherwise fall back to project's theme default font
-	var base_font = null
-	# preferred Poppins paths (user-provided)
-	var font_paths = ["res://assets/fonts/Poppins-Bold.ttf", "res://assets/fonts/Poppins-Medium.ttf", "res://assets/fonts/Poppins-Regular.ttf"]
-	for p in font_paths:
-		if ResourceLoader.exists(p):
-			print("MainMenu: Found font file:", p)
-			# loading the raw font file returns a DynamicFontData/FontFile resource which is used by theme fonts
-			var fd = ResourceLoader.load(p)
-			if fd:
-				print("MainMenu: loaded font data resource type:", typeof(fd), fd)
-				# Try to create a DynamicFont resource by loading an existing theme font and swapping its data
-				var theme_path = "res://ui/theme/theme_default.tres"
-				if ResourceLoader.exists(theme_path):
-					var tref = ResourceLoader.load(theme_path)
-					if tref :
-						base_font = tref.get("default_font")
-						# attempt to set font_data if available
-						print("MainMenu: theme default_font type:", typeof(base_font), base_font)
-						if base_font and base_font.has("font_data"):
-							base_font.set("font_data", fd)
-							print("MainMenu: set font_data on base_font")
-						else:
-							print("MainMenu: base_font has no 'font_data' property; will attempt later fallback.")
-						break
-	# fallback: use theme default font if present
-	if not base_font:
-		var theme_path2 = "res://ui/theme/theme_default.tres"
-		if ResourceLoader.exists(theme_path2):
-			var tref2 = ResourceLoader.load(theme_path2)
-			if tref2 :
-				base_font = tref2.get("default_font")
-
-	# apply fonts if loaded
-	# Additionally try to load a direct font file and create explicit Font resources
-	var explicit_fd = null
-	for p in font_paths:
-		if ResourceLoader.exists(p):
-			explicit_fd = ResourceLoader.load(p)
-			break
-
-	var forced_title_font = null
-	var forced_welcome_font = null
-	var forced_button_font = null
-
-	if explicit_fd:
-		# Try several theme files to find a DynamicFont template to duplicate
-		var theme_candidates = ["res://ui/theme/theme_default.tres", "res://ui/theme/theme_startmenu.tres", "res://ui/theme/theme_default.tres"]
-		var template_font = null
-		for tp in theme_candidates:
-			if ResourceLoader.exists(tp):
-				print("MainMenu: trying theme template", tp)
-				var tref3 = ResourceLoader.load(tp)
-				if tref3 :
-					template_font = tref3.get("default_font")
-					break
-		# If we found a template DynamicFont, duplicate and swap font_data
-		if template_font:
-			forced_title_font = template_font.duplicate()
-			forced_title_font.set("font_data", explicit_fd)
-			forced_title_font.size = 112
-			forced_welcome_font = template_font.duplicate()
-			forced_welcome_font.set("font_data", explicit_fd)
-			forced_welcome_font.size = 22
-			forced_button_font = template_font.duplicate()
-			forced_button_font.set("font_data", explicit_fd)
-			forced_button_font.size = 28
-		else:
-			print("MainMenu: no DynamicFont template found; fonts will fall back to theme or remain unchanged")
-
-	if base_font or forced_button_font:
-		print("MainMenu: applying base_font to title/welcome/buttons; base_font type:", typeof(base_font))
-		# Title: larger size
-		if forced_title_font:
-			title_label.add_theme_font_override("font", forced_title_font)
-		elif base_font:
-			var title_font = base_font.duplicate()
-			title_font.size = 112
-			title_label.add_theme_font_override("font", title_font)
-		# welcome label
-		if forced_welcome_font:
-			welcome_label.add_theme_font_override("font", forced_welcome_font)
-		elif base_font:
-			var welcome_font = base_font.duplicate()
-			welcome_font.size = 22
-			welcome_label.add_theme_font_override("font", welcome_font)
-		# buttons
-		for btn in [start_button, load_button, settings_button, exit_button]:
-			if not btn:
-				continue
-			# prefer applying forced button font directly to child Label
-			if forced_button_font:
-				var child_lbl2 = btn.get_node_or_null("Label")
-				if child_lbl2 and child_lbl2 is Label:
-					child_lbl2.add_theme_font_override("font", forced_button_font)
-				else:
-					btn.add_theme_font_override("font", forced_button_font)
-			elif base_font:
-				var bfont = base_font.duplicate()
-				bfont.size = 28
-				var child_lbl = btn.get_node_or_null("Label")
-				if child_lbl and child_lbl is Label:
-					child_lbl.add_theme_font_override("font", bfont)
-				else:
-					btn.add_theme_font_override("font", bfont)
-
-	# Load UI palette resource so runtime styleboxes/shaders use consistent colors
-	var pal_path = "res://assets/ui/palette.tres"
-
-	# 强制分配 Poppins 字体以确保在所有环境中可见
-	_force_apply_poppins()
-
-	if ResourceLoader.exists(pal_path):
-		var pres = ResourceLoader.load(pal_path)
-		if pres:
-			var cols = null
-			# try safe property access
-			if pres:
-				cols = pres.get("colors")
-			else:
-				cols = pres.get("colors")
-			if cols:
-				ui_palette = cols
-
-	# increase button size and spacing for better visual weight
-	# New design handles this via Tscn
-	# var vbox = $CenterContainer/VBoxContainer
-	# if vbox:
-	# 	vbox.add_theme_constant_override("separation", 44.0)
-	# 	# add top padding to create breathing room
-	# 	vbox.add_theme_constant_override("margin_top", 40.0)
-
-	# create reusable StyleBox and color overrides for a magical look
-	var sb_normal = StyleBoxFlat.new()
-	# palette-driven background/border
-	var panel_col = ui_palette.get("ui_panel", Color(0.027451,0.101961,0.168627,1)) if ui_palette else Color(0.12, 0.05, 0.22, 0.94)
-	var border_col = ui_palette.get("accent_dark", Color(0.164706,0.517647,0.780392,1)) if ui_palette else Color(0.45, 0.65, 0.95, 0.98)
-	# normal state: no visible border to avoid rectangular frame showing
-	var normal_border = border_col
-	normal_border.a = 0.0
-	# ensure fully opaque background so underlying parent doesn't show through corners
-	panel_col.a = 1.0
-	sb_normal.bg_color = panel_col
-	sb_normal.border_color = normal_border
-	sb_normal.border_width_left = 0
-	sb_normal.border_width_top = 0
-	sb_normal.border_width_right = 0
-	sb_normal.border_width_bottom = 0
-	sb_normal.corner_radius_top_left = 14
-	sb_normal.corner_radius_top_right = 14
-	sb_normal.corner_radius_bottom_right = 14
-	sb_normal.corner_radius_bottom_left = 14
-	sb_normal.content_margin_left = 18.0
-	sb_normal.content_margin_right = 18.0
-	sb_normal.shadow_size = 0
-	sb_normal.shadow_offset = Vector2(0, 0)
-
-	var sb_hover = StyleBoxFlat.new()
-	var hover_bg = ui_palette.get("grad_top", Color(0.20, 0.50, 0.90, 0.98)) if ui_palette else Color(0.20, 0.50, 0.90, 0.98)
-	var hover_border = ui_palette.get("accent", Color(0.435294,0.764706,1,1)) if ui_palette else Color(0.90, 0.98, 1.00, 1.00)
-	# ensure hover background opaque
-	hover_bg.a = 1.0
-	sb_hover.bg_color = hover_bg
-	sb_hover.border_color = hover_border
-	sb_hover.border_width_left = 1
-	sb_hover.border_width_top = 1
-	sb_hover.border_width_right = 1
-	sb_hover.border_width_bottom = 1
-	sb_hover.corner_radius_top_left = 14
-	sb_hover.corner_radius_top_right = 14
-	sb_hover.corner_radius_bottom_right = 14
-	sb_hover.corner_radius_bottom_left = 14
-	sb_hover.content_margin_left = 18.0
-	sb_hover.content_margin_right = 18.0
-	sb_hover.shadow_size = 10
-	sb_hover.shadow_offset = Vector2(0,2)
-
-	var sb_pressed = StyleBoxFlat.new()
-	var pressed_bg = ui_palette.get("bg_mid", Color(0.04, 0.06, 0.10, 1.0)) if ui_palette else Color(0.04, 0.06, 0.10, 1.0)
-	var pressed_border = ui_palette.get("accent", Color(0.92, 0.76, 1.0, 0.98)) if ui_palette else Color(0.92, 0.76, 1.0, 0.98)
-	# ensure pressed background opaque
-	pressed_bg.a = 1.0
-	sb_pressed.bg_color = pressed_bg
-	sb_pressed.border_color = pressed_border
-	sb_pressed.border_width_left = 1
-	sb_pressed.border_width_top = 1
-	sb_pressed.border_width_right = 1
-	sb_pressed.border_width_bottom = 1
-	sb_pressed.corner_radius_top_left = 12
-	sb_pressed.corner_radius_top_right = 12
-	sb_pressed.corner_radius_bottom_right = 12
-	sb_pressed.corner_radius_bottom_left = 12
-	sb_pressed.content_margin_left = 18.0
-	sb_pressed.content_margin_right = 18.0
-	sb_pressed.shadow_size = 6
-	sb_pressed.shadow_offset = Vector2(0, 3)
-
-	# icon map for buttons
-	var icon_map = {start_button: "res://assets/ui/startmenu/icons/icon_start.svg", load_button: "res://assets/ui/startmenu/icons/icon_load.svg", settings_button: "res://assets/ui/startmenu/icons/icon_settings.svg", exit_button: "res://assets/ui/startmenu/icons/icon_exit.svg"}
-
-	for btn in [start_button, load_button, settings_button, exit_button]:
-		if not btn:
-			continue
-		# ensure button uses the menu theme so fonts/colors come from the applied theme
-		if self.theme:
-			btn.theme = self.theme
-		# apply explicit size and stylebox overrides so editor/theme resources cannot hide changes
-		# NEW DESIGN: Handled by Theme and Tscn
-		# btn.custom_minimum_size = Vector2(420, 72)
-		# Apply styleboxes using property path (Godot 4 compatible)
-		# Skip applying rectangular StyleBox overrides to TextureButton-derived controls
-		# if not (btn is TextureButton):
-		#	btn.set("custom_styles/normal", sb_normal.duplicate())
-		#	btn.set("custom_styles/hover", sb_hover.duplicate())
-		#	btn.set("custom_styles/pressed", sb_pressed.duplicate())
-		# Ensure child controls are clipped to the button rect so icons don't float above other panels
-		btn.clip_contents = true
-		# increase contrast for readability
-		btn.add_theme_color_override("font_color", Color(1.0, 1.0, 0.98))
-		print("MainMenu: applied visual overrides to ", btn.name)
-		# try assign icon if available and align it left
-		# NEW DESIGN: Icons set in Tscn
-		var p = "" # icon_map.get(btn, "")
-		if p != "" and ResourceLoader.exists(p):
-			pass
-			var tex = load(p)
-			if tex:
-				# 使用专用 TextureRect 子节点来精确放置图标，确保左侧对齐并垂直居中
-				var icon_node: TextureRect = btn.get_node_or_null("Icon")
-				if not icon_node:
-					icon_node = TextureRect.new()
-					icon_node.name = "Icon"
-					icon_node.mouse_filter = Control.MOUSE_FILTER_IGNORE
-					icon_node.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-					# 通过锚点范围将图标垂直居中（约占按钮高度的中间 70% 区域）
-					icon_node.anchor_left = 0.03
-					icon_node.anchor_top = 0.15
-					icon_node.anchor_right = 0.09
-					icon_node.anchor_bottom = 0.85
-					# 使用锚点宽度来为图标留白并设置固定最小尺寸，避免直接操作可能不存在的位置属性
-					icon_node.custom_minimum_size = Vector2(36, 36)
-					icon_node.z_index = 0
-					btn.add_child(icon_node)
-				# 更新纹理
-				icon_node.texture = tex
-		# apply animated text gradient shader to button text (use same shader as title)
-		var text_sh_path = "res://ui/shaders/text_gradient.shader"
-		if ResourceLoader.exists(text_sh_path):
-			var sh = load(text_sh_path)
-			if sh:
-				var text_mat = ShaderMaterial.new()
-				text_mat.shader = sh
-				# slightly subtler noise for small text
-				text_mat.set_shader_parameter("noise_strength", 0.04)
-				# apply text shader to the button's label child so it doesn't override button drawing
-				var lbl = btn.get_node_or_null("Label")
-				if lbl and lbl is Label:
-					lbl.material = text_mat
-		# connect press/release visual effects (keep existing pressed handlers intact)
-		btn.pressed.connect(Callable(self, "_on_button_pressed_effect").bind(btn))
-		if btn.has_signal("released"):
-			btn.released.connect(Callable(self, "_on_button_released_effect").bind(btn))
-
-	# Make primary StartButton glow stronger and more obvious
-	if start_button:
-		var g = start_button.get_node_or_null("GlowRect")
-		if g and g.material and g.material is ShaderMaterial:
-			g.material.set_shader_parameter("intensity", 0.9)
-			g.modulate = Color(1,1,1,0.18)
-	# 2. Smart Buttons (Check for saves)
-	var has_save = false
 	for i in range(1, 4):
 		if FileAccess.file_exists("user://save_%d.save" % i):
-			has_save = true
-			break
-	
-	if has_save:
-		var _lbl = start_button.get_node_or_null("Label")
-		if _lbl and _lbl is Label:
-			_lbl.text = "继续旅程"
-		else:
-			if start_button.has_method("set"):
-				start_button.set("text", "继续旅程")
-		# Logic to load latest would go here, currently just maps to start logic which shows standard flow
+			return true
+	return false
+
+
+func _set_native_menu_visible(make_visible: bool) -> void:
+	for node in [
+		$MenuEffects,
+		$BackdropTint,
+		$DecorLayer,
+		center_group,
+		bottom_left_label,
+		$BottomRightInfo,
+	]:
+		if node and node is CanvasItem:
+			var item := node as CanvasItem
+			item.visible = make_visible
+			if make_visible:
+				item.modulate = Color(1, 1, 1, 1)
+
+
+func _try_setup_web_menu_webview() -> bool:
+	if not FileAccess.file_exists(WEB_MENU_RESOURCE_PATH):
+		push_warning("MainMenu: Web menu HTML resource is missing, using native menu fallback.")
+		return false
+
+	if not ClassDB.class_exists("WebView"):
+		push_warning("MainMenu: WebView class unavailable, using native menu fallback.")
+		return false
+
+	var candidate: Object = ClassDB.instantiate("WebView")
+	if candidate == null or not (candidate is Node):
+		push_warning("MainMenu: Failed to instantiate WebView, using native menu fallback.")
+		return false
+
+	var webview := candidate as Node
+	if webview is Control:
+		var webview_control := webview as Control
+		webview_control.set_anchors_preset(Control.PRESET_FULL_RECT)
+		webview_control.mouse_filter = Control.MOUSE_FILTER_STOP
+
+	if candidate.has_method("set"):
+		if _has_property(candidate, &"full_window_size"):
+			candidate.set(&"full_window_size", false)
+		if _has_property(candidate, &"url"):
+			candidate.set(&"url", WEB_MENU_RESOURCE_PATH)
+
+	if webview.has_signal("ipc_message"):
+		webview.connect("ipc_message", Callable(self, "_on_menu_web_ipc_message"))
+
+	add_child(webview)
+	move_child(webview, get_child_count() - 1)
+
+	if webview.has_method("load_url"):
+		webview.call("load_url", WEB_MENU_RESOURCE_PATH)
+
+	_menu_webview_node = webview
+	return true
+
+
+func _sync_web_menu_state() -> void:
+	_post_web_payload({
+		"type": "menu_state",
+		"has_save": _has_any_save_slot(),
+		"save_slots": _collect_web_save_slots(),
+		"settings": _collect_web_settings_state(),
+		"startup_debug": _collect_startup_debug_state(),
+	})
+
+
+func _on_menu_web_ipc_message(message: String) -> void:
+	var parsed = JSON.parse_string(message)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return
+
+	var data: Dictionary = parsed
+	var msg_type := String(data.get("type", ""))
+
+	match msg_type:
+		"menu_ready":
+			_sync_web_menu_state()
+		"menu_request_state":
+			_sync_web_menu_state()
+		"menu_start":
+			_start_game_action("web")
+		"menu_continue":
+			_load_game_action()
+		"menu_load_slot":
+			_load_game_slot_action(int(data.get("slot_id", -1)))
+		"menu_settings":
+			_open_settings_action()
+		"menu_apply_settings":
+			_apply_settings_from_web(data.get("settings", {}))
+		"menu_reset_settings":
+			_reset_settings_from_web()
+		"menu_exit":
+			_exit_game_action()
+
+
+func _has_property(instance: Object, property_name: StringName) -> bool:
+	for entry in instance.get_property_list():
+		if StringName(entry.name) == property_name:
+			return true
+	return false
+
+
+func _get_save_manager() -> Object:
+	if SaveManager:
+		return SaveManager
+	return null
+
+
+func _get_settings_manager() -> Object:
+	if SettingsManager:
+		return SettingsManager
+	return null
+
+
+func _collect_web_save_slots() -> Array:
+	var result: Array = []
+	var save_manager := _get_save_manager()
+	for slot_id in range(1, 4):
+		var info := {}
+		if save_manager and save_manager.has_method("get_slot_info"):
+			var raw_info = save_manager.call("get_slot_info", slot_id)
+			if typeof(raw_info) == TYPE_DICTIONARY:
+				info = raw_info
+
+		result.append({
+			"id": slot_id,
+			"is_empty": info.is_empty(),
+			"player_name": String(info.get("player_name", "")),
+			"display_time": String(info.get("display_time", "")),
+			"topology_mode": String(info.get("topology_mode", "legacy_infinite")),
+			"world_size": String(info.get("world_size_preset", "legacy")),
+			"progress": int(info.get("progress", 0)),
+		})
+	return result
+
+
+func _settings_value(settings_manager: Object, section: String, key: String, fallback: Variant) -> Variant:
+	if not settings_manager or not settings_manager.has_method("get_value"):
+		return fallback
+	var value = settings_manager.call("get_value", section, key)
+	if value == null:
+		return fallback
+	return value
+
+
+func _collect_web_settings_state() -> Dictionary:
+	var settings_manager := _get_settings_manager()
+	var language := String(_settings_value(settings_manager, "General", "language", "zh"))
+	var window_mode := int(_settings_value(settings_manager, "Graphics", "window_mode", DisplayServer.WINDOW_MODE_WINDOWED))
+	var vsync := bool(_settings_value(settings_manager, "Graphics", "vsync", true))
+	var particles_quality := float(_settings_value(settings_manager, "Graphics", "particles_quality", 1.0))
+	var brightness := float(_settings_value(settings_manager, "Graphics", "brightness", 1.0))
+	var menu_visuals_quality := int(_settings_value(settings_manager, "Graphics", "menu_visuals_quality", 1))
+	var master_vol := float(_settings_value(settings_manager, "Audio", "master_vol", 1.0))
+	var music_vol := float(_settings_value(settings_manager, "Audio", "music_vol", 0.8))
+	var sfx_vol := float(_settings_value(settings_manager, "Audio", "sfx_vol", 1.0))
+	var ui_vol := float(_settings_value(settings_manager, "Audio", "ui_vol", 1.0))
+
+	return {
+		"general": {
+			"language": language,
+		},
+		"graphics": {
+			"fullscreen": window_mode == DisplayServer.WINDOW_MODE_FULLSCREEN or window_mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN,
+			"vsync": vsync,
+			"particles_quality": particles_quality,
+			"brightness": brightness,
+			"menu_visuals_quality": menu_visuals_quality,
+		},
+		"audio": {
+			"master_vol": master_vol,
+			"music_vol": music_vol,
+			"sfx_vol": sfx_vol,
+			"ui_vol": ui_vol,
+		},
+		"input": _collect_web_input_bindings(),
+	}
+
+
+func _collect_startup_debug_state() -> Dictionary:
+	if is_instance_valid(GameManager) and GameManager.has_method("get_startup_debug_snapshot"):
+		var snapshot = GameManager.call("get_startup_debug_snapshot")
+		if typeof(snapshot) == TYPE_DICTIONARY:
+			return snapshot
+	return {}
+
+
+func _collect_web_input_bindings() -> Dictionary:
+	var actions := ["left", "right", "up", "down", "interact", "jump", "attack", "inventory"]
+	var bindings := {}
+	for action_name in actions:
+		if not InputMap.has_action(action_name):
+			continue
+		bindings[action_name] = _input_binding_text(action_name)
+	return bindings
+
+
+func _input_binding_text(action_name: String) -> String:
+	var events := InputMap.action_get_events(action_name)
+	if events.is_empty():
+		return "无"
+	var text := String(events[0].as_text())
+	return text.split(" (")[0]
+
+
+func _load_game_slot_action(slot_id: int) -> void:
+	if _action_locked:
+		return
+	if slot_id < 1 or slot_id > 3:
+		_post_web_payload({"type": "menu_notice", "level": "warn", "text": "无效存档槽位。"})
+		return
+
+	var save_manager := _get_save_manager()
+	if not save_manager or not save_manager.has_method("get_slot_info"):
+		_post_web_payload({"type": "menu_notice", "level": "error", "text": "存档服务不可用。"})
+		return
+
+	var slot_info = save_manager.call("get_slot_info", slot_id)
+	if typeof(slot_info) != TYPE_DICTIONARY or (slot_info as Dictionary).is_empty():
+		_post_web_payload({"type": "menu_notice", "level": "warn", "text": "该槽位为空，无法继续游戏。"})
+		return
+
+	_action_locked = true
+	for button in [start_button, load_button, settings_button, exit_button]:
+		button.disabled = true
+
+	if is_instance_valid(GameManager):
+		_post_web_payload({"type": "menu_transition", "active": true, "reason": "load"})
+		await get_tree().create_timer(0.14).timeout
+		_post_web_payload({"type": "menu_notice", "level": "info", "text": "正在读取存档并切换场景..."})
+		GameManager.load_game(slot_id)
+		call_deferred("_verify_load_feedback")
 	else:
-		var _lbl2 = start_button.get_node_or_null("Label")
-		if _lbl2 and _lbl2 is Label:
-			_lbl2.text = "新的开始"
+		_restore_web_menu_visibility()
+
+
+func _apply_settings_from_web(payload_settings: Variant) -> void:
+	if typeof(payload_settings) != TYPE_DICTIONARY:
+		return
+
+	var settings_manager := _get_settings_manager()
+	if not settings_manager or not settings_manager.has_method("set_value"):
+		_post_web_payload({"type": "menu_notice", "level": "error", "text": "设置服务不可用。"})
+		return
+
+	var settings_data: Dictionary = payload_settings
+
+	if settings_data.has("general") and typeof(settings_data["general"]) == TYPE_DICTIONARY:
+		var general_data: Dictionary = settings_data["general"]
+		var language := String(general_data.get("language", "zh")).to_lower()
+		if language.begins_with("en"):
+			language = "en"
 		else:
-			if start_button.has_method("set"):
-				start_button.set("text", "新的开始")
-		# 即使没有存档，也应该允许用户打开存档菜单查看或确认
-		# load_button.visible = false 
+			language = "zh"
+		settings_manager.call("set_value", "General", "language", language)
 
-func _fix_mouse_filter(node: Node) -> void:
-	if node is Control:
-		if node is Button:
-			node.mouse_filter = Control.MOUSE_FILTER_STOP
-			# Button internal contents must NOT block mouse events
-			# Recursively set all children of the button to IGNORE
-			_force_ignore_recursive(node)
-			return # Stop main recursion here, handled manually
-		elif node is TextureRect or node is ColorRect or node is Label or node is RichTextLabel or "Background" in node.name:
-			node.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		else:
-			# Containers default to passing so clicks reach buttons inside or go through
-			node.mouse_filter = Control.MOUSE_FILTER_PASS
-			
-	for child in node.get_children():
-		_fix_mouse_filter(child)
+	if settings_data.has("graphics") and typeof(settings_data["graphics"]) == TYPE_DICTIONARY:
+		var graphics_data: Dictionary = settings_data["graphics"]
+		var fullscreen := bool(graphics_data.get("fullscreen", false))
+		var window_mode := DisplayServer.WINDOW_MODE_FULLSCREEN if fullscreen else DisplayServer.WINDOW_MODE_WINDOWED
+		settings_manager.call("set_value", "Graphics", "window_mode", window_mode)
+		settings_manager.call("set_value", "Graphics", "vsync", bool(graphics_data.get("vsync", true)))
+		settings_manager.call("set_value", "Graphics", "particles_quality", clampf(float(graphics_data.get("particles_quality", 1.0)), 0.0, 2.0))
+		settings_manager.call("set_value", "Graphics", "brightness", clampf(float(graphics_data.get("brightness", 1.0)), 0.5, 1.5))
+		settings_manager.call("set_value", "Graphics", "menu_visuals_quality", clampi(int(graphics_data.get("menu_visuals_quality", 1)), 0, 2))
 
-func _force_ignore_recursive(node: Node) -> void:
-	for child in node.get_children():
-		if child is Control:
-			child.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_force_ignore_recursive(child)
+	if settings_data.has("audio") and typeof(settings_data["audio"]) == TYPE_DICTIONARY:
+		var audio_data: Dictionary = settings_data["audio"]
+		settings_manager.call("set_value", "Audio", "master_vol", clampf(float(audio_data.get("master_vol", 1.0)), 0.0, 1.0))
+		settings_manager.call("set_value", "Audio", "music_vol", clampf(float(audio_data.get("music_vol", 0.8)), 0.0, 1.0))
+		settings_manager.call("set_value", "Audio", "sfx_vol", clampf(float(audio_data.get("sfx_vol", 1.0)), 0.0, 1.0))
+		settings_manager.call("set_value", "Audio", "ui_vol", clampf(float(audio_data.get("ui_vol", 1.0)), 0.0, 1.0))
 
-func _on_button_hover(btn: Control) -> void:
-	var tween = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	tween.tween_property(btn, "custom_minimum_size", Vector2(436, 78), 0.12)
-	tween.parallel().tween_property(btn, "modulate", Color(1.04, 1.03, 1.0), 0.12) # 稍微发光
-	# glow fade in
-	var glow = btn.get_node_or_null("GlowRect")
-	if glow:
-		var gt = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-		# animate modulate alpha for compatibility; if shader material present, also animate intensity
-		gt.tween_property(glow, "modulate:a", 0.28, 0.14)
-		gt.parallel().tween_property(glow, "scale", Vector2(1.10, 1.10), 0.14)
-		if glow.material and glow.material is ShaderMaterial:
-			gt.parallel().tween_property(glow.material, "shader_param/intensity", 0.9, 0.14)
+	if settings_manager.has_method("save_settings"):
+		settings_manager.call("save_settings")
 
-	# inner highlight fade in
-	var inner = btn.get_node_or_null("InnerHighlight")
-	if inner:
-		var it = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-		it.tween_property(inner, "modulate:a", 0.18, 0.12)
+	_sync_web_menu_state()
+	_post_web_payload({"type": "menu_notice", "level": "success", "text": "设置已应用。"})
 
-	# inner shadow fade in
-	var shadow = btn.get_node_or_null("InnerShadow")
-	if shadow:
-		var st = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-		st.tween_property(shadow, "modulate:a", 0.06, 0.10)
 
-func _on_button_unhover(btn: Control) -> void:
-	var tween = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	tween.tween_property(btn, "custom_minimum_size", Vector2(420, 72), 0.12)
-	tween.parallel().tween_property(btn, "modulate", Color.WHITE, 0.12)
-	# glow fade out
-	var glow = btn.get_node_or_null("GlowRect")
-	if glow:
-		var gt = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-		gt.tween_property(glow, "modulate:a", 0.04, 0.12)
-		gt.parallel().tween_property(glow, "scale", Vector2(1.06, 1.06), 0.12)
-		if glow.material and glow.material is ShaderMaterial:
-			gt.parallel().tween_property(glow.material, "shader_param/intensity", 0.45, 0.12)
+func _reset_settings_from_web() -> void:
+	var settings_manager := _get_settings_manager()
+	if not settings_manager:
+		_post_web_payload({"type": "menu_notice", "level": "error", "text": "设置服务不可用。"})
+		return
 
-	# inner highlight fade out
-	var inner = btn.get_node_or_null("InnerHighlight")
-	if inner:
-		var it = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-		it.tween_property(inner, "modulate:a", 0.0, 0.12)
+	if settings_manager.has_method("reset_to_defaults"):
+		settings_manager.call("reset_to_defaults")
+	elif settings_manager.has_method("apply_all_settings"):
+		settings_manager.call("apply_all_settings")
 
-	# inner shadow fade out
-	var shadow = btn.get_node_or_null("InnerShadow")
-	if shadow:
-		var st = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-		st.tween_property(shadow, "modulate:a", 0.0, 0.12)
+	if settings_manager.has_method("save_settings"):
+		settings_manager.call("save_settings")
 
-func _on_button_pressed_effect(btn: Control) -> void:
-	# quick press animation to give tactile feedback
-	var t = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
-	t.tween_property(btn, "scale", Vector2(0.96, 0.96), 0.08)
-	t.parallel().tween_property(btn, "modulate", Color(0.92, 0.9, 0.94), 0.08)
+	_sync_web_menu_state()
+	_post_web_payload({"type": "menu_notice", "level": "info", "text": "设置已重置为默认值。"})
 
-	# intensify inner shadow if present
-	var shadow = btn.get_node_or_null("InnerShadow")
-	if shadow:
-		var gt = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
-		gt.tween_property(shadow, "color:a", min(shadow.color.a + 0.12, 0.9), 0.08)
 
-func _on_button_released_effect(btn: Control) -> void:
-	# revert press animation quickly; if hovered, keep hover size
-	var target_scale = Vector2(1, 1)
-	var target_mod = Color.WHITE
-	if btn.get_tree().is_input_handled():
-		# preserve default
-		target_scale = Vector2(1, 1)
-	# animate back
-	var t = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	t.tween_property(btn, "scale", target_scale, 0.12)
-	t.parallel().tween_property(btn, "modulate", target_mod, 0.12)
+func _post_web_payload(payload: Dictionary) -> void:
+	if not is_instance_valid(_menu_webview_node):
+		return
+	if not _menu_webview_node.has_method("post_message"):
+		return
+	_menu_webview_node.call("post_message", JSON.stringify(payload))
 
-	# relax inner shadow
-	var shadow = btn.get_node_or_null("InnerShadow")
-	if shadow:
-		var gt = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-		gt.tween_property(shadow, "color:a", 0.18, 0.12)
+
+func _game_manager_is_starting_transition() -> bool:
+	if not is_instance_valid(GameManager):
+		return false
+	if _has_property(GameManager, &"_is_starting_new_game"):
+		return bool(GameManager.get("_is_starting_new_game"))
+	return false
+
+
+func _play_entrance_animation() -> void:
+	for node in [title_label, subtitle_label, button_column, left_decor, right_decor, bottom_left_label, bottom_right_line1, bottom_right_line2]:
+		if node and node is CanvasItem:
+			node.modulate.a = 0.0
+
+	if title_label:
+		title_label.scale = Vector2(0.94, 0.94)
+		title_label.pivot_offset = title_label.size * 0.5
+
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(title_label, "modulate:a", 1.0, 0.55).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_property(title_label, "scale", Vector2.ONE, 0.55).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.tween_property(subtitle_label, "modulate:a", 1.0, 0.40).set_delay(0.10)
+	tween.tween_property(button_column, "modulate:a", 1.0, 0.45).set_delay(0.18)
+	tween.tween_property(left_decor, "modulate:a", 1.0, 0.45).set_delay(0.20)
+	tween.tween_property(right_decor, "modulate:a", 1.0, 0.45).set_delay(0.20)
+	tween.tween_property(bottom_left_label, "modulate:a", 1.0, 0.40).set_delay(0.28)
+	tween.tween_property(bottom_right_line1, "modulate:a", 1.0, 0.40).set_delay(0.28)
+	tween.tween_property(bottom_right_line2, "modulate:a", 1.0, 0.40).set_delay(0.32)
+
 
 func _on_start_pressed() -> void:
-	print("MainMenu: 开始按钮被点击")
-	
-	# 禁用交互
-	start_button.disabled = true
-	load_button.disabled = true
-	exit_button.disabled = true
-	
-	# 播放过渡动画
-	var tween = create_tween()
-	# UI淡出
-	tween.tween_property($CenterContainer, "modulate:a", 0.0, 0.3)
-	# 整体变黑
-	tween.parallel().tween_property(self, "modulate", Color(0,0,0,1), 0.8)
-	
+	_start_game_action("native")
+
+
+func _start_game_action(source: String) -> void:
+	if _action_locked:
+		return
+	_action_locked = true
+
+	for button in [start_button, load_button, settings_button, exit_button]:
+		button.disabled = true
+
+	if _web_menu_active and is_instance_valid(_menu_webview_node):
+		if is_instance_valid(GameManager):
+			_post_web_payload({"type": "menu_transition", "active": true, "reason": "start"})
+			await get_tree().create_timer(0.14).timeout
+			_post_web_payload({"type": "menu_notice", "level": "info", "text": "正在创建世界会话..."})
+			GameManager.start_new_game()
+			call_deferred("_verify_start_feedback")
+		else:
+			_restore_web_menu_visibility()
+		return
+
+	var tween := create_tween()
+	if source == "native":
+		tween.tween_property(center_group, "modulate:a", 0.0, 0.20)
+		tween.parallel().tween_property(self, "modulate", Color(0, 0, 0, 1), 0.45)
+	else:
+		tween.tween_property(self, "modulate", Color(0, 0, 0, 1), 0.30)
 	await tween.finished
-	
+
 	GameManager.start_new_game()
 
-func _hide_external_backgrounds() -> void:
-	_hidden_backgrounds.clear()
-	var root = get_tree().get_root()
-	var self_path = str(self.get_path())
-
-	_recurse_hide(root, self_path)
-
-func _recurse_hide(node: Node, self_path: String) -> void:
-	for child in node.get_children():
-		# skip nodes that are part of this MainMenu instance
-		var p = str(child.get_path())
-		if p.begins_with(self_path):
-			# skip our own children
-			continue
-		var name_l = str(child.name).to_lower()
-		if name_l.find("background") != -1 or child is ParallaxBackground or child is TextureRect:
-			if child.visible:
-				child.visible = false
-				_hidden_backgrounds.append(child)
-		_recurse_hide(child, self_path)
-
-func _show_external_backgrounds() -> void:
-	for n in _hidden_backgrounds:
-		if is_instance_valid(n):
-			n.visible = true
-	_hidden_backgrounds.clear()
 
 func _on_load_pressed() -> void:
-	print("MainMenu: 加载按钮被点击")
-	UIManager.open_window("SaveSelection", "res://scenes/ui/SaveSelection.tscn")
+	_load_game_action()
+
+
+func _load_game_action() -> void:
+	if _action_locked:
+		return
+	var window := UIManager.open_window("SaveSelection", "res://scenes/ui/SaveSelection.tscn")
+	if window:
+		_suspend_web_menu_for_subwindow()
+	else:
+		_restore_web_menu_visibility()
+
 
 func _on_settings_pressed() -> void:
-	print("MainMenu: 设置按钮被点击")
-	UIManager.open_window("SettingsWindow", "res://scenes/ui/settings/SettingsWindow.tscn")
+	_open_settings_action()
+
+
+func _open_settings_action() -> void:
+	if _action_locked:
+		return
+	var window := UIManager.open_window("SettingsWindow", "res://scenes/ui/settings/SettingsWindow.tscn")
+	if window:
+		_suspend_web_menu_for_subwindow()
+	else:
+		_restore_web_menu_visibility()
+
 
 func _on_exit_pressed() -> void:
+	_exit_game_action()
+
+
+func _exit_game_action() -> void:
+	if _action_locked:
+		return
+	_action_locked = true
 	get_tree().quit()
 
 
-func _on_bg_period_changed(period: String, halo_color: Color) -> void:
-	# Animate button glows to match background halo color
-	for btn in [start_button, load_button, settings_button, exit_button]:
-		if not btn: continue
-		var glow = btn.get_node_or_null("GlowRect")
-		if glow:
-			var target = Color(halo_color.r, halo_color.g, halo_color.b, 0.28)
-			var t = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-			t.tween_property(glow, "color", target, 0.36)
-		# update inner highlight shader params if present
-		var inner = btn.get_node_or_null("InnerHighlight")
-		if inner and inner.material and inner.material is ShaderMaterial:
-			var mat: ShaderMaterial = inner.material
-			var top = Color(halo_color.r, halo_color.g, halo_color.b, 0.30)
-			var bottom = Color(halo_color.r * 0.78, halo_color.g * 0.78, halo_color.b * 0.78, 0.10)
-			mat.set_shader_parameter("top_color", top)
-			mat.set_shader_parameter("bottom_color", bottom)
+func _on_visibility_changed() -> void:
+	if is_instance_valid(_menu_webview_node):
+		_menu_webview_node.visible = visible
 
-
-func _force_apply_poppins() -> void:
-	var font_paths = ["res://assets/fonts/Poppins-Bold.ttf", "res://assets/fonts/Poppins-Medium.ttf", "res://assets/fonts/Poppins-Regular.ttf"]
-	var fd = null
-	var found_path = ""
-	for p in font_paths:
-		if ResourceLoader.exists(p):
-			fd = ResourceLoader.load(p)
-			found_path = p
-			break
-	if not fd:
-		print("MainMenu: Poppins font not found to force-assign")
-		return
-
-	# Create explicit DynamicFont instances and assign directly to controls
-	# `fd` is expected to be a `FontFile`/font resource in Godot 4. Duplicate it for per-control sizes.
-	var template_font = null
-	var theme_candidates = ["res://ui/theme/theme_default.tres", "res://ui/theme/theme_startmenu.tres"]
-	for tp in theme_candidates:
-		if ResourceLoader.exists(tp):
-			var tref = ResourceLoader.load(tp)
-			if tref :
-				template_font = tref.get("default_font")
-				break
-
-	var title_f = null
-	var welcome_f = null
-	var btn_f = null
-	if template_font:
-		title_f = template_font.duplicate()
-		title_f.set("font_data", fd)
-		title_f.set("size", 112)
-		welcome_f = template_font.duplicate()
-		welcome_f.set("font_data", fd)
-		welcome_f.set("size", 22)
-		btn_f = template_font.duplicate()
-		btn_f.set("font_data", fd)
-		btn_f.set("size", 28)
+	if visible:
+		_show_external_backgrounds(false)
 	else:
-		# Fallback: assign the raw FontFile (no per-control size)
-		title_f = fd
-		welcome_f = fd
-		btn_f = fd
+		_show_external_backgrounds(true)
 
-	if title_label:
-		# Title may be a RichTextLabel (GradientTitle) or Label; assign font if possible
-		if title_label.has_method("set"):
-			title_label.set("custom_fonts/font", title_f)
-		if title_label.has_method("add_theme_font_override"):
-			title_label.add_theme_font_override("font", title_f)
 
-	if welcome_label:
-		if welcome_label.has_method("set"):
-			welcome_label.set("custom_fonts/font", welcome_f)
-		if welcome_label.has_method("add_theme_font_override"):
-			welcome_label.add_theme_font_override("font", welcome_f)
+func _hide_external_backgrounds() -> void:
+	_hidden_backgrounds.clear()
+	var root := get_tree().get_root()
+	var self_path := str(get_path())
+	_recurse_hide_background(root, self_path)
 
-	for btn in [start_button, load_button, settings_button, exit_button]:
-		if not btn:
+
+func _recurse_hide_background(node: Node, self_path: String) -> void:
+	for child in node.get_children():
+		var path := str(child.get_path())
+		if path.begins_with(self_path):
 			continue
-		var lbl = btn.get_node_or_null("Label")
-		if lbl and lbl is Label:
-			lbl.set("custom_fonts/font", btn_f)
-			if lbl.has_method("add_theme_font_override"):
-				lbl.add_theme_font_override("font", btn_f)
-			print("MainMenu: set font on label", lbl, "->", typeof(lbl.get("custom_fonts/font")), lbl.get("custom_fonts/font"))
-		else:
-			btn.set("custom_fonts/font", btn_f)
-			if btn.has_method("add_theme_font_override"):
-				btn.add_theme_font_override("font", btn_f)
-			print("MainMenu: set font on button", btn, "->", typeof(btn.get("custom_fonts/font")), btn.get("custom_fonts/font"))
+		var name_l := str(child.name).to_lower()
+		if child is CanvasItem and (child is ParallaxBackground or name_l.find("background") != -1):
+			var canvas_child := child as CanvasItem
+			if canvas_child.visible:
+				canvas_child.visible = false
+				_hidden_backgrounds.append(canvas_child)
+		_recurse_hide_background(child, self_path)
 
-	print("MainMenu: forced Poppins font assigned from", found_path)
 
-func _on_title_resized() -> void:
-	if not title_label:
+func _show_external_backgrounds(make_visible: bool) -> void:
+	for item in _hidden_backgrounds:
+		if is_instance_valid(item) and item is CanvasItem:
+			(item as CanvasItem).visible = make_visible
+	if make_visible:
+		_hidden_backgrounds.clear()
+
+
+func _suspend_web_menu_for_subwindow() -> void:
+	_set_native_menu_visible(true)
+	if _web_menu_active and is_instance_valid(_menu_webview_node):
+		_menu_webview_node.visible = false
+
+
+func _restore_web_menu_visibility() -> void:
+	_action_locked = false
+	for button in [start_button, load_button, settings_button, exit_button]:
+		button.disabled = false
+	_post_web_payload({"type": "menu_transition", "active": false})
+	if _web_menu_active and is_instance_valid(_menu_webview_node):
+		_menu_webview_node.visible = true
+		_set_native_menu_visible(false)
+		_sync_web_menu_state()
+	else:
+		_set_native_menu_visible(true)
+
+
+func _verify_start_feedback(attempts: int = 0) -> void:
+	await get_tree().create_timer(0.9).timeout
+	if not is_instance_valid(self):
 		return
-	var mat = title_label.material as ShaderMaterial
-	if mat:
-		# Use get_minimum_size().y as a more reliable metric for text height than size.y
-		# size.y includes extra layout space which might dilute the gradient
-		var text_height = title_label.get_minimum_size().y
-		if text_height <= 1.0:
-			text_height = title_label.size.y
-		
-		# Prevent over-dilution of gradient if label is stretched tall (e.g. by VBox Expand)
-		# A label with single line text shouldn't need more than ~1.5x font size for gradient
-		var expected_h = float(title_label.get_theme_font_size("font_size")) * 1.5
-		if text_height > expected_h:
-			text_height = expected_h
+	if is_instance_valid(GameManager) and GameManager.current_state == GameManager.State.START_MENU:
+		if _game_manager_is_starting_transition() and attempts < 8:
+			await get_tree().create_timer(0.35).timeout
+			if is_instance_valid(self):
+				call_deferred("_verify_start_feedback", attempts + 1)
+			return
+		_restore_web_menu_visibility()
 
-		# DEBUG: Adjust offset_y if label is vertically centered and taller than text
-		# If vertical_alignment is CENTER (1) or BOTTOM (2) and label is tall, text is offset.
-		var offset_y = 0.0
-		# Standard height for font is roughly font_size * 1.2
-		var font_h = float(title_label.get_theme_font_size("font_size"))
-		if title_label.size.y > font_h * 1.5:
-			# Likely centered or expanded
-			if title_label.vertical_alignment == VERTICAL_ALIGNMENT_CENTER:
-				offset_y = (title_label.size.y - font_h) / 2.0
-				# Use font size for gradient height, not label height
-				text_height = font_h * 1.2
-			elif title_label.vertical_alignment == VERTICAL_ALIGNMENT_BOTTOM:
-				offset_y = title_label.size.y - font_h
-				text_height = font_h * 1.2
-		
-		# Debug print
-		print("DEBUG: Updating Title Shader Size: ", title_label.size, " used_height: ", text_height, " offset: ", offset_y)
-		mat.set_shader_parameter("height_pixels", text_height)
-		mat.set_shader_parameter("width_pixels", title_label.size.x)
-		mat.set_shader_parameter("offset_y", offset_y)
 
-func _on_sfx_hover() -> void:
-	print("MainMenu: Mouse Entered Button")
-	# AudioManager.play_ui_sfx("hover")
-
-func _on_sfx_click() -> void:
-	print("MainMenu: Button Pressed")
-	# AudioManager.play_ui_sfx("click")
+func _verify_load_feedback(attempts: int = 0) -> void:
+	await get_tree().create_timer(1.1).timeout
+	if not is_instance_valid(self):
+		return
+	if is_instance_valid(GameManager) and GameManager.current_state == GameManager.State.START_MENU:
+		if _game_manager_is_starting_transition() and attempts < 8:
+			await get_tree().create_timer(0.35).timeout
+			if is_instance_valid(self):
+				call_deferred("_verify_load_feedback", attempts + 1)
+			return
+		_restore_web_menu_visibility()

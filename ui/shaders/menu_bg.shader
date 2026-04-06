@@ -56,6 +56,7 @@ void fragment() {
     float aspect = VIEWPORT_SIZE.x / VIEWPORT_SIZE.y;
     uv.x *= aspect;
     float dist = length(uv);
+    float anim_t = (global_time > 0.0001) ? global_time : TIME;
 
     // vertical gradient background (top -> bottom)
     float grad_t = clamp(uv.y + 0.5, 0.0, 1.0);
@@ -71,7 +72,7 @@ void fragment() {
     for (int i = 0; i < 3; i++) {
         vec2 p = uv * scales[i];
         if (use_noise) {
-            p += global_time * 0.02 * float(i + 1);
+            p += anim_t * 0.02 * float(i + 1);
         }
         float h = hash21(p);
         float s = smoothstep(1.0 - star_density, 1.0, h);
@@ -84,9 +85,9 @@ void fragment() {
     float stars_sharp = clamp(stars_sharp_acc, 0.0, 1.0);
 
     // Layered nebula using multi-scale fbm for thicker volumetric feel
-    float n1 = fbm(uv * 2.8 + vec2(global_time * 0.02, -global_time * 0.01));
-    float n2 = fbm(uv * 1.2 + vec2(-global_time * 0.01, global_time * 0.007));
-    float n3 = fbm(uv * 0.5 + vec2(global_time * 0.005, global_time * 0.002));
+    float n1 = fbm(uv * 2.8 + vec2(anim_t * 0.02, -anim_t * 0.01));
+    float n2 = fbm(uv * 1.2 + vec2(-anim_t * 0.01, anim_t * 0.007));
+    float n3 = fbm(uv * 0.5 + vec2(anim_t * 0.005, anim_t * 0.002));
     float cloud = clamp(n1 * 0.6 + n2 * 0.3 + n3 * 0.2, 0.0, 1.0);
     float falloff = exp(-dist * 3.2);
     float nebula = cloud * falloff * nebula_strength;
@@ -99,7 +100,7 @@ void fragment() {
         float r = 0.12 * idxf + 0.04 * (idxf - 1.0);
         float thickness = ring_thickness * (1.0 + idxf * 0.4);
         float ang = atan(uv.y, uv.x);
-        float dash = fract((ang + global_time * ring_speed * (0.25 + idxf * 0.12)) * idxf * 0.95);
+        float dash = fract((ang + anim_t * ring_speed * (0.25 + idxf * 0.12)) * idxf * 0.95);
         float dash_mask = smoothstep(0.0, 0.18, 1.0 - abs(dash - 0.5));
         float ring = ring_mask(dist, r, thickness) * dash_mask;
         // a soft secondary outer glow per ring
@@ -134,10 +135,10 @@ void fragment() {
     vec3 star_glow_col = vec3(1.0, 0.95, 0.9);
     color += star_glow_col * stars_glow * star_bloom * night_factor;
     // stars: sharp bright points (night-only)
-    color += vec3(1.0, 1.0, 0.98) * stars_sharp * (2.8 + 0.6 * sin(global_time * 3.1)) * night_factor;
+    color += vec3(1.0, 1.0, 0.98) * stars_sharp * (2.8 + 0.6 * sin(anim_t * 3.1)) * night_factor;
 
     // small procedural sparkles for extra twinkle (very reduced during day)
-    float sparkle = pow(max(0.0, hash21(uv * 420.0 + vec2(global_time * 0.6, 0.0))), 80.0);
+    float sparkle = pow(max(0.0, hash21(uv * 420.0 + vec2(anim_t * 0.6, 0.0))), 80.0);
     color += vec3(1.0, 0.92, 0.8) * sparkle * 0.9 * night_factor;
 
     // Sun rendering (daytime)
@@ -147,7 +148,7 @@ void fragment() {
     sun_uv.x *= aspect;
     float sun_dist = length(uv - sun_uv);
     float base_radius = 0.12; // core radius
-    float pulse = 1.0 + 0.12 * sin(global_time * 0.9) * sun_pulse;
+    float pulse = 1.0 + 0.12 * sin(anim_t * 0.9) * sun_pulse;
     float sun_radius = base_radius * pulse;
     float sun_soft = 0.28 * (0.9 + 0.2 * (1.0 - sun_pulse)); // soft glow extent
     float core = smoothstep(sun_radius, sun_radius * 0.35, sun_dist);

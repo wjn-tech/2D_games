@@ -186,6 +186,18 @@ func _is_mina_projectile_locked() -> bool:
 func _is_mina_input_inverted() -> bool:
 	return _mina_input_inversion_time > 0.0
 
+func is_mina_projectile_lock_active() -> bool:
+	return _is_mina_projectile_locked()
+
+func is_mina_input_inversion_active() -> bool:
+	return _is_mina_input_inverted()
+
+func is_mina_gravity_flip_active() -> bool:
+	return _mina_gravity_flip_time > 0.0
+
+func is_mina_angina_active() -> bool:
+	return _mina_angina_time > 0.0
+
 func _get_current_gravity_direction() -> float:
 	return -1.0 if _mina_gravity_flip_time > 0.0 else 1.0
 

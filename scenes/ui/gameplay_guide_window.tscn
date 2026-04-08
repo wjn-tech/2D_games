@@ -1,0 +1,153 @@
+[gd_scene load_steps=2 format=3 uid="uid://gameplay_guide_window"]
+
+[ext_resource type="Script" path="res://src/ui/guide/gameplay_guide_window.gd" id="1_script"]
+
+[node name="GameplayGuideWindow" type="CanvasLayer"]
+layer = 100
+script = ExtResource("1_script")
+
+[node name="BackgroundOverlay" type="ColorRect" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0, 0, 0, 0.7)
+mouse_filter = 1
+
+[node name="WindowContainer" type="CenterContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="PanelContainer" type="PanelContainer" parent="WindowContainer"]
+custom_minimum_size = Vector2(980, 640)
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="WindowContainer/PanelContainer"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+theme_override_constants/separation = 12
+
+[node name="HeaderHBoxContainer" type="HBoxContainer" parent="WindowContainer/PanelContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="WindowContainer/PanelContainer/VBoxContainer/HeaderHBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 24
+text = "游戏引导"
+
+[node name="CloseButton" type="Button" parent="WindowContainer/PanelContainer/VBoxContainer/HeaderHBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+text = "✕"
+
+[node name="BodyHBox" type="HBoxContainer" parent="WindowContainer/PanelContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 14
+
+[node name="CatalogPanel" type="PanelContainer" parent="WindowContainer/PanelContainer/VBoxContainer/BodyHBox"]
+custom_minimum_size = Vector2(280, 0)
+layout_mode = 2
+
+[node name="CatalogMargin" type="MarginContainer" parent="WindowContainer/PanelContainer/VBoxContainer/BodyHBox/CatalogPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="CatalogVBox" type="VBoxContainer" parent="WindowContainer/PanelContainer/VBoxContainer/BodyHBox/CatalogPanel/CatalogMargin"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="CatalogLabel" type="Label" parent="WindowContainer/PanelContainer/VBoxContainer/BodyHBox/CatalogPanel/CatalogMargin/CatalogVBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "目录"
+
+[node name="CatalogTree" type="Tree" parent="WindowContainer/PanelContainer/VBoxContainer/BodyHBox/CatalogPanel/CatalogMargin/CatalogVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="PagePanel" type="PanelContainer" parent="WindowContainer/PanelContainer/VBoxContainer/BodyHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PageMargin" type="MarginContainer" parent="WindowContainer/PanelContainer/VBoxContainer/BodyHBox/PagePanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="PageVBox" type="VBoxContainer" parent="WindowContainer/PanelContainer/VBoxContainer/BodyHBox/PagePanel/PageMargin"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="PagePathLabel" type="Label" parent="WindowContainer/PanelContainer/VBoxContainer/BodyHBox/PagePanel/PageMargin/PageVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "新手教程 / 魔法"
+
+[node name="PageTitleLabel" type="Label" parent="WindowContainer/PanelContainer/VBoxContainer/BodyHBox/PagePanel/PageMargin/PageVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "请选择目录中的章节"
+
+[node name="PageImage" type="TextureRect" parent="WindowContainer/PanelContainer/VBoxContainer/BodyHBox/PagePanel/PageMargin/PageVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(0, 210)
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ContentScroll" type="ScrollContainer" parent="WindowContainer/PanelContainer/VBoxContainer/BodyHBox/PagePanel/PageMargin/PageVBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="PageContentLabel" type="RichTextLabel" parent="WindowContainer/PanelContainer/VBoxContainer/BodyHBox/PagePanel/PageMargin/PageVBox/ContentScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+bbcode_enabled = true
+fit_content = true
+selection_enabled = true
+text = "在左侧目录中选择一个页面。"
+
+[node name="FooterHBox" type="HBoxContainer" parent="WindowContainer/PanelContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="PrevButton" type="Button" parent="WindowContainer/PanelContainer/VBoxContainer/FooterHBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 36)
+layout_mode = 2
+text = "上一页"
+
+[node name="PageIndicator" type="Label" parent="WindowContainer/PanelContainer/VBoxContainer/FooterHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+horizontal_alignment = 1
+text = "第 0 / 0 页"
+
+[node name="NextButton" type="Button" parent="WindowContainer/PanelContainer/VBoxContainer/FooterHBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 36)
+layout_mode = 2
+text = "下一页"

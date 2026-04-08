@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=3 uid="uid://guide_button"]
+
+[ext_resource type="Script" path="res://src/ui/guide/guide_button.gd" id="1_script"]
+
+[node name="GuideButton" type="Button"]
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+focus_mode = 0
+tooltip_text = "游戏引导"
+text = "?"
+script = ExtResource("1_script")

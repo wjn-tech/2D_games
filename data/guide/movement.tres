@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="GuideSectionData" format=3 uid="uid://guide_movement_section"]
+
+[resource]
+section_id = "movement"
+title = "移动与控制"
+description = "基础移动和相机控制"
+subsections = [SubResource("GuideSubsectionData_1"), SubResource("GuideSubsectionData_2"), SubResource("GuideSubsectionData_3")]
+
+[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_1"]
+subsection_id = "keyboard_controls"
+title = "键盘控制"
+content = "使用 [b]WASD[/b] 或 [color=yellow]方向键[/color] 来移动角色。\n
+[b]A/D[/b]: 向左/右移动\n
+[b]W/Up[/b]: 向上/前进\n
+[b]S/Down[/b]: 向下/后退"
+image = null
+
+[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_2"]
+subsection_id = "jumping"
+title = "跳跃"
+content = "按下 [b]空格[/b] 来跳跃。\n
+在空中时，可以继续移动来改变跳跃方向。\n
+按住空格键可以跳得更高（如果启用了蓄力跳跃）。"
+image = null
+
+[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_3"]
+subsection_id = "camera_control"
+title = "相机控制"
+content = "移动鼠标来旋转相机视角。\n
+相机会自动跟随角色。\n
+在某些菜单中，相机控制可能被禁用。"
+image = null

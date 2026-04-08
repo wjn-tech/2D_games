@@ -4,41 +4,40 @@ extends Control
 @onready var quest_list: VBoxContainer = $MarginContainer/TopRight/QuestList
 @onready var damage_overlay: ColorRect = $DamageOverlay
 @onready var top_right_container: VBoxContainer = $MarginContainer/TopRight
+@onready var guide_button: Button = $MarginContainer/TopLeft/GuideButton
 
 var wand_mana_bar: ProgressBar # Kept for backward compat or if needed
 var wand_mana_label: Label
 var player_status: PlayerStatusWidget
 var stats_widget: Control # V3: Reference to the toggleable stats panel
 var item_tooltip_label: Label
+var guide_window: GameplayGuideWindow
 
 func _ready() -> void:
 	# Load Styles
 	_apply_global_styles()
+	
+	# Setup Guide System
+	_setup_guide_system()
 	
 	# Instantiate Status Widget
 	var status_scene = preload("res://src/ui/hud/player_status_widget.tscn")
 	player_status = status_scene.instantiate()
 	
 	# Create Top Left Wrapper
-	var top_left_container = VBoxContainer.new()
-	top_left_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	$MarginContainer.add_child(top_left_container)
+	var top_left_container = $MarginContainer/TopLeft  # Use existing TopLeft from scene
 	# Use shrunk flags for the container itself so it adheres to Top-Left of MarginContainer
 	top_left_container.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	top_left_container.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	# Force it to be minimal size
 	top_left_container.custom_minimum_size = Vector2(250, 100)
 	
-	# Add Spacer to push it down
-	# var spacer = Control.new()
-	# spacer.custom_minimum_size = Vector2(0, 80)
-	# top_left_container.add_child(spacer)
-	
+	# Add player status
+	# Note: GuideButton is already in TopLeft from the scene
+	var existing_guide_btn = top_left_container.get_child(0)  # GuideButton should be first
 	top_left_container.add_child(player_status)
-	
-	# Ensure player status respects this
-	player_status.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	player_status.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	if existing_guide_btn:
+		top_left_container.move_child(player_status, 1)  # Move status after guide button
 
 	
 	# Instantiate Hotbar (Bottom Center)
@@ -164,6 +163,21 @@ func _on_inventory_btn_pressed() -> void:
 			UIManager.close_window("Inventory")
 		else:
 			UIManager.open_window("Inventory", "res://scenes/ui/InventoryWindow.tscn")
+
+func _setup_guide_system() -> void:
+	## Setup the gameplay guide window and connect button signal
+	if guide_button:
+		guide_button.guide_requested.connect(_on_guide_requested)
+	
+	# Instantiate and setup the guide window
+	guide_window = preload("res://scenes/ui/gameplay_guide_window.tscn").instantiate()
+	add_child(guide_window)
+	guide_window.hide()  # Hidden by default
+
+func _on_guide_requested() -> void:
+	## Called when the guide button is pressed
+	if guide_window:
+		guide_window.open()
 
 func _apply_global_styles() -> void:
 	# Apply pixel-art styles to existing nodes programmatically

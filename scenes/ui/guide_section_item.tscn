@@ -1,0 +1,19 @@
+[gd_scene load_steps=2 format=3 uid="uid://guide_section_item"]
+
+[ext_resource type="Script" path="res://src/ui/guide/guide_section_item.gd" id="1_script"]
+
+[node name="GuideSectionItem" type="VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 0
+script = ExtResource("1_script")
+
+[node name="HeaderButton" type="Button" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+text = "▶ Section Title"
+alignment = 0
+
+[node name="ContentContainer" type="VBoxContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 12

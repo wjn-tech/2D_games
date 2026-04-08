@@ -26,3 +26,8 @@ startmenu/**
 !assets/ui/startmenu/**
 !assets/ui/startmenu/*.import
 !assets/ui/startmenu/**/*.import
+
+# Ignore local export outputs in versioned release folder
+v1.0.0/*.exe
+v1.0.0/*.pck
+v1.0.0*.zip

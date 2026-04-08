@@ -714,40 +714,40 @@ func _get_mineral_at(gx: int, gy: int, depth: float) -> Vector2i:
 	# --- Deep Layer (Y > 300) ---
 	if depth > 300:
 		# 钻石 (Legendary) - 最深层特有
-		if n_legend > 0.88: return diamond_tile
+		if n_legend > 0.86: return diamond_tile
 		# 魔法加速石 (Very Rare)
-		if n_legend > 0.82: return magic_speed_stone_tile
+		if n_legend > 0.79: return magic_speed_stone_tile
 		# 深层稀有矿物先判定，避免被更宽的金矿阈值吞掉。
-		if n_rare > 0.8: return staff_core_tile
-		if n_rare > 0.6: return gold_tile # Gold is more common than Staff Core in deep
+		if n_rare > 0.71: return staff_core_tile
+		if n_rare > 0.47: return gold_tile # Gold is more common than Staff Core in deep
 		
 		# 丰富的矿脉
-		if n_common > 0.4: return iron_tile
-		if n_common < -0.4: return magic_crystal_tile
+		if n_common > 0.22: return iron_tile
+		if n_common < -0.22: return magic_crystal_tile
 
 	# --- Underground Layer (100 < Y < 300) ---
 	elif depth > 100:
 		# 钻石 (Extremely Rare here)
-		if n_legend > 0.95: return diamond_tile
+		if n_legend > 0.93: return diamond_tile
 		# 法杖核心 (Very Rare here)
-		if n_rare > 0.85: return staff_core_tile
+		if n_rare > 0.78: return staff_core_tile
 		# 金矿 (Rare)
-		if n_rare > 0.7: return gold_tile
+		if n_rare > 0.56: return gold_tile
 		# 魔力水晶 (Uncommon)
-		if n_rare > 0.5: return magic_crystal_tile
+		if n_rare > 0.37: return magic_crystal_tile
 		# 铁矿
-		if n_common > 0.5: return iron_tile
+		if n_common > 0.34: return iron_tile
 		# 铜矿
-		if n_common < -0.5: return copper_tile
+		if n_common < -0.34: return copper_tile
 
 	# --- Surface/Shallow Layer (10 < Y < 100) ---
 	elif depth > 10:
 		# 金矿 (Very Rare near surface)
-		if n_rare > 0.85: return gold_tile
+		if n_rare > 0.80: return gold_tile
 		# 铜矿 (Common)
-		if n_common > 0.6: return copper_tile
+		if n_common > 0.44: return copper_tile
 		# 铁矿 (Sparse)
-		if n_common < -0.7: return iron_tile
+		if n_common < -0.50: return iron_tile
 		
 	return no_mineral
 
@@ -1033,9 +1033,9 @@ func _get_depth_band_id(depth: float) -> String:
 		return "surface"
 	if depth < 120.0:
 		return "shallow_underground"
-	if depth < 260.0:
-		return "mid_cavern"
 	if depth < 420.0:
+		return "mid_cavern"
+	if depth < 980.0:
 		return "deep"
 	return "terminal"
 
@@ -1236,6 +1236,176 @@ func _is_stage_preserve_zone(global_x: int, depth: float, is_spawn_safe_column: 
 		return true
 	return false
 
+const UNDERWORLD_ROUTE_START_DEPTH := 320.0
+
+func _get_underworld_generation_config() -> Dictionary:
+	var world_topology = _get_world_topology()
+	if world_topology and world_topology.has_method("get_underworld_generation_config"):
+		var config_variant = world_topology.get_underworld_generation_config()
+		if config_variant is Dictionary:
+			return config_variant
+	return {
+		"enabled": false,
+	}
+
+func _build_underworld_column_context(global_x: int, surface_base: float, boundary_config: Dictionary, underworld_config: Dictionary) -> Dictionary:
+	if not bool(underworld_config.get("enabled", false)):
+		return {"enabled": false}
+	if not bool(boundary_config.get("enabled", false)):
+		return {"enabled": false}
+
+	var center_x := float(int(underworld_config.get("anchor_tile", 0)))
+	var world_topology = _get_world_topology()
+	var circumference := 0.0
+	if world_topology and world_topology.has_method("get_circumference_tiles"):
+		circumference = float(world_topology.get_circumference_tiles())
+	if circumference <= 0.0:
+		return {"enabled": false}
+
+	var coverage_ratio := clampf(float(underworld_config.get("horizontal_coverage_ratio", 1.0)), 0.50, 1.0)
+	var half_width := circumference * 0.5 * coverage_ratio
+	if coverage_ratio >= 0.999:
+		half_width = circumference * 0.5
+	if _get_wrapped_tile_distance(float(global_x), center_x) > half_width:
+		return {"enabled": false}
+
+	var bedrock_start_depth := float(boundary_config.get("bedrock_start_depth", 1000000.0))
+	var bedrock_hard_floor_depth := float(boundary_config.get("bedrock_hard_floor_depth", 1000000.0))
+	var min_vertical_span := maxf(float(int(underworld_config.get("min_vertical_span", 180))), 180.0)
+
+	var top_base := maxf(320.0, bedrock_start_depth - 260.0)
+	var top_wave := _noise_2d_scaled(noise_cave_region, float(global_x), surface_base, 0.008, 91.0, 0.011, -37.0) * 36.0
+	var top_depth := top_base + top_wave
+
+	var bottom_target := top_depth + min_vertical_span + 28.0 + _noise_2d_scaled(noise_surface_feature, float(global_x), surface_base, 0.011, 17.0, 0.013, 43.0) * 26.0
+	var max_bottom := bedrock_hard_floor_depth - 4.0
+	var bottom_depth := minf(max_bottom, bottom_target)
+	if bottom_depth - top_depth < min_vertical_span:
+		top_depth = bottom_depth - min_vertical_span
+
+	var max_intrusion := 42.0
+	if bottom_depth > bedrock_start_depth + max_intrusion:
+		bottom_depth = bedrock_start_depth + max_intrusion
+		top_depth = minf(top_depth, bottom_depth - min_vertical_span)
+
+	top_depth = minf(top_depth, bedrock_start_depth - 6.0)
+	if bottom_depth <= top_depth + 20.0:
+		return {"enabled": false}
+
+	var escarpment_wave := _noise_2d_scaled(noise_tunnel, float(global_x), surface_base, 0.016, 71.0, 0.012, -29.0)
+	var escarpment_shift := 0.0
+	if escarpment_wave > 0.58:
+		escarpment_shift = 38.0
+	elif escarpment_wave < -0.56:
+		escarpment_shift = -24.0
+
+	var floor_base := top_depth + min_vertical_span * 0.72
+	var floor_noise := _noise_2d_scaled(noise_surface_feature, float(global_x), surface_base, 0.019, -47.0, 0.017, 61.0) * 28.0
+	var floor_depth := clampf(floor_base + floor_noise + escarpment_shift, top_depth + min_vertical_span * 0.58, bottom_depth - 6.0)
+
+	var island_gate := (_noise_2d_scaled(noise_cave_region, float(global_x), surface_base, 0.027, 113.0, 0.031, -19.0) + 1.0) * 0.5
+	var island_center_depth := top_depth + min_vertical_span * (0.33 + clampf(_noise_2d_scaled(noise_cave, float(global_x), surface_base, 0.021, 29.0, 0.018, -7.0) * 0.18, -0.18, 0.18))
+	var island_radius := 8.0 + ((_noise_2d_scaled(noise_tunnel, float(global_x), surface_base, 0.043, -23.0, 0.039, 13.0) + 1.0) * 0.5) * 10.0
+
+	return {
+		"enabled": true,
+		"top_depth": top_depth,
+		"bottom_depth": bottom_depth,
+		"floor_depth": floor_depth,
+		"route_center_x": float(int(underworld_config.get("primary_route_tile", int(center_x)))),
+		"island_gate": island_gate,
+		"island_center_depth": island_center_depth,
+		"island_radius": island_radius,
+		"escarpment_wave": escarpment_wave,
+	}
+
+func _get_underworld_tile_state(global_x: int, depth: float, underworld_column: Dictionary, boundary_config: Dictionary) -> Dictionary:
+	if not bool(underworld_column.get("enabled", false)):
+		return {
+			"active": false,
+		}
+
+	var top_depth := float(underworld_column.get("top_depth", 1000000.0))
+	var bottom_depth := float(underworld_column.get("bottom_depth", -1000000.0))
+	if depth < top_depth or depth > bottom_depth:
+		return {
+			"active": false,
+		}
+
+	if _is_hard_floor_depth(depth, boundary_config):
+		return {
+			"active": true,
+			"solid": true,
+			"region": "hard_floor",
+		}
+
+	var route_center_x := float(underworld_column.get("route_center_x", float(global_x)))
+	var route_offset := _noise_2d_scaled(noise_surface_feature, float(global_x), depth, 0.0, 0.0, 0.013, 11.0) * 9.0
+	var route_target_x := route_center_x + route_offset
+	var route_width := 4.5
+	if depth >= UNDERWORLD_ROUTE_START_DEPTH and depth <= top_depth + 26.0 and _get_wrapped_tile_distance(float(global_x), route_target_x) <= route_width:
+		return {
+			"active": true,
+			"solid": false,
+			"region": "route",
+		}
+
+	var floor_depth := float(underworld_column.get("floor_depth", bottom_depth - 6.0))
+	if depth >= floor_depth:
+		return {
+			"active": true,
+			"solid": true,
+			"region": "floor",
+		}
+
+	var escarpment_wave := float(underworld_column.get("escarpment_wave", 0.0))
+	if escarpment_wave > 0.62:
+		var cliff_top := top_depth + 26.0 + escarpment_wave * 26.0
+		if depth >= cliff_top and depth <= floor_depth:
+			return {
+				"active": true,
+				"solid": true,
+				"region": "cliff",
+			}
+
+	var island_gate := float(underworld_column.get("island_gate", 0.0))
+	if island_gate > 0.56:
+		var island_center_depth := float(underworld_column.get("island_center_depth", top_depth + 60.0))
+		var island_radius := float(underworld_column.get("island_radius", 8.0))
+		if absf(depth - island_center_depth) <= island_radius:
+			var blob := _noise_2d_scaled(noise_cave, float(global_x), depth, 0.081, 17.0, 0.093, -11.0)
+			if blob > -0.14:
+				return {
+					"active": true,
+					"solid": true,
+					"region": "island",
+				}
+
+	return {
+		"active": true,
+		"solid": false,
+		"region": "cavity",
+	}
+
+func _get_underworld_ore_uplift_multiplier(global_x: int, depth: float, surface_base: float, boundary_config: Dictionary, underworld_config: Dictionary) -> float:
+	if not bool(underworld_config.get("enabled", false)):
+		return 1.0
+	var column := _build_underworld_column_context(global_x, surface_base, boundary_config, underworld_config)
+	if not bool(column.get("enabled", false)):
+		return 1.0
+	var top_depth := float(column.get("top_depth", 1000000.0))
+	var bottom_depth := float(column.get("bottom_depth", -1000000.0))
+	if depth < top_depth - 120.0 or depth > bottom_depth + 48.0:
+		return 1.0
+	return maxf(1.0, float(underworld_config.get("ore_uplift_multiplier", 1.0)))
+
+func _resolve_strata_variant(base_stone: Vector2i, preferred: Vector2i, fallback: Vector2i) -> Vector2i:
+	if preferred != base_stone and preferred != dirt_tile and _tileset_has_atlas(tile_source_id, preferred):
+		return preferred
+	if fallback != base_stone and fallback != dirt_tile and _tileset_has_atlas(tile_source_id, fallback):
+		return fallback
+	return base_stone
+
 
 func _resolve_solid_atlas_for_depth(current_b_data: Dictionary, depth: float, boundary_config: Dictionary, dirt_threshold: float = 10.0, global_x: int = 0, global_y: int = 0) -> Vector2i:
 	if _is_hard_floor_depth(depth, boundary_config):
@@ -1243,11 +1413,17 @@ func _resolve_solid_atlas_for_depth(current_b_data: Dictionary, depth: float, bo
 
 	if _is_bedrock_transition_depth(depth, boundary_config):
 		var transition_ratio := _get_bedrock_transition_ratio(depth, boundary_config)
-		if transition_ratio >= 0.66:
+		if transition_ratio >= 0.74:
+			return bedrock_floor_tile
+		if transition_ratio >= 0.48:
 			return bedrock_transition_tile
 		if depth >= 260.0:
-			return deep_stone_tile
-		return underground_transition_tile
+			if deep_stone_tile != stone_tile and deep_stone_tile != dirt_tile:
+				return deep_stone_tile
+			return hard_rock_tile
+		if underground_transition_tile != dirt_tile:
+			return underground_transition_tile
+		return hard_rock_tile
 
 	if depth < 1.0:
 		return current_b_data.get("surface_block", grass_tile)
@@ -1259,22 +1435,49 @@ func _resolve_solid_atlas_for_depth(current_b_data: Dictionary, depth: float, bo
 	if global_y != 0:
 		depth_mod = noise_surface_feature.get_noise_2d(float(global_x) * 1.5, float(global_y) * 1.5) * 18.0
 	
-	var effective_depth = depth + depth_mod
+	var effective_depth: float = depth + depth_mod
+	var base_stone: Vector2i = current_b_data.get("stone_block", stone_tile)
+	var base_sub: Vector2i = current_b_data.get("sub_block", dirt_tile)
 
-	# Deep Layer (Start ~1200)
-	if effective_depth > 1200.0:
-		return deep_stone_tile
-		
-	# Mid Layer (Start ~260) - using Hard Rock/Alt Stone
-	if effective_depth > 260.0:
-		# Use hard_rock_tile (1, 3) as the mid-depth variant
-		return hard_rock_tile
+	# Keep non-default underground biome blocks (sand/ice/mud) stable.
+	if base_stone != stone_tile:
+		if effective_depth > dirt_threshold:
+			return base_stone
+		return base_sub
 
-	# Shallow Layer (Start after dirt)
-	if effective_depth > dirt_threshold:
-		return current_b_data.get("stone_block", stone_tile)
+	var mid_variant: Vector2i = _resolve_strata_variant(base_stone, hard_rock_tile, Vector2i(1, 3))
+	var deep_variant: Vector2i = _resolve_strata_variant(base_stone, deep_stone_tile, Vector2i(0, 3))
+	var terminal_variant: Vector2i = _resolve_strata_variant(base_stone, Vector2i(2, 3), Vector2i(3, 2))
+	var strata_noise: float = _noise_2d_scaled(noise_cave_region, float(global_x), float(global_y), 0.043, 19.0, 0.051, -31.0)
+	var strata_wave: float = _noise_2d_scaled(noise_surface_feature, float(global_x), float(global_y), 0.026, -47.0, 0.031, 37.0)
+	var strata_depth: float = effective_depth + strata_noise * 22.0 + strata_wave * 28.0
+
+	if strata_depth > 520.0:
+		var terminal_mix: float = _noise_2d_scaled(noise_cave, float(global_x), float(global_y), 0.061, 13.0, 0.071, -29.0)
+		if terminal_mix > 0.35:
+			return terminal_variant
+		if terminal_mix < -0.12:
+			return mid_variant
+		return deep_variant
+	if strata_depth > 360.0:
+		var deep_mix: float = _noise_2d_scaled(noise_cave_region, float(global_x), float(global_y), 0.052, -17.0, 0.047, 21.0)
+		if deep_mix > 0.45:
+			return terminal_variant
+		if deep_mix < -0.35:
+			return mid_variant
+		return deep_variant
+	if strata_depth > 230.0:
+		return deep_variant
+	if strata_depth > 140.0:
+		if strata_noise > -0.38:
+			return mid_variant
+		return base_stone
+	if strata_depth > dirt_threshold:
+		if strata_noise > 0.55:
+			return mid_variant
+		return base_stone
 		
-	return current_b_data.get("sub_block", dirt_tile)
+	return base_sub
 
 
 func _stage_write_tile(result: Dictionary, layer_idx: int, local_pos: Vector2i, tile_data: Dictionary, preserve_existing: bool) -> void:
@@ -1658,6 +1861,8 @@ func _make_surface_entrance_none() -> Dictionary:
 
 func _select_surface_entrance_type(relief_profile: String, biome_name: String, selector: float, is_spawn_safe: bool) -> String:
 	if is_spawn_safe:
+		if selector > 0.72:
+			return SURFACE_ENTRANCE_GENTLE_MOUTH
 		return SURFACE_ENTRANCE_NONE
 	if relief_profile == RELIEF_PROFILE_MOUNTAIN:
 		if selector > 0.84:
@@ -1716,9 +1921,39 @@ func _get_surface_entrance_info(global_x: int, surface_base: float, relief_profi
 	var slope_balance := absf(absf(slope_left) - absf(slope_right))
 	var can_hillside_cut := same_direction_slope and slope_mag > 0.22 and ruggedness > 4.8 and slope_balance > 0.08 and not is_peak_top
 	var region_budget := _get_surface_entrance_region_budget(global_x, is_spawn_safe)
-	var allow_any_entrance := region_budget > 0 and (can_hillside_cut or relief_profile != RELIEF_PROFILE_STARTER_FLAT)
+	var allow_spawn_entrance := is_spawn_safe and region_budget > 0
+	var allow_any_entrance := allow_spawn_entrance or (region_budget > 0 and (can_hillside_cut or relief_profile != RELIEF_PROFILE_STARTER_FLAT))
 	if not allow_any_entrance:
 		return best
+
+	# 保证出生区外围存在至少一条可发现的温和下探入口，避免开局只能硬挖竖井。
+	if allow_spawn_entrance:
+		var spawn_anchor := 0
+		var world_topology = _get_world_topology()
+		if world_topology and world_topology.has_method("get_spawn_anchor_tile"):
+			spawn_anchor = int(world_topology.get_spawn_anchor_tile())
+		var anchor_x := float(spawn_anchor + 96)
+		var anchor_dist := _get_wrapped_tile_distance(float(global_x), anchor_x)
+		if anchor_dist <= 16.0:
+			var width := 6.2
+			var depth := clampf(9.5 + ruggedness * 0.32, 9.5, 14.0)
+			var route_floor := clampf(lane_y - 2.0, surface_base + depth + 6.0, surface_base + depth + 20.0)
+			return {
+				"type": SURFACE_ENTRANCE_GENTLE_MOUTH,
+				"family": SURFACE_ENTRANCE_GENTLE_MOUTH,
+				"center_x": anchor_x,
+				"lip_y": floor(surface_base),
+				"width": width,
+				"depth": depth,
+				"flare": 2.2,
+				"side_bias": 1.0,
+				"route_entry_x": anchor_x + 1.0,
+				"route_exit_x": anchor_x + 4.0,
+				"route_floor": route_floor,
+				"route_width": 2.35,
+				"depth_band_id": _get_depth_band_id(route_floor - surface_base),
+				"route_seed": spawn_anchor + 8801,
+			}
 	var families := [
 		{"spacing": 149, "selector_salt": 701, "center_salt": 709, "warp_scale": 0.39, "jitter_scale": 0.47},
 		{"spacing": 233, "selector_salt": 811, "center_salt": 823, "warp_scale": 0.27, "jitter_scale": 0.42},
@@ -2127,9 +2362,12 @@ func _build_surface_column_context(global_x: int) -> Dictionary:
 	var surface_biome := _get_surface_biome_from_climate(global_x, 0)
 	var transition_context := _build_surface_transition_context(global_x, surface_biome)
 	var relief_profile := _select_surface_relief_profile(global_x, surface_biome)
+	var macro_region_id := _compose_underground_macro_region_id(surface_biome, relief_profile)
 	var surface_base := _get_surface_height_for_biome(global_x, surface_biome)
 	var is_spawn_safe := _is_spawn_safe_tile_x(global_x)
 	var lane_y := _get_cave_lane_y(global_x, surface_base)
+	var sample_depth := maxf(lane_y - surface_base, 28.0)
+	var underground_zone_id := _get_underground_zone_id(global_x, sample_depth, surface_biome, relief_profile)
 	var shape_metrics := _build_surface_shape_metrics(global_x)
 	var entrance_info := _get_surface_entrance_info(global_x, surface_base, relief_profile, surface_biome, is_spawn_safe, lane_y, shape_metrics)
 	var mountain_breach_info := _get_mountain_worm_breach_info(global_x, surface_base, relief_profile, shape_metrics, lane_y, is_spawn_safe)
@@ -2144,6 +2382,8 @@ func _build_surface_column_context(global_x: int) -> Dictionary:
 		"relief_profile": relief_profile,
 		"surface_base": surface_base,
 		"is_spawn_safe": is_spawn_safe,
+		"macro_region_id": macro_region_id,
+		"underground_zone_id": underground_zone_id,
 		"shape_metrics": shape_metrics,
 		"lane_y": lane_y,
 		"entrance_info": entrance_info,
@@ -2184,6 +2424,73 @@ func _hash01(index: int, salt: int) -> float:
 	n = n ^ (n >> 16)
 	return float(n & 0x7fffffff) / 2147483647.0
 
+func _depth_band_salt(depth_band_id: String) -> int:
+	match depth_band_id:
+		"surface":
+			return 11
+		"shallow_underground":
+			return 23
+		"mid_cavern":
+			return 37
+		"deep":
+			return 53
+		"terminal":
+			return 71
+		_:
+			return 89
+
+func _compose_underground_macro_region_id(surface_biome: BiomeType, relief_profile: String) -> String:
+	var base_region := _get_surface_biome_name(surface_biome)
+	if relief_profile == RELIEF_PROFILE_MOUNTAIN or relief_profile == RELIEF_PROFILE_RIDGE:
+		return "%s_highland" % base_region
+	if relief_profile == RELIEF_PROFILE_BASIN:
+		return "%s_basin" % base_region
+	return "%s_%s" % [base_region, relief_profile]
+
+func _get_underground_zone_id(global_x: int, depth: float, surface_biome: BiomeType, relief_profile: String) -> String:
+	var depth_band_id := _get_depth_band_id(depth)
+	var macro_region := _compose_underground_macro_region_id(surface_biome, relief_profile)
+	var zone_val := (_noise_2d_scaled(noise_cave_region, float(global_x), depth, 0.011, 73.0, 0.019, -41.0) + 1.0) * 0.5
+	var zone_bucket := int(floor(zone_val * 3.0))
+	zone_bucket = clampi(zone_bucket, 0, 2)
+	return "%s|%s|z%d" % [depth_band_id, macro_region, zone_bucket]
+
+func _has_large_cavern_budget(global_x: int, depth: float, depth_band_id: String, zone_id: String) -> bool:
+	if depth <= 42.0:
+		return false
+	if depth_band_id == "surface" or depth_band_id == "shallow_underground":
+		return false
+	var span := 192
+	var band_salt := _depth_band_salt(depth_band_id)
+	var zone_salt := int(absi(hash(zone_id)) % 977)
+	var window_idx := int(floor(float(global_x) / float(span)))
+	var window_gate := _hash01(window_idx + int(floor(depth / 96.0)), 8801 + band_salt + zone_salt)
+	var depth_gain := clampf((depth - 180.0) / 420.0, 0.0, 1.0)
+	var min_gate := lerpf(0.40, 0.28, depth_gain)
+	if window_gate < min_gate:
+		return false
+	var center := float(window_idx * span) + float(span) * 0.5
+	center += (_hash01(window_idx, 8923 + band_salt) - 0.5) * float(span) * 0.34
+	var half_width := 22.0 + _hash01(window_idx, 9049 + zone_salt) * (16.0 + depth_gain * 10.0)
+	return _get_wrapped_tile_distance(float(global_x), center) <= half_width
+
+func _is_long_route_connector_zone(global_x: int, depth: float, zone_id: String) -> bool:
+	if depth < 64.0:
+		return false
+	var span := 256
+	var zone_salt := int(absi(hash(zone_id)) % 977)
+	var window_idx := int(floor(float(global_x) / float(span)))
+	var gate := _hash01(window_idx, 9473 + zone_salt)
+	if gate < 0.49:
+		return false
+	var center := float(window_idx * span) + float(span) * 0.5
+	center += (_hash01(window_idx, 9613 + zone_salt) - 0.5) * float(span) * 0.28
+	if _get_wrapped_tile_distance(float(global_x), center) > 24.0:
+		return false
+	var depth_center := 96.0 + _hash01(window_idx, 9749 + zone_salt) * 280.0
+	var depth_tolerance := 20.0 + clampf((depth - 220.0) / 380.0, 0.0, 1.0) * 12.0
+	return absf(depth - depth_center) <= depth_tolerance
+
 func _get_vertical_connector_distance(global_x: int) -> float:
 	var anchor_a := (noise_cave_region.get_noise_1d(global_x * 0.19 + 33.0) + 1.0) * 0.5
 	var anchor_b := (noise_tunnel.get_noise_1d(global_x * 0.11 - 57.0) + 1.0) * 0.5
@@ -2200,7 +2507,7 @@ func _get_vertical_connector_depth_distance(global_x: int, depth: float) -> floa
 
 func _should_place_vertical_connector(global_x: int, depth: float) -> bool:
 	# Keep sparse X anchors but remove strict Y-periodic repetition.
-	if depth <= 36.0 or depth >= 240.0:
+	if depth <= 36.0 or depth >= 420.0:
 		return false
 	if _get_vertical_connector_distance(global_x) >= 4.0:
 		return false
@@ -2226,11 +2533,13 @@ func _get_cave_lane_y(global_x: int, surface_base: float) -> float:
 	var local_sway := noise_cave.get_noise_1d(global_x + 133) * 4.5
 	var lane_depth := 60.0 + macro + mid + drift + local_sway
 	var lane_y := surface_base + lane_depth
-	return clampf(lane_y, surface_base + 30.0, surface_base + 240.0)
+	return clampf(lane_y, surface_base + 30.0, surface_base + 420.0)
 
-func _get_cave_region_info_from_context(global_x: int, global_y: int, surface_base: float, relief_profile: String, lane_y: float) -> Dictionary:
+func _get_cave_region_info_from_context(global_x: int, global_y: int, surface_base: float, relief_profile: String, lane_y: float, surface_biome: BiomeType = BiomeType.FOREST) -> Dictionary:
 	var depth = global_y - surface_base
 	var depth_band_id := _get_depth_band_id(depth)
+	var macro_region_id := _compose_underground_macro_region_id(surface_biome, relief_profile)
+	var underground_zone_id := _get_underground_zone_id(global_x, depth, surface_biome, relief_profile)
 	var transition_target := _get_depth_band_id(depth + 18.0)
 	var info = {
 		"region": CAVE_REGION_SURFACE,
@@ -2238,6 +2547,8 @@ func _get_cave_region_info_from_context(global_x: int, global_y: int, surface_ba
 		"openness": 1.0,
 		"depth": depth,
 		"depth_band_id": depth_band_id,
+		"macro_region_id": macro_region_id,
+		"underground_zone_id": underground_zone_id,
 		"depth_band_transition_to": transition_target if transition_target != depth_band_id else "",
 		"archetype_id": CAVE_ARCHETYPE_SOLID_MASS,
 		"relief_profile": relief_profile,
@@ -2250,20 +2561,33 @@ func _get_cave_region_info_from_context(global_x: int, global_y: int, surface_ba
 	var connector_dist = _get_vertical_connector_distance(global_x)
 	var chamber_val = noise_cave_region.get_noise_2d(global_x * 0.025, global_y * 0.025)
 	var pocket_val = noise_cave_region.get_noise_2d(global_x * 0.055 + 120.0, global_y * 0.055 - 87.0)
+	var deep_gain := clampf((depth - 180.0) / 420.0, 0.0, 1.0)
+	var open_thresh_primary := lerpf(0.48, 0.34, deep_gain)
+	var open_thresh_secondary := lerpf(0.78, 0.56, deep_gain)
+	var chamber_thresh := lerpf(0.62, 0.46, deep_gain)
+	var pocket_thresh := lerpf(0.76, 0.62, deep_gain)
 
 	info["region"] = CAVE_REGION_SOLID
 	info["reachable"] = false
 	info["openness"] = 0.0
 
-	if _should_place_vertical_connector(global_x, depth):
+	if _is_long_route_connector_zone(global_x, depth, underground_zone_id):
+		info["region"] = CAVE_REGION_CONNECTOR
+		info["reachable"] = true
+		info["openness"] = 0.62
+	elif _should_place_vertical_connector(global_x, depth):
 		info["region"] = CAVE_REGION_CONNECTOR
 		info["reachable"] = true
 		info["openness"] = 0.55
-	elif depth > 48.0 and chamber_val > 0.78:
+	elif _has_large_cavern_budget(global_x, depth, depth_band_id, underground_zone_id) and depth > 52.0 and chamber_val > open_thresh_primary:
+		info["region"] = CAVE_REGION_OPEN_CAVERN
+		info["reachable"] = true
+		info["openness"] = 0.92
+	elif depth > 48.0 and chamber_val > open_thresh_secondary:
 		info["region"] = CAVE_REGION_OPEN_CAVERN
 		info["reachable"] = true
 		info["openness"] = 0.9
-	elif depth > 40.0 and chamber_val > 0.62:
+	elif depth > 40.0 and chamber_val > chamber_thresh:
 		info["region"] = CAVE_REGION_CHAMBER
 		info["reachable"] = true
 		info["openness"] = 0.72
@@ -2271,10 +2595,14 @@ func _get_cave_region_info_from_context(global_x: int, global_y: int, surface_ba
 		info["region"] = CAVE_REGION_TUNNEL
 		info["reachable"] = true
 		info["openness"] = 0.35
-	elif depth > 54.0 and pocket_val > 0.76:
+	elif depth > 54.0 and pocket_val > pocket_thresh:
 		info["region"] = CAVE_REGION_POCKET
 		info["reachable"] = lane_dist < 16.0 or chamber_val > 0.5 or connector_dist < 7.0
 		info["openness"] = 0.18
+	elif depth > 300.0 and chamber_val > 0.44:
+		info["region"] = CAVE_REGION_CHAMBER
+		info["reachable"] = true
+		info["openness"] = 0.74
 
 	if depth_band_id == "mid_cavern" and String(info.get("region", "")) == CAVE_REGION_CHAMBER:
 		info["openness"] = maxf(float(info.get("openness", 0.72)), 0.78)
@@ -2289,7 +2617,8 @@ func get_cave_region_info_at_tile(global_x: int, global_y: int) -> Dictionary:
 	var surface_base = get_surface_height_at(global_x)
 	var relief_profile := get_surface_relief_profile_at_tile(global_x)
 	var lane_y = _get_cave_lane_y(global_x, surface_base)
-	return _get_cave_region_info_from_context(global_x, global_y, surface_base, relief_profile, lane_y)
+	var surface_biome := _get_surface_biome_from_climate(global_x, 0)
+	return _get_cave_region_info_from_context(global_x, global_y, surface_base, relief_profile, lane_y, surface_biome)
 
 func get_cave_region_info_at_pos(global_pos: Vector2) -> Dictionary:
 	var tile_x = int(global_pos.x / 16.0)
@@ -2302,16 +2631,28 @@ func get_underground_generation_metadata_at_tile(global_x: int, global_y: int) -
 	var relief_profile: String = column_context.get("relief_profile", RELIEF_PROFILE_ROLLING)
 	var lane_y: float = column_context.get("lane_y", surface_base + 54.0)
 	var entrance_info: Dictionary = column_context.get("entrance_info", _make_surface_entrance_none())
-	var cave_info := _get_cave_region_info_from_context(global_x, global_y, surface_base, relief_profile, lane_y)
+	var surface_biome: BiomeType = column_context.get("surface_biome", BiomeType.FOREST)
+	var cave_info := _get_cave_region_info_from_context(global_x, global_y, surface_base, relief_profile, lane_y, surface_biome)
 	var depth := float(global_y) - surface_base
+	var boundary_config := _get_depth_boundary_config()
+	var underworld_config := _get_underworld_generation_config()
+	var underworld_column := _build_underworld_column_context(global_x, surface_base, boundary_config, underworld_config)
+	var underworld_state := _get_underworld_tile_state(global_x, depth, underworld_column, boundary_config)
+	var underworld_ore_uplift := _get_underworld_ore_uplift_multiplier(global_x, depth, surface_base, boundary_config, underworld_config)
 	return {
 		"entrance_family": String(entrance_info.get("family", entrance_info.get("type", SURFACE_ENTRANCE_NONE))),
 		"entrance_type": String(entrance_info.get("type", SURFACE_ENTRANCE_NONE)),
 		"cave_region": String(cave_info.get("region", CAVE_REGION_SOLID)),
 		"cave_archetype_id": String(cave_info.get("archetype_id", CAVE_ARCHETYPE_SOLID_MASS)),
+		"macro_region_id": String(cave_info.get("macro_region_id", "unknown")),
+		"underground_zone_id": String(cave_info.get("underground_zone_id", "unknown")),
 		"depth_band_id": String(cave_info.get("depth_band_id", _get_depth_band_id(depth))),
 		"depth_band_transition_to": String(cave_info.get("depth_band_transition_to", "")),
 		"reachable": bool(cave_info.get("reachable", false)),
+		"underworld_enabled": bool(underworld_config.get("enabled", false)),
+		"underworld_active": bool(underworld_state.get("active", false)),
+		"underworld_region": String(underworld_state.get("region", "none")),
+		"underworld_ore_density_multiplier": underworld_ore_uplift,
 	}
 
 func get_underground_generation_metadata_at_pos(global_pos: Vector2) -> Dictionary:
@@ -2467,74 +2808,333 @@ func _should_carve_accessible_cave_with_context(global_x: int, global_y: int, su
 func _should_carve_accessible_cave(global_x: int, global_y: int, surface_base: float, is_spawn_protected: bool) -> bool:
 	var lane_y = _get_cave_lane_y(global_x, surface_base)
 	var relief_profile := get_surface_relief_profile_at_tile(global_x)
-	var cave_info = _get_cave_region_info_from_context(global_x, global_y, surface_base, relief_profile, lane_y)
 	var surface_biome := _get_surface_biome_from_climate(global_x, 0)
+	var cave_info = _get_cave_region_info_from_context(global_x, global_y, surface_base, relief_profile, lane_y, surface_biome)
 	return _should_carve_accessible_cave_with_context(global_x, global_y, surface_base, lane_y, cave_info, is_spawn_protected, surface_biome)
 
 func _apply_surface_features(coord: Vector2i, result: Dictionary, column_contexts: Array) -> void:
+	var chunk_origin_y := coord.y * 64
 	for x in range(3, 61):
 		var global_x = coord.x * 64 + x
 		var column_context: Dictionary = column_contexts[x]
 		var surface_base = float(column_context.get("surface_base", 300.0))
-		var top_y = int(floor(surface_base))
-		var feature = _get_surface_feature_tag_from_context(global_x, top_y, top_y, int(column_context.get("surface_biome", BiomeType.FOREST)))
+		var global_top_y = int(floor(surface_base))
+		var top_y = global_top_y - chunk_origin_y
+		if top_y < -8 or top_y > 72:
+			continue
+		var feature = _get_surface_feature_tag_from_context(global_x, global_top_y, global_top_y, int(column_context.get("surface_biome", BiomeType.FOREST)))
 		if feature == SURFACE_FEATURE_NONE:
 			continue
-		if _is_in_structure_forbidden_zone(global_x, top_y):
+		if _is_in_structure_forbidden_zone(global_x, global_top_y):
 			continue
 
 		match feature:
 			SURFACE_FEATURE_DESERT_SPIRE:
 				for h in range(1, 4):
-					result[0][Vector2i(x, top_y - h)] = {"source": tile_source_id, "atlas": biome_params[BiomeType.DESERT]["stone_block"]}
+					var p := Vector2i(x, top_y - h)
+					if p.y >= 0 and p.y < 64:
+						result[0][p] = {"source": tile_source_id, "atlas": biome_params[BiomeType.DESERT]["stone_block"]}
 			SURFACE_FEATURE_FROST_SPIRE:
 				for h in range(1, 5):
-					result[0][Vector2i(x, top_y - h)] = {"source": tile_source_id, "atlas": biome_params[BiomeType.TUNDRA]["stone_block"]}
+					var p := Vector2i(x, top_y - h)
+					if p.y >= 0 and p.y < 64:
+						result[0][p] = {"source": tile_source_id, "atlas": biome_params[BiomeType.TUNDRA]["stone_block"]}
 			SURFACE_FEATURE_MUD_MOUND:
 				for ox in range(-1, 2):
-					result[0][Vector2i(x + ox, top_y - 1)] = {"source": tile_source_id, "atlas": biome_params[BiomeType.SWAMP]["surface_block"]}
+					var p := Vector2i(x + ox, top_y - 1)
+					if p.x >= 0 and p.x < 64 and p.y >= 0 and p.y < 64:
+						result[0][p] = {"source": tile_source_id, "atlas": biome_params[BiomeType.SWAMP]["surface_block"]}
 			SURFACE_FEATURE_GRASS_KNOLL:
-				result[0][Vector2i(x, top_y - 1)] = {"source": grass_dirt_source_id, "atlas": grass_tile}
+				var p := Vector2i(x, top_y - 1)
+				if p.y >= 0 and p.y < 64:
+					result[0][p] = {"source": grass_dirt_source_id, "atlas": grass_tile}
 			SURFACE_FEATURE_STONE_OUTCROP:
 				for ox in range(-1, 2):
 					if ox == 0:
-						result[0][Vector2i(x + ox, top_y - 1)] = {"source": tile_source_id, "atlas": stone_tile}
+						var p := Vector2i(x + ox, top_y - 1)
+						if p.x >= 0 and p.x < 64 and p.y >= 0 and p.y < 64:
+							result[0][p] = {"source": tile_source_id, "atlas": stone_tile}
 					elif abs(ox) == 1 and (noise_surface_feature.get_noise_2d(global_x + ox, 20) > -0.2):
-						result[0][Vector2i(x + ox, top_y)] = {"source": tile_source_id, "atlas": stone_tile}
+						var p := Vector2i(x + ox, top_y)
+						if p.x >= 0 and p.x < 64 and p.y >= 0 and p.y < 64:
+							result[0][p] = {"source": tile_source_id, "atlas": stone_tile}
 
-func _apply_resource_stage(coord: Vector2i, result: Dictionary, column_contexts: Array, boundary_config: Dictionary) -> void:
+const ORE_DEPOSIT_FAMILY_CLUSTER := "cluster"
+
+func _is_ore_atlas(atlas: Vector2i) -> bool:
+	return atlas == iron_tile \
+		or atlas == copper_tile \
+		or atlas == gold_tile \
+		or atlas == diamond_tile \
+		or atlas == magic_crystal_tile \
+		or atlas == staff_core_tile \
+		or atlas == magic_speed_stone_tile
+
+func _get_ore_cluster_size_for_tile(mineral_tile: Vector2i, depth: float) -> int:
+	var size := 10
+	if mineral_tile == copper_tile:
+		size = 13
+	elif mineral_tile == iron_tile:
+		size = 12
+	elif mineral_tile == gold_tile:
+		size = 10
+	elif mineral_tile == magic_crystal_tile:
+		size = 10
+	elif mineral_tile == staff_core_tile or mineral_tile == magic_speed_stone_tile or mineral_tile == diamond_tile:
+		size = 7
+	if depth > 220.0:
+		size += 3
+	return maxi(size, 3)
+
+func _is_valid_ore_host_local(coord: Vector2i, local_pos: Vector2i, result: Dictionary, column_contexts: Array, boundary_config: Dictionary) -> bool:
+	if local_pos.x < 0 or local_pos.x >= 64 or local_pos.y < 0 or local_pos.y >= 64:
+		return false
+	if not result.has(0) or not result[0].has(local_pos):
+		return false
+	if local_pos.x >= column_contexts.size():
+		return false
+
+	var column_context: Dictionary = column_contexts[local_pos.x]
+	var surface_base := float(column_context.get("surface_base", 300.0))
+	var is_spawn_safe_column := bool(column_context.get("is_spawn_safe", false))
+	var global_x := coord.x * 64 + local_pos.x
+	var global_y := coord.y * 64 + local_pos.y
+	var depth := float(global_y) - surface_base
+	if depth <= 10.0:
+		return false
+	if _is_stage_preserve_zone(global_x, depth, is_spawn_safe_column, boundary_config):
+		return false
+	if _is_bedrock_transition_depth(depth, boundary_config):
+		return false
+	return true
+
+func _grow_ore_cluster(
+	coord: Vector2i,
+	center_local: Vector2i,
+	mineral_tile: Vector2i,
+	target_cells: int,
+	spread_chance: float,
+	branch_chance: float,
+	rng: RandomNumberGenerator,
+	result: Dictionary,
+	column_contexts: Array,
+	boundary_config: Dictionary,
+	placements: Dictionary
+) -> int:
+	var placed := 0
+	var visited := {}
+	var frontier: Array[Vector2i] = [center_local]
+	var dirs: Array[Vector2i] = [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
+
+	while not frontier.is_empty() and placed < target_cells:
+		var pick_idx := rng.randi_range(0, frontier.size() - 1)
+		var p: Vector2i = frontier[pick_idx]
+		frontier.remove_at(pick_idx)
+
+		var key := "%d,%d" % [p.x, p.y]
+		if visited.has(key):
+			continue
+		visited[key] = true
+
+		if not _is_valid_ore_host_local(coord, p, result, column_contexts, boundary_config):
+			continue
+
+		placements[p] = mineral_tile
+		placed += 1
+
+		for dir in dirs:
+			if rng.randf() < spread_chance:
+				frontier.append(p + dir)
+
+		if rng.randf() < branch_chance:
+			frontier.append(p + Vector2i(rng.randi_range(-1, 1), rng.randi_range(-1, 1)))
+
+	return placed
+
+func _collect_chunk_ore_deposits(coord: Vector2i, result: Dictionary, column_contexts: Array, boundary_config: Dictionary) -> Dictionary:
+	var placements := {}
 	if not result.has(0):
-		return
-	for x in range(64):
+		return {
+			"family": ORE_DEPOSIT_FAMILY_CLUSTER,
+			"cluster_count": 0,
+			"underworld_uplift_hits": 0,
+			"placements": placements,
+		}
+
+	var cluster_count := 0
+	var underworld_uplift_hits := 0
+	var underworld_config := _get_underworld_generation_config()
+	for x in range(2, 62, 2):
 		if x >= column_contexts.size():
 			continue
 		var column_context: Dictionary = column_contexts[x]
 		var surface_base := float(column_context.get("surface_base", 300.0))
 		var is_spawn_safe_column := bool(column_context.get("is_spawn_safe", false))
-		for y in range(64):
-			var local_pos := Vector2i(x, y)
-			if not result[0].has(local_pos):
+		var relief_profile := String(column_context.get("relief_profile", RELIEF_PROFILE_ROLLING))
+		var surface_biome: BiomeType = column_context.get("surface_biome", BiomeType.FOREST)
+
+		for y in range(10, 62, 2):
+			var center_local := Vector2i(x, y)
+			if not _is_valid_ore_host_local(coord, center_local, result, column_contexts, boundary_config):
 				continue
 
 			var global_x := coord.x * 64 + x
 			var global_y := coord.y * 64 + y
 			var depth := float(global_y) - surface_base
-			if depth <= 10.0:
-				continue
-			if _is_stage_preserve_zone(global_x, depth, is_spawn_safe_column, boundary_config):
-				continue
-			if _is_bedrock_transition_depth(depth, boundary_config):
+			var zone_id := _get_underground_zone_id(global_x, depth, surface_biome, relief_profile)
+			var gate := (noise_mineral_common.get_noise_2d(global_x * 0.37 + 17.0, global_y * 0.31 - 13.0) + 1.0) * 0.5
+			var ore_uplift := _get_underworld_ore_uplift_multiplier(global_x, depth, surface_base, boundary_config, underworld_config)
+
+			var center_prob := 0.12
+			if depth > 80.0:
+				center_prob = 0.18
+			if depth > 180.0:
+				center_prob = 0.24
+			if depth > 300.0:
+				center_prob = 0.30
+			if is_spawn_safe_column:
+				center_prob *= 0.78
+			if ore_uplift > 1.0:
+				center_prob *= ore_uplift
+				underworld_uplift_hits += 1
+			center_prob = minf(center_prob, 0.92)
+			if gate < (1.0 - center_prob):
 				continue
 
 			var mineral_tile := _get_mineral_at(global_x, global_y, depth)
 			if mineral_tile == Vector2i(-1, -1):
 				continue
 
-			var current_tile: Dictionary = result[0][local_pos]
-			_stage_write_tile(result, 0, local_pos, {
-				"source": int(current_tile.get("source", tile_source_id)),
-				"atlas": mineral_tile,
-			}, false)
+			var zone_salt := int(absi(hash(zone_id)) % 2048)
+			var rng := RandomNumberGenerator.new()
+			rng.seed = int((global_x + 4096) * 1315423911) ^ int((global_y + 8192) * 2654435761) ^ int(seed_value + zone_salt * 97)
+
+			var target_cells := _get_ore_cluster_size_for_tile(mineral_tile, depth) + rng.randi_range(-1, 3)
+			target_cells = maxi(target_cells, 3)
+			var spread_chance := 0.72 if depth <= 180.0 else 0.76
+			var branch_chance := 0.24 if depth <= 220.0 else 0.30
+
+			var placed := _grow_ore_cluster(
+				coord,
+				center_local,
+				mineral_tile,
+				target_cells,
+				spread_chance,
+				branch_chance,
+				rng,
+				result,
+				column_contexts,
+				boundary_config,
+				placements
+			)
+			if placed > 0:
+				cluster_count += 1
+
+	return {
+		"family": ORE_DEPOSIT_FAMILY_CLUSTER,
+		"cluster_count": cluster_count,
+		"underworld_uplift_hits": underworld_uplift_hits,
+		"placements": placements,
+	}
+
+func _collect_ore_component_metrics(layer0: Dictionary) -> Dictionary:
+	var ore_map := {}
+	for key in layer0.keys():
+		if not (key is Vector2i):
+			continue
+		var pos: Vector2i = key
+		var tile_variant = layer0.get(pos, {})
+		if not (tile_variant is Dictionary):
+			continue
+		var tile_data: Dictionary = tile_variant
+		var atlas_variant = tile_data.get("atlas", null)
+		if not (atlas_variant is Vector2i):
+			continue
+		var atlas: Vector2i = atlas_variant
+		if _is_ore_atlas(atlas):
+			ore_map[pos] = true
+
+	if ore_map.is_empty():
+		return {
+			"ore_cells": 0,
+			"component_count": 0,
+			"largest_component": 0,
+			"avg_component_size": 0.0,
+			"single_cell_ratio": 0.0,
+		}
+
+	var visited := {}
+	var component_sizes: Array[int] = []
+	var dirs: Array[Vector2i] = [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
+
+	for ore_pos_variant in ore_map.keys():
+		var ore_pos: Vector2i = ore_pos_variant
+		var start_key := "%d,%d" % [ore_pos.x, ore_pos.y]
+		if visited.has(start_key):
+			continue
+
+		var queue: Array[Vector2i] = [ore_pos]
+		visited[start_key] = true
+		var comp_size := 0
+
+		while not queue.is_empty():
+			var current: Vector2i = queue.pop_back()
+			comp_size += 1
+			for dir in dirs:
+				var next_pos := current + dir
+				if not ore_map.has(next_pos):
+					continue
+				var next_key := "%d,%d" % [next_pos.x, next_pos.y]
+				if visited.has(next_key):
+					continue
+				visited[next_key] = true
+				queue.append(next_pos)
+
+		component_sizes.append(comp_size)
+
+	var largest := 0
+	var total_cells := 0
+	var singles := 0
+	for size in component_sizes:
+		total_cells += size
+		largest = maxi(largest, size)
+		if size == 1:
+			singles += 1
+
+	return {
+		"ore_cells": total_cells,
+		"component_count": component_sizes.size(),
+		"largest_component": largest,
+		"avg_component_size": float(total_cells) / maxf(float(component_sizes.size()), 1.0),
+		"single_cell_ratio": float(singles) / maxf(float(component_sizes.size()), 1.0),
+	}
+
+func _apply_resource_stage(coord: Vector2i, result: Dictionary, column_contexts: Array, boundary_config: Dictionary) -> void:
+	if not result.has(0):
+		return
+	var ore_build := _collect_chunk_ore_deposits(coord, result, column_contexts, boundary_config)
+	var placements: Dictionary = ore_build.get("placements", {})
+	for pos_variant in placements.keys():
+		if not (pos_variant is Vector2i):
+			continue
+		var local_pos: Vector2i = pos_variant
+		if not result[0].has(local_pos):
+			continue
+		var current_tile: Dictionary = result[0][local_pos]
+		var mineral_tile: Vector2i = placements[local_pos]
+		_stage_write_tile(result, 0, local_pos, {
+			"source": int(current_tile.get("source", tile_source_id)),
+			"atlas": mineral_tile,
+		}, false)
+
+	var ore_diag := {
+		"family": String(ore_build.get("family", ORE_DEPOSIT_FAMILY_CLUSTER)),
+		"cluster_count": int(ore_build.get("cluster_count", 0)),
+		"underworld_uplift_hits": int(ore_build.get("underworld_uplift_hits", 0)),
+		"placed_cells": placements.size(),
+	}
+	ore_diag["component_metrics"] = _collect_ore_component_metrics(result.get(0, {}))
+	result["_ore_generation"] = ore_diag
 
 func _mark_liquid_contact_tile(result: Dictionary, local_pos: Vector2i, liquid_type: String) -> void:
 	# Runtime liquid overlay now handles water presentation; avoid writing dark edge-contact
@@ -3046,11 +3646,13 @@ func _generate_chunk_cells_critical_fast(coord: Vector2i) -> Dictionary:
 	var result = { 0: {}, 1: {}, 2: {} }
 	var chunk_origin: Vector2i = coord * 64
 	var boundary_config := _get_depth_boundary_config()
+	var underworld_config := _get_underworld_generation_config()
 
 	for x in range(64):
 		var global_x: int = chunk_origin.x + x
 		var surface_biome: BiomeType = _get_surface_biome_from_climate(global_x, 0)
 		var surface_base: float = _get_surface_height_critical_fast(global_x, surface_biome)
+		var underworld_column := _build_underworld_column_context(global_x, surface_base, boundary_config, underworld_config)
 		var lane_y: float = _get_cave_lane_y(global_x, surface_base)
 		var is_spawn_safe_column: bool = _is_spawn_safe_tile_x(global_x)
 		var transition_context: Dictionary = _build_surface_transition_context(global_x, surface_biome)
@@ -3095,6 +3697,10 @@ func _generate_chunk_cells_critical_fast(coord: Vector2i) -> Dictionary:
 				var reseal_gate := (noise_surface_feature.get_noise_2d(global_x * 0.037 + 43.0, global_y * 0.051 - 17.0) + 1.0) * 0.5
 				if reseal_gate < reseal_ratio:
 					is_solid = true
+
+			var underworld_state := _get_underworld_tile_state(global_x, depth, underworld_column, boundary_config)
+			if bool(underworld_state.get("active", false)):
+				is_solid = bool(underworld_state.get("solid", false))
 
 			if is_solid:
 				var custom_source_id = int(current_data.get("source_id", tile_source_id))
@@ -3146,11 +3752,13 @@ func generate_chunk_cells(coord: Vector2i, critical_only: bool = false) -> Dicti
 	var chunk_origin = coord * 64
 	var column_contexts: Array = []
 	var boundary_config := _get_depth_boundary_config()
+	var underworld_config := _get_underworld_generation_config()
 	
 	for x in range(64):
 		var global_x = chunk_origin.x + x
 		var column_context := _build_surface_column_context(global_x)
 		var surface_base: float = column_context.get("surface_base", 300.0)
+		var underworld_column := _build_underworld_column_context(global_x, surface_base, boundary_config, underworld_config)
 		var is_spawn_safe_column: bool = column_context.get("is_spawn_safe", false)
 		var transition_context: Dictionary = column_context.get("transition_context", {})
 		var lane_y: float = column_context.get("lane_y", surface_base + 54.0)
@@ -3187,7 +3795,7 @@ func generate_chunk_cells(coord: Vector2i, critical_only: bool = false) -> Dicti
 				elif _should_carve_entrance_route(global_x, global_y, entrance_info):
 					is_solid = false
 				else:
-					cave_info = _get_cave_region_info_from_context(global_x, global_y, surface_base, relief_profile, lane_y)
+					cave_info = _get_cave_region_info_from_context(global_x, global_y, surface_base, relief_profile, lane_y, surface_biome)
 			
 			# 3. 深度洞穴
 			if is_solid and not _is_hard_floor_depth(depth, boundary_config):
@@ -3202,6 +3810,10 @@ func generate_chunk_cells(coord: Vector2i, critical_only: bool = false) -> Dicti
 				var reseal_gate := (noise_surface_feature.get_noise_2d(global_x * 0.037 + 43.0, global_y * 0.051 - 17.0) + 1.0) * 0.5
 				if reseal_gate < reseal_ratio:
 					is_solid = true
+
+			var underworld_state := _get_underworld_tile_state(global_x, depth, underworld_column, boundary_config)
+			if bool(underworld_state.get("active", false)):
+				is_solid = bool(underworld_state.get("solid", false))
 					
 			if is_solid:
 				var current_b_data = biome_params.get(current_biome, biome_params[BiomeType.FOREST])
@@ -3242,7 +3854,7 @@ func generate_chunk_cells(coord: Vector2i, critical_only: bool = false) -> Dicti
 				# 在地下深处强制放置背景墙以填补洞穴
 				var bg_tile = bg_data["sub_block"]
 				if global_y > surface_base + 30.0:
-					bg_tile = bg_data["stone_block"]
+					bg_tile = _resolve_solid_atlas_for_depth(bg_data, depth, boundary_config, dirt_threshold, global_x, global_y)
 				if _is_hard_floor_depth(depth, boundary_config):
 					bg_tile = bedrock_floor_tile
 				elif _is_bedrock_transition_depth(depth, boundary_config):

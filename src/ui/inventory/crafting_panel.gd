@@ -12,6 +12,11 @@ var selected_recipe: CraftingRecipe
 func _ready() -> void:
 	_setup_ui()
 	_populate_recipes()
+	visibility_changed.connect(_on_visibility_changed)
+
+func _on_visibility_changed() -> void:
+	if visible:
+		_populate_recipes()
 
 func _setup_ui() -> void:
 	# Basic vertical layout
@@ -69,6 +74,12 @@ func _populate_recipes() -> void:
 		var recipes = cm.get_handcrafting_recipes()
 		for recipe in recipes:
 			add_recipe_to_list(recipe)
+	elif GameState and GameState.get("recipe_db") != null and GameState.recipe_db.size() > 0:
+		print("CraftingPanel: Using recipe_db fallback, recipe count=", GameState.recipe_db.size())
+		for key in GameState.recipe_db.keys():
+			var recipe: CraftingRecipe = GameState.recipe_db[key]
+			if recipe:
+				add_recipe_to_list(recipe)
 	else:
 		print("CraftingPanel: CraftingManager NOT found or no recipes.")
 		# Test/Fallback: if no recipes found, create a placeholder
@@ -127,6 +138,10 @@ func _update_details() -> void:
 		
 		# 尝试获取友好的名称
 		var display_name = item_id
+		if GameState and GameState.item_db.has(item_id):
+			var item_res = GameState.item_db[item_id]
+			if item_res and item_res.get("display_name") != null and String(item_res.get("display_name")) != "":
+				display_name = String(item_res.get("display_name"))
 		var name_map = {
 			"wood": "木材",
 			"iron_ore": "铁矿石",
@@ -136,7 +151,7 @@ func _update_details() -> void:
 			"stone": "石头",
 			"dirt": "泥土"
 		}
-		if name_map.has(item_id):
+		if display_name == item_id and name_map.has(item_id):
 			display_name = name_map[item_id]
 		
 		var line = Label.new()

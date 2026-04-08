@@ -1,0 +1,16 @@
+﻿[gd_resource type="Resource" script_class="BaseItem" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/core/resources/base_item.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://icon.svg" id="2_icon"]
+
+[resource]
+script = ExtResource("1_script")
+id = "frost_gland"
+display_name = "霜冻腺体"
+description = "寒域生物体内储存冷能的腺体。"
+item_type = "Material"
+icon = ExtResource("2_icon")
+max_stack = 99
+stackable = true
+value = 13
+quality_grade = "Common"

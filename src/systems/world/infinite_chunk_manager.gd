@@ -11,6 +11,7 @@ const STARTUP_LOAD_RADIUS = 1
 const UNLOAD_RADIUS_MARGIN = 1
 const UNLOAD_RADIUS_MARGIN_VERTICAL = 1
 const ENABLE_TILE_HOUSE_STRUCTURES := false
+const ENABLE_BURIED_RUINS := false
 const CRITICAL_CHUNK_BUDGET_MS := 5.0
 const ENRICHMENT_CHUNK_BUDGET_MS := 3.0
 const UNLOAD_CHUNK_BUDGET_MS := 2.5
@@ -19,7 +20,7 @@ const DIRTY_FLUSH_BUDGET_MS := 2.5
 const MAX_CRITICAL_BURST_BEFORE_ENRICHMENT := 3
 const ENRICHMENT_BACKOFF_FRAMES_ON_BUDGET_HIT := 2
 const CRITICAL_BACKOFF_FRAMES_ON_BUDGET_HIT := 1
-const ENRICHMENT_COOLDOWN_FRAMES_WHILE_MOVING := 10
+const ENRICHMENT_COOLDOWN_FRAMES_WHILE_MOVING := 4
 const ENRICHMENT_COOLDOWN_FRAMES_IDLE_REFRESH := 3
 const TELEMETRY_BUFFER_MAX := 320
 const PRELOAD_BATCH_BUDGET_MS := 32.0
@@ -35,7 +36,19 @@ const PRELOAD_TIMEOUT_HARD_CAP_SEC := 10800.0
 const PRELOAD_CHECKPOINT_DIR := "user://saves/preload_checkpoints/"
 const PRELOAD_COMPLETED_DIR := "user://saves/preload_completed/"
 const PRECOMPUTED_CHUNK_ROOT_DIR := "user://saves/precomputed_chunks/"
+const PRECOMPUTED_STORAGE_SCHEMA_VERSION := 2
+const PRECOMPUTED_LEGACY_FILE_EXT := ".bin"
+const PRECOMPUTED_COMPACT_FILE_EXT := ".cbin"
+const PRECOMPUTED_WRITE_LEGACY_COMPAT := false
+const PRECOMPUTED_PRUNE_LEGACY_WHEN_COMPACT_EXISTS := true
 const PRELOAD_READINESS_VIOLATION_BUFFER_MAX := 128
+const FAST_FALL_PRIORITY_SPEED_THRESHOLD := 900.0
+const STREAM_PRESSURE_SPEED_THRESHOLD := 520.0
+const STREAM_PRESSURE_SPEED_THRESHOLD_EXTREME := 900.0
+const CRITICAL_CHUNK_BUDGET_MS_HIGH_PRESSURE := 11.0
+const CRITICAL_CHUNK_BUDGET_MS_EXTREME_PRESSURE := 16.0
+const MAX_CRITICAL_CHUNKS_PER_FRAME_HIGH_PRESSURE := 4
+const MAX_CRITICAL_CHUNKS_PER_FRAME_EXTREME_PRESSURE := 8
 
 var active_save_root: String = "user://saves/world_deltas/"
 
@@ -79,6 +92,14 @@ var _preload_in_domain_lookup: Dictionary = {}
 var _loaded_from_precomputed: Dictionary = {}
 var _precomputed_enrichment_cells: Dictionary = {}
 var _post_preload_readiness_violations: Array = []
+var _precomputed_quarantine_lookup: Dictionary = {}
+var _precomputed_resolution_stats: Dictionary = {
+	"compact": 0,
+	"legacy": 0,
+	"regenerate": 0,
+	"compact_identity_reject": 0,
+	"compact_corrupt": 0,
+}
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -95,12 +116,33 @@ func _process(_delta: float) -> void:
 	if _enrichment_cooldown_frames > 0:
 		_enrichment_cooldown_frames -= 1
 	var did_stream_work := false
+	var stream_pressure_level: int = _get_player_stream_pressure_level()
+	if stream_pressure_level > 0:
+		_enrichment_cooldown_frames = max(_enrichment_cooldown_frames, ENRICHMENT_COOLDOWN_FRAMES_WHILE_MOVING + stream_pressure_level)
+
+	var critical_budget_ms: float = _get_critical_budget_for_pressure(stream_pressure_level)
+	var max_critical_chunks_this_frame: int = _get_critical_chunks_per_frame(stream_pressure_level)
+	var allowed_critical_burst: int = MAX_CRITICAL_BURST_BEFORE_ENRICHMENT
+	if stream_pressure_level == 1:
+		allowed_critical_burst *= 2
+	elif stream_pressure_level >= 2:
+		allowed_critical_burst *= 3
 
 	if _critical_backoff_frames <= 0 and not _pending_chunk_requests.is_empty() and (
-		_pending_enrichment_requests.is_empty() or _critical_burst_count < MAX_CRITICAL_BURST_BEFORE_ENRICHMENT
+		_pending_enrichment_requests.is_empty() or _critical_burst_count < allowed_critical_burst
 	):
-		var coord = _pending_chunk_requests.pop_front()
-		if _loading_queue.has(coord):
+		var critical_stage_start := Time.get_ticks_usec()
+		var critical_processed := 0
+		while critical_processed < max_critical_chunks_this_frame and _critical_backoff_frames <= 0 and not _pending_chunk_requests.is_empty() and (
+			_pending_enrichment_requests.is_empty() or _critical_burst_count < allowed_critical_burst
+		):
+			var raw_coord: Variant = _pending_chunk_requests.pop_front()
+			if not (raw_coord is Vector2i):
+				continue
+			var coord: Vector2i = raw_coord
+			if not _loading_queue.has(coord):
+				continue
+
 			var critical_start := Time.get_ticks_usec()
 			_build_chunk_on_main_thread(coord, current_session_id)
 			var critical_elapsed_ms := float(Time.get_ticks_usec() - critical_start) / 1000.0
@@ -108,13 +150,20 @@ func _process(_delta: float) -> void:
 				"pending_critical": _pending_chunk_requests.size(),
 				"pending_enrichment": _pending_enrichment_requests.size(),
 				"pending_unload": _pending_unload_requests.size(),
+				"pressure_level": stream_pressure_level,
 			})
 			if critical_elapsed_ms > CRITICAL_CHUNK_BUDGET_MS:
 				_enrichment_backoff_frames = max(_enrichment_backoff_frames, ENRICHMENT_BACKOFF_FRAMES_ON_BUDGET_HIT)
 				_critical_backoff_frames = max(_critical_backoff_frames, CRITICAL_BACKOFF_FRAMES_ON_BUDGET_HIT)
 				push_warning("InfiniteChunkManager: critical chunk build %.2fms exceeded budget %.2fms at %s" % [critical_elapsed_ms, CRITICAL_CHUNK_BUDGET_MS, str(coord)])
+
 			_critical_burst_count += 1
+			critical_processed += 1
 			did_stream_work = true
+
+			var critical_stage_elapsed_ms := float(Time.get_ticks_usec() - critical_stage_start) / 1000.0
+			if critical_stage_elapsed_ms >= critical_budget_ms:
+				break
 
 	if not did_stream_work and not _startup_streaming_mode and not _enrichment_suppressed and not _pending_enrichment_requests.is_empty() and _enrichment_backoff_frames <= 0 and _enrichment_cooldown_frames <= 0:
 		var enrich_coord = _pending_enrichment_requests.pop_front()
@@ -141,6 +190,43 @@ func _process(_delta: float) -> void:
 	_process_entity_spawn_budget()
 	_process_dirty_flush_budget()
 
+func _get_player_stream_pressure_level() -> int:
+	var player := get_tree().get_first_node_in_group("player")
+	if not is_instance_valid(player):
+		return 0
+
+	var velocity_variant: Variant = player.get("velocity")
+	if not (velocity_variant is Vector2):
+		return 0
+	var velocity: Vector2 = velocity_variant
+	var speed: float = velocity.length()
+
+	var on_floor := false
+	if player.has_method("is_on_floor"):
+		on_floor = bool(player.is_on_floor())
+
+	if speed >= STREAM_PRESSURE_SPEED_THRESHOLD_EXTREME:
+		return 2
+	if (not on_floor) and velocity.y >= STREAM_PRESSURE_SPEED_THRESHOLD_EXTREME:
+		return 2
+	if speed >= STREAM_PRESSURE_SPEED_THRESHOLD:
+		return 1
+	return 0
+
+func _get_critical_budget_for_pressure(pressure_level: int) -> float:
+	if pressure_level >= 2:
+		return CRITICAL_CHUNK_BUDGET_MS_EXTREME_PRESSURE
+	if pressure_level == 1:
+		return CRITICAL_CHUNK_BUDGET_MS_HIGH_PRESSURE
+	return CRITICAL_CHUNK_BUDGET_MS
+
+func _get_critical_chunks_per_frame(pressure_level: int) -> int:
+	if pressure_level >= 2:
+		return MAX_CRITICAL_CHUNKS_PER_FRAME_EXTREME_PRESSURE
+	if pressure_level == 1:
+		return MAX_CRITICAL_CHUNKS_PER_FRAME_HIGH_PRESSURE
+	return 1
+
 func _budget_for_stage(stage: String) -> float:
 	match stage:
 		"critical_load":
@@ -155,6 +241,8 @@ func _budget_for_stage(stage: String) -> float:
 			return DIRTY_FLUSH_BUDGET_MS
 		"preload_batch":
 			return PRELOAD_BATCH_BUDGET_MS
+		"precomputed_resolution":
+			return 0.0
 		"preload_readiness_violation":
 			return 0.0
 		_:
@@ -224,8 +312,15 @@ func _get_precomputed_chunk_root(signature: String) -> String:
 	return PRECOMPUTED_CHUNK_ROOT_DIR + token + "/"
 
 func _get_precomputed_chunk_path(signature: String, coord: Vector2i) -> String:
+	return _get_precomputed_chunk_legacy_path(signature, coord)
+
+func _get_precomputed_chunk_legacy_path(signature: String, coord: Vector2i) -> String:
 	var canonical := _canonical_chunk_coord(coord)
-	return _get_precomputed_chunk_root(signature) + "chunk_%d_%d.bin" % [canonical.x, canonical.y]
+	return _get_precomputed_chunk_root(signature) + "chunk_%d_%d%s" % [canonical.x, canonical.y, PRECOMPUTED_LEGACY_FILE_EXT]
+
+func _get_precomputed_chunk_compact_path(signature: String, coord: Vector2i) -> String:
+	var canonical := _canonical_chunk_coord(coord)
+	return _get_precomputed_chunk_root(signature) + "chunk_%d_%d%s" % [canonical.x, canonical.y, PRECOMPUTED_COMPACT_FILE_EXT]
 
 func _save_preload_checkpoint(signature: String, payload: Dictionary) -> bool:
 	_ensure_preload_dirs()
@@ -307,24 +402,106 @@ func _is_completed_marker_usable(marker: Dictionary, signature: String, identity
 		return false
 	return bool(marker.get("completed", false))
 
-func _save_precomputed_chunk_cells(signature: String, coord: Vector2i, cells: Dictionary) -> bool:
+func _save_precomputed_chunk_cells(signature: String, coord: Vector2i, cells: Dictionary, identity: Dictionary = {}) -> bool:
 	var root := _get_precomputed_chunk_root(signature)
 	if not DirAccess.dir_exists_absolute(root):
 		DirAccess.make_dir_recursive_absolute(root)
-	var path := _get_precomputed_chunk_path(signature, coord)
-	var file := FileAccess.open(path, FileAccess.WRITE)
+	var compact_path := _get_precomputed_chunk_compact_path(signature, coord)
+	var file := FileAccess.open_compressed(compact_path, FileAccess.WRITE, FileAccess.COMPRESSION_ZSTD)
+	if file == null:
+		file = FileAccess.open(compact_path, FileAccess.WRITE)
 	if file == null:
 		return false
-	file.store_var({
+	var payload := {
+		"schema_version": PRECOMPUTED_STORAGE_SCHEMA_VERSION,
+		"signature": signature,
+		"identity": identity.duplicate(true),
 		"coord": _canonical_chunk_coord(coord),
 		"cells": cells,
 		"saved_msec": Time.get_ticks_msec(),
-	}, true)
+	}
+	file.store_var(payload, true)
+	file.close()
+
+	if PRECOMPUTED_WRITE_LEGACY_COMPAT:
+		if not _save_legacy_precomputed_chunk_cells(signature, coord, payload):
+			push_warning("InfiniteChunkManager: legacy precomputed compatibility write failed for %s" % str(_canonical_chunk_coord(coord)))
+	else:
+		_remove_legacy_precomputed_chunk_cells(signature, coord)
+	return true
+
+func _save_legacy_precomputed_chunk_cells(signature: String, coord: Vector2i, payload: Dictionary) -> bool:
+	var legacy_path := _get_precomputed_chunk_legacy_path(signature, coord)
+	var file := FileAccess.open(legacy_path, FileAccess.WRITE)
+	if file == null:
+		return false
+	file.store_var(payload, true)
 	file.close()
 	return true
 
+func _remove_legacy_precomputed_chunk_cells(signature: String, coord: Vector2i) -> void:
+	var legacy_path := _get_precomputed_chunk_legacy_path(signature, coord)
+	if FileAccess.file_exists(legacy_path):
+		DirAccess.remove_absolute(legacy_path)
+
+func _prune_legacy_precomputed_files_for_signature(signature: String) -> Dictionary:
+	var result := {
+		"removed_files": 0,
+		"reclaimed_bytes": 0,
+	}
+	if not PRECOMPUTED_PRUNE_LEGACY_WHEN_COMPACT_EXISTS:
+		return result
+
+	var root := _get_precomputed_chunk_root(signature)
+	if not DirAccess.dir_exists_absolute(root):
+		return result
+
+	var dir := DirAccess.open(root)
+	if dir == null:
+		return result
+
+	dir.list_dir_begin()
+	var entry := dir.get_next()
+	while entry != "":
+		if dir.current_is_dir():
+			entry = dir.get_next()
+			continue
+		if not entry.begins_with("chunk_") or not entry.ends_with(PRECOMPUTED_LEGACY_FILE_EXT):
+			entry = dir.get_next()
+			continue
+
+		var coord_token := entry.trim_prefix("chunk_").trim_suffix(PRECOMPUTED_LEGACY_FILE_EXT)
+		var parts := coord_token.split("_")
+		if parts.size() != 2:
+			entry = dir.get_next()
+			continue
+
+		var coord := _canonical_chunk_coord(Vector2i(int(parts[0]), int(parts[1])))
+		var compact_path := _get_precomputed_chunk_compact_path(signature, coord)
+		if not FileAccess.file_exists(compact_path):
+			entry = dir.get_next()
+			continue
+
+		var legacy_path := root + entry
+		var legacy_file := FileAccess.open(legacy_path, FileAccess.READ)
+		var legacy_size := 0
+		if legacy_file != null:
+			legacy_size = int(legacy_file.get_length())
+			legacy_file.close()
+
+		if DirAccess.remove_absolute(legacy_path) == OK:
+			result["removed_files"] = int(result["removed_files"]) + 1
+			result["reclaimed_bytes"] = int(result["reclaimed_bytes"]) + legacy_size
+
+		entry = dir.get_next()
+	dir.list_dir_end()
+	return result
+
 func _load_precomputed_chunk_cells(signature: String, coord: Vector2i) -> Dictionary:
-	var path := _get_precomputed_chunk_path(signature, coord)
+	return _load_legacy_precomputed_chunk_cells(signature, coord)
+
+func _load_legacy_precomputed_chunk_cells(signature: String, coord: Vector2i, identity: Dictionary = {}) -> Dictionary:
+	var path := _get_precomputed_chunk_legacy_path(signature, coord)
 	if not FileAccess.file_exists(path):
 		return {}
 	var file := FileAccess.open(path, FileAccess.READ)
@@ -333,13 +510,159 @@ func _load_precomputed_chunk_cells(signature: String, coord: Vector2i) -> Dictio
 	var payload: Variant = file.get_var(true)
 	file.close()
 	if payload is Dictionary:
-		var cells: Variant = payload.get("cells", {})
+		var body: Dictionary = payload
+		if int(body.get("schema_version", -1)) != PRECOMPUTED_STORAGE_SCHEMA_VERSION:
+			return {}
+		if String(body.get("signature", "")) != signature:
+			return {}
+
+		var stored_coord_variant: Variant = body.get("coord", null)
+		if not (stored_coord_variant is Vector2i):
+			return {}
+		var stored_coord := _canonical_chunk_coord(stored_coord_variant)
+		if stored_coord != _canonical_chunk_coord(coord):
+			return {}
+
+		var stored_identity_variant: Variant = body.get("identity", {})
+		if stored_identity_variant is Dictionary and not (stored_identity_variant as Dictionary).is_empty():
+			if not _identity_matches(identity, stored_identity_variant):
+				return {}
+
+		var cells: Variant = body.get("cells", {})
 		if cells is Dictionary:
 			return cells
 	return {}
 
+func _decode_compact_precomputed_chunk(signature: String, identity: Dictionary, coord: Vector2i) -> Dictionary:
+	var compact_path := _get_precomputed_chunk_compact_path(signature, coord)
+	if _precomputed_quarantine_lookup.has(compact_path):
+		return {
+			"ok": false,
+			"reason": "COMPACT_QUARANTINED",
+		}
+	if not FileAccess.file_exists(compact_path):
+		return {
+			"ok": false,
+			"reason": "COMPACT_MISSING",
+		}
+
+	var file := FileAccess.open_compressed(compact_path, FileAccess.READ, FileAccess.COMPRESSION_ZSTD)
+	if file == null:
+		file = FileAccess.open(compact_path, FileAccess.READ)
+	if file == null:
+		return {
+			"ok": false,
+			"reason": "COMPACT_OPEN_FAILED",
+		}
+
+	var payload: Variant = file.get_var(true)
+	file.close()
+	if not (payload is Dictionary):
+		_mark_compact_chunk_quarantined(compact_path, "COMPACT_CORRUPT")
+		return {
+			"ok": false,
+			"reason": "COMPACT_CORRUPT",
+		}
+
+	var body: Dictionary = payload
+	if int(body.get("schema_version", -1)) != PRECOMPUTED_STORAGE_SCHEMA_VERSION:
+		return {
+			"ok": false,
+			"reason": "COMPACT_SCHEMA_MISMATCH",
+		}
+	if String(body.get("signature", "")) != signature:
+		return {
+			"ok": false,
+			"reason": "COMPACT_SIGNATURE_MISMATCH",
+		}
+
+	var stored_coord_variant: Variant = body.get("coord", null)
+	if not (stored_coord_variant is Vector2i):
+		_mark_compact_chunk_quarantined(compact_path, "COMPACT_CORRUPT")
+		return {
+			"ok": false,
+			"reason": "COMPACT_CORRUPT",
+		}
+	var stored_coord := _canonical_chunk_coord(stored_coord_variant)
+	if stored_coord != _canonical_chunk_coord(coord):
+		return {
+			"ok": false,
+			"reason": "COMPACT_COORD_MISMATCH",
+		}
+
+	var stored_identity_variant: Variant = body.get("identity", {})
+	if stored_identity_variant is Dictionary and not (stored_identity_variant as Dictionary).is_empty():
+		if not _identity_matches(identity, stored_identity_variant):
+			return {
+				"ok": false,
+				"reason": "COMPACT_IDENTITY_MISMATCH",
+			}
+
+	var cells_variant: Variant = body.get("cells", {})
+	if not (cells_variant is Dictionary):
+		_mark_compact_chunk_quarantined(compact_path, "COMPACT_CORRUPT")
+		return {
+			"ok": false,
+			"reason": "COMPACT_CORRUPT",
+		}
+
+	return {
+		"ok": true,
+		"reason": "COMPACT_HIT",
+		"cells": cells_variant,
+	}
+
+func _track_precomputed_resolution(stat_key: String, coord: Vector2i, reason: String) -> void:
+	_precomputed_resolution_stats[stat_key] = int(_precomputed_resolution_stats.get(stat_key, 0)) + 1
+	_record_stage_telemetry("precomputed_resolution", coord, 0.0, {
+		"branch": stat_key,
+		"reason": reason,
+	})
+
+func _mark_compact_chunk_quarantined(path: String, reason: String) -> void:
+	_precomputed_quarantine_lookup[path] = {
+		"reason": reason,
+		"timestamp_msec": Time.get_ticks_msec(),
+	}
+
+func _resolve_precomputed_chunk_cells(signature: String, identity: Dictionary, coord: Vector2i) -> Dictionary:
+	var canonical := _canonical_chunk_coord(coord)
+	var compact_result := _decode_compact_precomputed_chunk(signature, identity, canonical)
+	if bool(compact_result.get("ok", false)):
+		_track_precomputed_resolution("compact", canonical, String(compact_result.get("reason", "COMPACT_HIT")))
+		return {
+			"hit": true,
+			"branch": "compact",
+			"reason": String(compact_result.get("reason", "COMPACT_HIT")),
+			"cells": compact_result.get("cells", {}),
+		}
+
+	var compact_reason := String(compact_result.get("reason", "COMPACT_MISSING"))
+	if compact_reason in ["COMPACT_CORRUPT", "COMPACT_QUARANTINED"]:
+		_track_precomputed_resolution("compact_corrupt", canonical, compact_reason)
+	elif compact_reason == "COMPACT_IDENTITY_MISMATCH":
+		_track_precomputed_resolution("compact_identity_reject", canonical, compact_reason)
+
+	var legacy_cells := _load_legacy_precomputed_chunk_cells(signature, canonical, identity)
+	if not legacy_cells.is_empty():
+		_track_precomputed_resolution("legacy", canonical, "LEGACY_HIT")
+		return {
+			"hit": true,
+			"branch": "legacy",
+			"reason": "LEGACY_HIT",
+			"cells": legacy_cells,
+		}
+
+	_track_precomputed_resolution("regenerate", canonical, "REGENERATE_REQUIRED")
+	return {
+		"hit": false,
+		"branch": "regenerate",
+		"reason": "REGENERATE_REQUIRED",
+		"cells": {},
+	}
+
 func _has_precomputed_chunk_cells(signature: String, coord: Vector2i) -> bool:
-	return FileAccess.file_exists(_get_precomputed_chunk_path(signature, coord))
+	return FileAccess.file_exists(_get_precomputed_chunk_compact_path(signature, coord)) or FileAccess.file_exists(_get_precomputed_chunk_legacy_path(signature, coord))
 
 func _collect_precomputed_chunk_lookup(signature: String) -> Dictionary:
 	var lookup := {}
@@ -355,10 +678,16 @@ func _collect_precomputed_chunk_lookup(signature: String) -> Dictionary:
 		if dir.current_is_dir():
 			entry = dir.get_next()
 			continue
-		if not entry.begins_with("chunk_") or not entry.ends_with(".bin"):
+		var is_legacy := entry.ends_with(PRECOMPUTED_LEGACY_FILE_EXT)
+		var is_compact := entry.ends_with(PRECOMPUTED_COMPACT_FILE_EXT)
+		if not entry.begins_with("chunk_") or not (is_legacy or is_compact):
 			entry = dir.get_next()
 			continue
-		var coord_token := entry.trim_prefix("chunk_").trim_suffix(".bin")
+		var coord_token := entry.trim_prefix("chunk_")
+		if is_compact:
+			coord_token = coord_token.trim_suffix(PRECOMPUTED_COMPACT_FILE_EXT)
+		else:
+			coord_token = coord_token.trim_suffix(PRECOMPUTED_LEGACY_FILE_EXT)
 		var parts := coord_token.split("_")
 		if parts.size() != 2:
 			entry = dir.get_next()
@@ -396,6 +725,9 @@ func _reset_preload_runtime_state() -> void:
 	_preload_in_domain_lookup.clear()
 	_loaded_from_precomputed.clear()
 	_post_preload_readiness_violations.clear()
+	_precomputed_quarantine_lookup.clear()
+	for key in _precomputed_resolution_stats.keys():
+		_precomputed_resolution_stats[key] = 0
 
 func _activate_preload_runtime_state(signature: String, identity: Dictionary, domain_coords: Array) -> void:
 	_preload_active_domain_signature = signature
@@ -438,7 +770,15 @@ func get_preload_runtime_state() -> Dictionary:
 		"active_identity": _preload_active_domain_identity.duplicate(true),
 		"in_domain_chunk_count": _preload_in_domain_lookup.size(),
 		"readiness_violation_count": _post_preload_readiness_violations.size(),
+		"precomputed_quarantine_count": _precomputed_quarantine_lookup.size(),
 	}
+
+func get_precomputed_resolution_stats() -> Dictionary:
+	return _precomputed_resolution_stats.duplicate(true)
+
+func clear_precomputed_resolution_stats() -> void:
+	for key in _precomputed_resolution_stats.keys():
+		_precomputed_resolution_stats[key] = 0
 
 func get_runtime_stage_telemetry() -> Array:
 	return _runtime_stage_telemetry.duplicate(true)
@@ -578,11 +918,28 @@ func _chunk_has_persistable_changes(chunk: WorldChunk) -> bool:
 	for l in [0, 1, 2]:
 		if not chunk.deltas.get(l, {}).is_empty():
 			return true
+	if "liquid_state_initialized" in chunk:
+		if bool(chunk.get("liquid_state_initialized")):
+			return true
+	elif not chunk.liquid_cells.is_empty():
+		# Legacy chunks without the initialization flag.
+		return true
+	if "liquid_outbound_handoffs" in chunk:
+		var outbound = chunk.get("liquid_outbound_handoffs")
+		if outbound is Dictionary and not (outbound as Dictionary).is_empty():
+			return true
 	return false
 
 func _mark_chunk_dirty(coord: Vector2i) -> void:
 	var canonical := _canonical_chunk_coord(coord)
 	_dirty_chunk_coords[canonical] = true
+
+func _ensure_chunk_tracked_for_persistence(coord: Vector2i, chunk: WorldChunk) -> void:
+	if chunk == null:
+		return
+	var canonical := _canonical_chunk_coord(coord)
+	if not world_delta_data.has(canonical):
+		world_delta_data[canonical] = chunk
 
 func _request_dirty_flush(coord: Vector2i) -> void:
 	var canonical := _canonical_chunk_coord(coord)
@@ -653,6 +1010,18 @@ func flush_pending_dirty_writes_sync() -> void:
 		_flush_dirty_chunk(coord)
 
 func save_all_deltas(force_all: bool = false, synchronous: bool = true) -> void:
+	if LiquidManager and LiquidManager.has_method("flush_runtime_to_chunks"):
+		var touched_coords = LiquidManager.flush_runtime_to_chunks(world_delta_data)
+		if touched_coords is Array:
+			for coord_variant in touched_coords:
+				if coord_variant is Vector2i:
+					var canonical := _canonical_chunk_coord(coord_variant)
+					if not world_delta_data.has(canonical):
+						var loaded_variant = loaded_chunks.get(canonical, null)
+						if loaded_variant is WorldChunk:
+							_ensure_chunk_tracked_for_persistence(canonical, loaded_variant)
+					_mark_chunk_dirty(canonical)
+
 	if force_all:
 		for coord in world_delta_data.keys():
 			var chunk: WorldChunk = world_delta_data[coord]
@@ -976,6 +1345,13 @@ func run_planetary_full_preload(options: Dictionary = {}) -> Dictionary:
 
 	var domain_coords := _build_preload_domain_coords(domain)
 	var total_chunks := domain_coords.size()
+	var legacy_prune_snapshot := _prune_legacy_precomputed_files_for_signature(signature)
+	if int(legacy_prune_snapshot.get("removed_files", 0)) > 0:
+		_record_stage_telemetry("precomputed_resolution", "legacy_prune", 0.0, {
+			"signature": signature,
+			"removed_files": int(legacy_prune_snapshot.get("removed_files", 0)),
+			"reclaimed_bytes": int(legacy_prune_snapshot.get("reclaimed_bytes", 0)),
+		})
 	if total_chunks <= 0:
 		return {
 			"required": true,
@@ -1110,7 +1486,7 @@ func run_planetary_full_preload(options: Dictionary = {}) -> Dictionary:
 				continue
 
 			var cells: Dictionary = generator.generate_chunk_cells(coord, false)
-			if not _save_precomputed_chunk_cells(signature, coord, cells):
+			if not _save_precomputed_chunk_cells(signature, coord, cells, domain_identity):
 				failure_reason = "PRELOAD_PERSISTENCE_FAILED"
 				timeout_snapshot = {
 					"coord": coord,
@@ -1349,20 +1725,60 @@ func _build_chunk_on_main_thread(coord: Vector2i, session_id: int) -> void:
 		return
 
 	if _preload_active_domain_signature != "":
-		var precomputed_cells := _load_precomputed_chunk_cells(_preload_active_domain_signature, coord)
-		if not precomputed_cells.is_empty():
+		var precomputed_resolution := _resolve_precomputed_chunk_cells(_preload_active_domain_signature, _preload_active_domain_identity, coord)
+		var precomputed_cells: Dictionary = precomputed_resolution.get("cells", {})
+		if bool(precomputed_resolution.get("hit", false)) and not precomputed_cells.is_empty():
 			var critical_precomputed_cells := _extract_critical_cells(precomputed_cells)
 			_finalize_chunk_load(coord, critical_precomputed_cells, [], false, true)
 			_precomputed_enrichment_cells[coord] = precomputed_cells
 			_request_chunk_enrichment(coord)
 			return
 		if _is_coord_in_active_preload_domain(coord):
-			_record_preload_readiness_violation(coord, "missing_precomputed_chunk")
+			_record_preload_readiness_violation(coord, "missing_precomputed_chunk_%s" % String(precomputed_resolution.get("reason", "UNKNOWN")))
+
+	# 玩家可见邻域始终使用完整生成，避免同一坐标在上下行过程中
+	# 因 critical/full 差异出现“空泡/堵块”切换。
+	if _should_generate_full_chunk_for_player_view(coord):
+		var full_cells: Dictionary = generator.generate_chunk_cells(coord, false)
+		_finalize_chunk_load(coord, full_cells, [])
+		return
 
 	# 阶段 1：先生成可通行地形与核心洞穴，保证区块尽快可玩。
 	var critical_cells = generator.generate_chunk_cells(coord, true)
 	_finalize_chunk_load(coord, critical_cells, [])
 	_request_chunk_enrichment(coord)
+
+func _should_generate_full_chunk_for_player_view(coord: Vector2i) -> bool:
+	var player = get_tree().get_first_node_in_group("player")
+	if not is_instance_valid(player):
+		return false
+	var player_chunk: Vector2i = _canonical_chunk_coord(get_chunk_coord(player.global_position))
+	var dx: int = absi(coord.x - player_chunk.x)
+	var dy: int = absi(coord.y - player_chunk.y)
+
+	# 行星拓扑下跨缝边界按最短环距计算，防止 seam 附近误判为“远区块”。
+	var world_topology = _get_world_topology()
+	if world_topology and world_topology.has_method("is_planetary") and world_topology.is_planetary() and world_topology.has_method("shortest_wrapped_chunk_distance"):
+		dx = int(world_topology.shortest_wrapped_chunk_distance(coord.x, player_chunk.x))
+
+	# 仅对玩家附近区块启用完整生成，控制主线程预算。
+	return dx <= 1 and dy <= 1
+
+func _is_player_fast_falling_for_streaming() -> bool:
+	var player := get_tree().get_first_node_in_group("player")
+	if not is_instance_valid(player):
+		return false
+
+	var velocity_variant: Variant = player.get("velocity")
+	if not (velocity_variant is Vector2):
+		return false
+	var velocity: Vector2 = velocity_variant
+
+	var on_floor: bool = false
+	if player.has_method("is_on_floor"):
+		on_floor = bool(player.is_on_floor())
+
+	return (not on_floor) and velocity.y > FAST_FALL_PRIORITY_SPEED_THRESHOLD
 
 func _build_chunk_enrichment_on_main_thread(coord: Vector2i, session_id: int) -> void:
 	coord = _canonical_chunk_coord(coord)
@@ -1447,6 +1863,8 @@ func _get_chunk_world_origin(c_coord: Vector2i) -> Vector2:
 func _apply_structures(coord: Vector2i, chunk_data: Dictionary, entities_out: Array) -> void:
 	var generator = get_tree().get_first_node_in_group("world_generator")
 	if not generator: return
+	if not ENABLE_TILE_HOUSE_STRUCTURES and not ENABLE_BURIED_RUINS:
+		return
 
 	chunk_data["_coord"] = coord
 	
@@ -1497,8 +1915,8 @@ func _apply_structures(coord: Vector2i, chunk_data: Dictionary, entities_out: Ar
 		# if dx == 0 and hash_val % 100 == 0:
 		# 	_apply_shaft(chunk_data, hash_val)
 
-	# 情况 3: 埋没遗迹
-	if coord.y > 6 and get_chunk_hash(coord) % 15 == 0:
+	# 情况 3: 埋没遗迹（默认关闭；该运行时注入不属于权威世界生成链，易造成视觉上的“神秘结构”）
+	if ENABLE_BURIED_RUINS and coord.y > 6 and get_chunk_hash(coord) % 15 == 0:
 		_apply_ruins(coord, chunk_data, get_chunk_hash(coord))
 
 func _get_stable_ground_y(global_x: int) -> int:
@@ -1908,6 +2326,13 @@ func _extract_critical_cells(cells: Dictionary) -> Dictionary:
 		critical[0] = layer0.duplicate(true)
 	return critical
 
+func is_chunk_loaded(coord: Vector2i) -> bool:
+	var canonical := _canonical_chunk_coord(coord)
+	return loaded_chunks.has(canonical)
+
+func is_world_pos_chunk_loaded(world_pos: Vector2) -> bool:
+	return is_chunk_loaded(get_chunk_coord(world_pos))
+
 ## 强制同步加载指定位置的区块 (用于传送等紧急情况)
 func force_load_at_world_pos(world_pos: Vector2) -> void:
 	var coord = _clamp_chunk_coord_to_hard_floor(get_chunk_coord(world_pos))
@@ -1917,11 +2342,10 @@ func force_load_at_world_pos(world_pos: Vector2) -> void:
 	var generator = get_tree().get_first_node_in_group("world_generator")
 	if not generator: return
 	
-	# 传送等紧急路径同样优先保证可行走核心层，次要补充放到下一帧。
-	var critical_cells = generator.generate_chunk_cells(coord, true)
+	# 紧急同步加载也使用完整生成，保证与常规加载地形一致，避免方向相关的阻挡切换。
+	var full_cells: Dictionary = generator.generate_chunk_cells(coord, false)
 	# 传送/救援路径需要同帧可碰撞，保留强制图层内部刷新。
-	_finalize_chunk_load(coord, critical_cells, [], true)
-	_request_chunk_enrichment(coord)
+	_finalize_chunk_load(coord, full_cells, [], true)
 
 ## 寻找安全的地面位置 (用于防止掉入虚空)
 ## 返回有效的 Global Position (Vector2) 或 null (未找到)
@@ -2367,6 +2791,13 @@ func _unload_chunk(coord: Vector2i) -> void:
 	_pending_chunk_requests.erase(coord)
 	_precomputed_enrichment_cells.erase(coord)
 
+	var loaded_chunk: WorldChunk = loaded_chunks.get(coord, null)
+	if LiquidManager and LiquidManager.has_method("on_chunk_unloaded"):
+		LiquidManager.on_chunk_unloaded(coord, loaded_chunk)
+
+	if loaded_chunk != null and _chunk_has_persistable_changes(loaded_chunk):
+		_ensure_chunk_tracked_for_persistence(coord, loaded_chunk)
+
 	# 1. 如果有修改，保存到磁盘并释放内存
 	if world_delta_data.has(coord):
 		var chunk = world_delta_data[coord]
@@ -2386,9 +2817,6 @@ func _unload_chunk(coord: Vector2i) -> void:
 		chunk_entity_containers.erase(coord)
 
 	# 2. 清除 TileMapLayer 上的对应区域以释放渲染资源
-	var loaded_chunk: WorldChunk = loaded_chunks.get(coord, null)
-	if LiquidManager and LiquidManager.has_method("on_chunk_unloaded"):
-		LiquidManager.on_chunk_unloaded(coord, loaded_chunk)
 	_clear_chunk_region(coord, loaded_chunk)
 
 	# 1.8 从已加载列表移除

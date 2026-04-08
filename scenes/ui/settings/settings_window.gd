@@ -19,7 +19,7 @@ func _ready() -> void:
 	modulate.a = 0.0
 	scale = Vector2(0.95, 0.95)
 	
-	var tween = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	var tween = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	tween.tween_property(self, "modulate:a", 1.0, 0.3)
 	tween.parallel().tween_property(self, "scale", Vector2.ONE, 0.3)
 	
@@ -85,7 +85,7 @@ func _on_apply_pressed() -> void:
 		pass
 	
 	# Close animation
-	var tween = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	var tween = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
 	tween.tween_property(self, "modulate:a", 0.0, 0.2)
 	tween.parallel().tween_property(self, "scale", Vector2(0.95, 0.95), 0.2)
 	tween.finished.connect(func(): 

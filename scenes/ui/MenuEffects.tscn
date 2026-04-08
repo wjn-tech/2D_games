@@ -1,13 +1,7 @@
 [gd_scene load_steps=3 format=3 uid="uid://menu_effects_001"]
 
-[ext_resource type="Shader" path="res://assets/shaders/pixel_starfield.gdshader" id="1_pixel_shader"]
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_pixel"]
-shader = ExtResource("1_pixel_shader")
-shader_parameter/bg_color = Color(0.102, 0.102, 0.18, 1)
-shader_parameter/resolution = Vector2(640, 360)
-shader_parameter/star_density = 0.005
-shader_parameter/scroll_speed = 0.05
+[ext_resource type="Script" path="res://scenes/ui/menu/components/menu_effects_bridge.gd" id="1_menu_effects_bridge"]
+[ext_resource type="Script" path="res://scenes/ui/menu/components/html_starfield_background.gd" id="2_html_starfield"]
 
 [node name="MenuEffects" type="Control"]
 layout_mode = 3
@@ -16,13 +10,15 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_menu_effects_bridge")
 
-[node name="StarfieldBG" type="ColorRect" parent="."]
-material = SubResource("ShaderMaterial_pixel")
+[node name="FallbackStarfield" type="Control" parent="."]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.101961, 0.101961, 0.180392, 1)
+mouse_filter = 2
+script = ExtResource("2_html_starfield")

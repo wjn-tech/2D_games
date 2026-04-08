@@ -13,6 +13,7 @@ class_name BaseNPC
 var is_executable: bool = false
 var _execution_prompt_instance: Control = null
 var loot_item_scene: PackedScene = preload("res://scenes/world/loot_item.tscn")
+const HOSTILE_LOOT_TABLE = preload("res://src/systems/npc/hostile_loot_table.gd")
 
 var stun_timer: float = 0.0
 
@@ -153,22 +154,63 @@ func _populate_intrinsic_spell_pool() -> void:
 	var pool: Array[String] = []
 	
 	# Common Spells
-	var common = ["projectile_spark_bolt", "action_projectile", "modifier_speed", "modifier_delay"]
+	var common = [
+		"generator", "trigger_cast", "action_projectile",
+		"projectile_spark_bolt", "modifier_speed", "modifier_delay"
+	]
 	pool.append_array(common)
 	
 	# Specific Spells based on name/type
 	if "slime" in d_name or "史莱姆" in d_name:
-		pool.append_array(["projectile_slime", "modifier_element_slime"])
+		pool.append_array([
+			"projectile_slime", "modifier_element_slime",
+			"projectile_bouncing_burst", "modifier_lifetime",
+			"modifier_add_mana"
+		])
 	elif "skeleton" in d_name or "bone" in d_name or "骨" in d_name:
-		pool.append_array(["modifier_pierce", "projectile_magic_bolt", "modifier_damage"])
+		pool.append_array([
+			"modifier_pierce", "projectile_magic_bolt", "modifier_damage",
+			"projectile_magic_arrow", "trigger_collision", "logic_sequence"
+		])
+	elif "zombie" in d_name or "追兵" in d_name:
+		pool.append_array([
+			"modifier_damage_plus", "projectile_chainsaw", "projectile_fireball",
+			"modifier_element_fire", "modifier_arc_fire", "modifier_bounce_explosive"
+		])
 	elif "eye" in d_name or "眼" in d_name:
-		pool.append_array(["projectile_blackhole", "projectile_teleport"])
+		pool.append_array([
+			"projectile_blackhole", "projectile_teleport",
+			"modifier_homing", "modifier_orbit", "trigger_timer"
+		])
+	elif "bat" in d_name or "蝙蝠" in d_name:
+		pool.append_array([
+			"projectile_tri_bolt", "projectile_energy_sphere", "modifier_speed_plus",
+			"modifier_element_ice"
+		])
+	elif "antlion" in d_name or "蚁狮" in d_name:
+		pool.append_array([
+			"projectile_cluster_bomb", "projectile_tnt", "projectile_vampire_bolt",
+			"projectile_healing_circle", "modifier_mana_to_damage", "logic_splitter"
+		])
 	elif "fire" in d_name or "火" in d_name:
-		pool.append_array(["modifier_element_fire", "projectile_tnt"])
+		pool.append_array(["modifier_element_fire", "projectile_tnt", "projectile_fireball", "modifier_arc_fire"])
 	elif "ice" in d_name or "冰" in d_name:
-		pool.append_array(["modifier_element_ice", "projectile_magic_bolt"])
+		pool.append_array(["modifier_element_ice", "projectile_magic_bolt", "projectile_magic_arrow", "projectile_energy_sphere"])
 	elif "boss" in d_name:
-		pool.append_array(["projectile_blackhole", "modifier_damage_plus", "logic_splitter", "logic_sequence"])
+		pool.append_array([
+			"trigger_collision", "trigger_timer",
+			"projectile_blackhole", "projectile_teleport", "projectile_cluster_bomb", "projectile_vampire_bolt",
+			"modifier_damage_plus", "modifier_homing", "modifier_orbit", "logic_splitter", "logic_sequence"
+		])
+
+	# 去重并保持顺序：每种怪物保持差异化掉落池。
+	var dedup := {}
+	for spell_id in pool:
+		dedup[spell_id] = true
+
+	pool.clear()
+	for spell_id in dedup.keys():
+		pool.append(spell_id)
 		
 	npc_data.intrinsic_spell_pool = pool
 
@@ -614,12 +656,10 @@ func _die(killer: Node = null) -> void:
 			if UIManager:
 				UIManager.show_floating_text("+1 MaxHP", caster.global_position + Vector2(0, -40), Color.RED)
 
-	# --- MODIFIED: Use SpellAbsorptionManager instead of physical spell loot ---
+	# 法术吸收与材料掉落并行执行，避免互斥导致丢失战利品。
 	if get_node_or_null("/root/SpellAbsorptionManager"):
 		get_node("/root/SpellAbsorptionManager").handle_npc_death(self)
-	else:
-		# Fallback to normal loot if manager not found (shouldn't happen with Autoload)
-		_drop_normal_loot()
+	_drop_normal_loot()
 		
 	# 给予经验奖励
 	if GameState.player_data:
@@ -644,38 +684,141 @@ func _die(killer: Node = null) -> void:
 	queue_free()
 
 func _drop_normal_loot() -> void:
-	# REPURPOSED: Only drops gold/materials. Spells are absorbed via SpellAbsorptionManager.
-	pass
+	if not _is_hostile_runtime():
+		return
+
+	var spawn_rule_id := String(get_meta("spawn_rule_id", ""))
+	var monster_type := String(get_meta("hostile_monster_type", ""))
+	if monster_type.is_empty():
+		monster_type = _infer_hostile_monster_type()
+
+	var drops: Array[Dictionary] = HOSTILE_LOOT_TABLE.resolve_rolls(spawn_rule_id, monster_type)
+	if drops.is_empty():
+		return
+
+	var feedback_lines: Array[String] = []
+	for drop in drops:
+		var item_id := String(drop.get("item_id", "")).strip_edges()
+		var count := maxi(1, int(drop.get("count", 1)))
+		if item_id.is_empty():
+			continue
+
+		var item_resource: BaseItem = _resolve_drop_item_resource(item_id)
+		if item_resource == null:
+			push_warning("BaseNPC: Missing hostile drop item resource: %s" % item_id)
+			continue
+
+		var added_to_inventory := false
+		if GameState and GameState.inventory and GameState.inventory.has_method("add_item"):
+			added_to_inventory = bool(GameState.inventory.add_item(item_resource, count))
+
+		if not added_to_inventory:
+			_spawn_drop_item(item_resource, count)
+
+		feedback_lines.append("%s x%d" % [_resolve_item_display_name(item_resource), count])
+
+	if UIManager:
+		for i in range(feedback_lines.size()):
+			UIManager.show_floating_text(feedback_lines[i], global_position + Vector2(0, -34 - i * 14), Color.PALE_GREEN)
+
+func _resolve_drop_item_resource(item_id: String) -> BaseItem:
+	if GameState and GameState.item_db.has(item_id):
+		var cached = GameState.item_db[item_id]
+		if cached is BaseItem:
+			return cached
+
+	var candidate_paths := [
+		"res://data/items/hostile/%s.tres" % item_id,
+		"res://data/items/%s.tres" % item_id,
+	]
+
+	for path in candidate_paths:
+		if not ResourceLoader.exists(path):
+			continue
+		var loaded := load(path)
+		if loaded is BaseItem:
+			if GameState:
+				GameState.item_db[item_id] = loaded
+			return loaded
+
+	return null
+
+func _spawn_drop_item(item_resource: BaseItem, count: int) -> void:
+	if loot_item_scene == null:
+		return
+
+	var loot := loot_item_scene.instantiate()
+	var entities = get_tree().current_scene.find_child("Entities", true, false)
+	if entities:
+		entities.add_child(loot)
+	else:
+		get_tree().current_scene.add_child(loot)
+
+	loot.global_position = global_position + Vector2(randf_range(-14.0, 14.0), randf_range(-10.0, 10.0))
+	if loot.has_method("setup"):
+		loot.setup(item_resource, count)
+
+func _resolve_item_display_name(item_resource: BaseItem) -> String:
+	var raw_name := String(item_resource.display_name).strip_edges()
+	if raw_name.is_empty():
+		return item_resource.id
+
+	var localized := tr(raw_name)
+	if localized != raw_name:
+		return localized
+	return raw_name
+
+func _infer_hostile_monster_type() -> String:
+	var scene_path := String(scene_file_path).to_lower()
+	if scene_path.contains("bog_slime"):
+		return "bog_slime"
+	if scene_path.contains("frost_bat"):
+		return "frost_bat"
+	if scene_path.contains("cave_bat"):
+		return "cave_bat"
+	if scene_path.contains("demon_eye"):
+		return "demon_eye"
+	if scene_path.contains("antlion"):
+		return "antlion"
+	if scene_path.contains("skeleton"):
+		return "skeleton"
+	if scene_path.contains("zombie"):
+		return "zombie"
+	if scene_path.contains("slime"):
+		return "slime"
+
+	if npc_data:
+		var display_name := String(npc_data.display_name).to_lower()
+		if "沼泽" in display_name:
+			return "bog_slime"
+		if "霜" in display_name:
+			return "frost_bat"
+		if "蝙蝠" in display_name:
+			return "cave_bat"
+		if "眼" in display_name:
+			return "demon_eye"
+		if "蚁狮" in display_name:
+			return "antlion"
+		if "骷髅" in display_name:
+			return "skeleton"
+		if "僵尸" in display_name:
+			return "zombie"
+		if "史莱姆" in display_name:
+			return "slime"
+
+	return ""
 
 func _get_random_spell_for_npc() -> String:
-	var d_name = npc_data.display_name.to_lower()
-	var spells = []
-	
-	# 1. 通语法术 (Noita 风格基础池)
-	var common_spells = ["spark_bolt", "action_projectile", "modifier_speed", "modifier_delay"]
-	
-	# 2. 特色法术
-	if "slime" in d_name or "史莱姆" in d_name:
-		spells = ["projectile_slime", "modifier_element_slime", "spark_bolt"]
-	elif "skeleton" in d_name or "bone" in d_name or "骨" in d_name:
-		spells = ["modifier_pierce", "magic_bolt", "modifier_damage"]
-	elif "eye" in d_name or "眼" in d_name:
-		spells = ["projectile_blackhole", "projectile_teleport", "modifier_speed"]
-	elif "fire" in d_name or "火" in d_name:
-		spells = ["modifier_element_fire", "spark_bolt", "projectile_tnt"]
-	elif "ice" in d_name or "冰" in d_name:
-		spells = ["modifier_element_ice", "magic_bolt"]
-	elif "boss" in d_name:
-		spells = ["projectile_blackhole", "modifier_damage_plus", "logic_splitter", "logic_sequence"]
-	
-	if spells.is_empty():
-		return common_spells.pick_random()
-	
-	# 80% 几率掉落特色法术，20% 几率掉落通语法术
-	if randf() < 0.8:
-		return spells.pick_random()
-	else:
-		return common_spells.pick_random()
+	if not npc_data:
+		return "action_projectile"
+
+	if npc_data.intrinsic_spell_pool.is_empty():
+		_populate_intrinsic_spell_pool()
+
+	if npc_data.intrinsic_spell_pool.is_empty():
+		return "action_projectile"
+
+	return npc_data.intrinsic_spell_pool.pick_random()
 
 func get_faction() -> String:
 	return npc_data.alignment # 暂时用 alignment 代替具体阵营名

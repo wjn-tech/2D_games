@@ -6,6 +6,7 @@ extends Node
 const SAVE_ROOT = "user://saves/"
 const DATA_FILENAME = "data.dat"
 const THUMBNAIL_FILENAME = "preview.jpg"
+const WORLD_DELTAS_DIRNAME = "world_deltas"
 
 # 临时存储从文件恢复的玩家数据，用于场景重载后同步
 var _cached_player_data: Dictionary = {}
@@ -19,6 +20,8 @@ var _autosave_running: bool = false
 var _autosave_requested_slot: int = -1
 var _autosave_world_path: String = ""
 var _autosave_data: Dictionary = {}
+var _bound_world_storage_prefix: String = ""
+var _bound_world_metadata: Dictionary = {}
 
 func _ready() -> void:
 	_ensure_root_dir()
@@ -52,6 +55,34 @@ func _request_autosave(slot_id: int) -> void:
 	_autosave_requested_slot = slot_id
 	_autosave_pending = true
 
+func clear_world_binding() -> void:
+	_bound_world_storage_prefix = ""
+	_bound_world_metadata.clear()
+
+func _bind_world_context(world_metadata: Dictionary, world_storage_prefix: String) -> void:
+	_bound_world_storage_prefix = _sanitize_world_storage_prefix(world_storage_prefix)
+	_bound_world_metadata = world_metadata.duplicate(true)
+
+func _resolve_world_context_for_slot(slot_id: int) -> Dictionary:
+	var world_metadata := _get_world_metadata()
+	var runtime_world_storage_prefix := _extract_world_storage_prefix_from_metadata(world_metadata)
+	var world_storage_prefix := runtime_world_storage_prefix
+
+	if slot_id >= 0 and slot_id == current_slot_id and _bound_world_storage_prefix != "":
+		if runtime_world_storage_prefix != "" and runtime_world_storage_prefix != _bound_world_storage_prefix:
+			push_warning("SaveManager: runtime world prefix drift detected for slot %d, keep bound prefix %s (runtime=%s)" % [slot_id, _bound_world_storage_prefix, runtime_world_storage_prefix])
+		world_storage_prefix = _bound_world_storage_prefix
+		if not _bound_world_metadata.is_empty():
+			world_metadata = _bound_world_metadata.duplicate(true)
+
+	if world_storage_prefix != "":
+		_bind_world_context(world_metadata, world_storage_prefix)
+
+	return {
+		"world_metadata": world_metadata,
+		"world_storage_prefix": world_storage_prefix,
+	}
+
 func _start_autosave_pipeline(slot_id: int) -> void:
 	if slot_id < 0:
 		return
@@ -62,7 +93,9 @@ func _start_autosave_pipeline(slot_id: int) -> void:
 	if not DirAccess.dir_exists_absolute(slot_dir):
 		DirAccess.make_dir_recursive_absolute(slot_dir)
 
-	_autosave_world_path = slot_dir + "world_deltas/"
+	var world_context := _resolve_world_context_for_slot(slot_id)
+	var world_storage_prefix := String(world_context.get("world_storage_prefix", ""))
+	_autosave_world_path = _build_slot_world_deltas_path(slot_dir, world_storage_prefix)
 	_autosave_data = {}
 
 	if InfiniteChunkManager:
@@ -75,7 +108,7 @@ func _continue_autosave_pipeline() -> void:
 			return
 
 	if _autosave_data.is_empty():
-		_autosave_data = _build_save_data()
+		_autosave_data = _build_save_data(_resolve_world_context_for_slot(_autosave_requested_slot))
 		# Autosave skips thumbnail capture to avoid periodic frame spikes.
 		var final_path := _get_data_path(_autosave_requested_slot)
 		if not _write_atomic_compressed(final_path, _autosave_data):
@@ -127,6 +160,125 @@ func _get_slot_dir(slot_id: int) -> String:
 func _get_data_path(slot_id: int) -> String:
 	return _get_slot_dir(slot_id) + DATA_FILENAME
 
+func _sanitize_world_storage_prefix(prefix: String) -> String:
+	var token := prefix.strip_edges()
+	if token == "":
+		return ""
+	for marker in ["|", "/", "\\", ":", ";", ",", ".", " ", "\t", "\n", "\r"]:
+		token = token.replace(marker, "_")
+	return token
+
+func _extract_world_storage_prefix_from_metadata(metadata: Dictionary) -> String:
+	var explicit_prefix := String(metadata.get("world_storage_prefix", "")).strip_edges()
+	if explicit_prefix != "":
+		return _sanitize_world_storage_prefix(explicit_prefix)
+
+	var topology_mode := String(metadata.get("topology_mode", "legacy_infinite"))
+	var primary_seed := int(metadata.get("primary_seed", metadata.get("world_seed", 0)))
+	if topology_mode != "planetary_v1":
+		return _sanitize_world_storage_prefix("%s_%d" % [topology_mode, primary_seed])
+
+	return _sanitize_world_storage_prefix("%s_%s_%d_%d_%d_%d" % [
+		topology_mode,
+		String(metadata.get("world_size_preset", "medium")),
+		int(metadata.get("horizontal_circumference_in_chunks", 0)),
+		int(metadata.get("topology_version", 1)),
+		int(metadata.get("world_plan_revision", 1)),
+		primary_seed,
+	])
+
+func _extract_world_storage_prefix_from_save_data(data: Dictionary) -> String:
+	var explicit_prefix := String(data.get("world_storage_prefix", "")).strip_edges()
+	if explicit_prefix != "":
+		return _sanitize_world_storage_prefix(explicit_prefix)
+	var metadata: Dictionary = data.get("world_metadata", {})
+	return _extract_world_storage_prefix_from_metadata(metadata)
+
+func _get_slot_world_deltas_legacy_path(slot_dir: String) -> String:
+	return slot_dir + WORLD_DELTAS_DIRNAME + "/"
+
+func _build_slot_world_deltas_path(slot_dir: String, world_storage_prefix: String) -> String:
+	var base_path := _get_slot_world_deltas_legacy_path(slot_dir)
+	var token := _sanitize_world_storage_prefix(world_storage_prefix)
+	if token == "":
+		return base_path
+	return base_path + token + "/"
+
+func _directory_contains_chunk_deltas(path: String) -> bool:
+	if not DirAccess.dir_exists_absolute(path):
+		return false
+	var dir := DirAccess.open(path)
+	if dir == null:
+		return false
+	dir.list_dir_begin()
+	var entry := dir.get_next()
+	while entry != "":
+		if not dir.current_is_dir() and entry.begins_with("chunk_") and entry.ends_with(".tres"):
+			dir.list_dir_end()
+			return true
+		entry = dir.get_next()
+	dir.list_dir_end()
+	return false
+
+func _count_chunk_delta_files(path: String) -> int:
+	if not DirAccess.dir_exists_absolute(path):
+		return 0
+	var dir := DirAccess.open(path)
+	if dir == null:
+		return 0
+	var count := 0
+	dir.list_dir_begin()
+	var entry := dir.get_next()
+	while entry != "":
+		if not dir.current_is_dir() and entry.begins_with("chunk_") and entry.ends_with(".tres"):
+			count += 1
+		entry = dir.get_next()
+	dir.list_dir_end()
+	return count
+
+func _find_slot_world_delta_seed_candidates(slot_dir: String, primary_seed: int) -> Array:
+	var candidates: Array = []
+	var base_dir := _get_slot_world_deltas_legacy_path(slot_dir)
+	if not DirAccess.dir_exists_absolute(base_dir):
+		return candidates
+
+	var dir := DirAccess.open(base_dir)
+	if dir == null:
+		return candidates
+
+	var seed_suffix := "_%d" % primary_seed
+	dir.list_dir_begin()
+	var entry := dir.get_next()
+	while entry != "":
+		if dir.current_is_dir():
+			var token := String(entry).strip_edges()
+			if token != "" and (primary_seed == 0 or token.ends_with(seed_suffix)):
+				candidates.append(base_dir + token + "/")
+		entry = dir.get_next()
+	dir.list_dir_end()
+	return candidates
+
+func _select_best_world_deltas_path(slot_dir: String, resolved_world_path: String, legacy_world_path: String, primary_seed: int) -> String:
+	var best_path := resolved_world_path
+	var best_count := _count_chunk_delta_files(resolved_world_path)
+
+	var candidate_paths: Array = [legacy_world_path]
+	candidate_paths.append_array(_find_slot_world_delta_seed_candidates(slot_dir, primary_seed))
+
+	for path_var in candidate_paths:
+		var candidate_path := String(path_var)
+		if candidate_path == "" or candidate_path == best_path:
+			continue
+		var candidate_count := _count_chunk_delta_files(candidate_path)
+		if candidate_count > best_count:
+			best_count = candidate_count
+			best_path = candidate_path
+
+	if best_path != resolved_world_path and best_count > 0:
+		push_warning("SaveManager: world delta path recovered from compatible candidate: %s (resolved=%s, files=%d)" % [best_path, resolved_world_path, best_count])
+
+	return best_path
+
 func _load_metadata() -> void:
 	var file = FileAccess.open(SAVE_ROOT + "metadata.json", FileAccess.READ)
 	if file:
@@ -148,13 +300,22 @@ func get_slot_info(slot_id: int) -> Dictionary:
 
 # --- 核心保存逻辑 ---
 
-func _build_save_data() -> Dictionary:
+func _build_save_data(world_context: Dictionary = {}) -> Dictionary:
+	var world_metadata: Dictionary = world_context.get("world_metadata", {})
+	if world_metadata.is_empty():
+		world_metadata = _get_world_metadata()
+	var world_storage_prefix := String(world_context.get("world_storage_prefix", "")).strip_edges()
+	if world_storage_prefix == "":
+		world_storage_prefix = _extract_world_storage_prefix_from_metadata(world_metadata)
+	else:
+		world_storage_prefix = _sanitize_world_storage_prefix(world_storage_prefix)
 	return {
 		"version": "2.0",
 		"timestamp": Time.get_unix_time_from_system(),
 		"scene_path": get_tree().current_scene.scene_file_path, # 保存当前场景路径
 		"game_time": GameState.current_time,
-		"world_metadata": _get_world_metadata(),
+		"world_metadata": world_metadata,
+		"world_storage_prefix": world_storage_prefix,
 		"player": _pack_player_data(),
 		"inventory": _pack_inventory(),
 		"buildings": _pack_buildings(),
@@ -191,6 +352,8 @@ func _update_slot_metadata(slot_id: int, data: Dictionary) -> void:
 	_save_metadata_to_disk()
 
 func save_game(slot_id: int, force_sync_flush: bool = true) -> void:
+	if slot_id != current_slot_id:
+		clear_world_binding()
 	current_slot_id = slot_id
 	if _autosave_running:
 		flush_save_pipeline_sync()
@@ -204,7 +367,9 @@ func save_game(slot_id: int, force_sync_flush: bool = true) -> void:
 		DirAccess.make_dir_recursive_absolute(slot_dir)
 	
 	# 1. 切换无限地图管理器的目标目录并同步保存最新的内存修改
-	var world_path = slot_dir + "world_deltas/"
+	var world_context := _resolve_world_context_for_slot(slot_id)
+	var data_preview := _build_save_data(world_context)
+	var world_path := _build_slot_world_deltas_path(slot_dir, String(data_preview.get("world_storage_prefix", "")))
 	if InfiniteChunkManager:
 		InfiniteChunkManager.set_save_root(world_path, true)
 		InfiniteChunkManager.save_all_deltas(true, force_sync_flush) # 强制物块修改写盘
@@ -212,7 +377,7 @@ func save_game(slot_id: int, force_sync_flush: bool = true) -> void:
 			InfiniteChunkManager.flush_pending_dirty_writes_sync()
 	
 	# 2. 收集核心游戏数据
-	var data = _build_save_data()
+	var data = data_preview
 	
 	# 3. 写入数据文件 (Atomic & Compressed)
 	var final_path = _get_data_path(slot_id)
@@ -336,6 +501,7 @@ func _load_binary_data(path: String) -> Variant:
 	return data
 
 func load_game(slot_id: int) -> bool:
+	clear_world_binding()
 	# 只要加载存档，就意味着这绝对不是新游戏
 	if GameManager:
 		GameManager.is_new_game = false
@@ -359,11 +525,19 @@ func load_game(slot_id: int) -> bool:
 		else:
 			push_error("SaveManager: 存档文件损坏且无备份 " + path)
 		return false
+
+	var loaded_world_metadata: Dictionary = data.get("world_metadata", {})
+	var loaded_world_storage_prefix := _extract_world_storage_prefix_from_save_data(data)
+	_bind_world_context(loaded_world_metadata, loaded_world_storage_prefix)
 	
-	# 1. 设定地图路径
+	# 1. 设定地图路径（按世界前缀隔离，避免不同地图串档）
 	var slot_dir = _get_slot_dir(slot_id)
+	var legacy_world_path := _get_slot_world_deltas_legacy_path(slot_dir)
+	var resolved_world_path := _build_slot_world_deltas_path(slot_dir, _bound_world_storage_prefix)
+	var primary_seed := int(loaded_world_metadata.get("primary_seed", data.get("world_seed", 0)))
+	var world_path := _select_best_world_deltas_path(slot_dir, resolved_world_path, legacy_world_path, primary_seed)
 	if InfiniteChunkManager:
-		InfiniteChunkManager.set_save_root(slot_dir + "world_deltas/")
+		InfiniteChunkManager.set_save_root(world_path)
 
 	# 2. 恢复全局状态
 	GameState.current_time = data.get("game_time", 0.0)

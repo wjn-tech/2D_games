@@ -1,0 +1,16 @@
+﻿[gd_resource type="Resource" script_class="BaseItem" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/core/resources/base_item.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://icon.svg" id="2_icon"]
+
+[resource]
+script = ExtResource("1_script")
+id = "arcane_shard"
+display_name = "奥术碎片"
+description = "凝固的暗奥术结晶碎块。"
+item_type = "Material"
+icon = ExtResource("2_icon")
+max_stack = 99
+stackable = true
+value = 10
+quality_grade = "Common"

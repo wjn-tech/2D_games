@@ -20,6 +20,32 @@ This document records the implemented Terraria-core stage family sequencing and 
   - `structures_and_micro_biomes`
   - `liquid_settle_and_cleanup`
 
+### Structure Injection Guard (2026-04)
+- Runtime buried-ruins overlay injection in `InfiniteChunkManager._apply_structures` is now default-disabled (`ENABLE_BURIED_RUINS := false`).
+- Reason: this overlay path is not part of the authoritative worldgen/precompute chain and can produce deterministic but confusing fixed-shape artifacts that appear/disappear with chunk streaming.
+- If structure experiments are re-enabled later, they should be migrated into the canonical `WorldGenerator.generate_chunk_cells(...)` pipeline to keep preload/runtime parity.
+
+### Surface Feature Coordinate Fix (2026-04)
+- Fixed `_apply_surface_features` coordinate-space bug: surface `top_y` is now converted from global Y to chunk-local Y before writing into chunk result dictionaries.
+- Added in-chunk bounds guards (`0 <= local_x/local_y < 64`) for all feature writes to prevent cross-chunk stray writes.
+- This removes "floating micro-platform" artifacts that previously appeared/disappeared when unrelated chunks streamed in/out.
+
+### Precomputed Invalidation Update (2026-04)
+- Bumped precomputed storage schema to `2` and tightened legacy fallback validation (schema/signature/coord/identity must match).
+- Purpose: prevent stale precomputed artifacts generated under older buggy rules from being reused after generator fixes.
+
+### Runtime Streaming Guard (2026-04)
+- To prevent visible half-baked chunk states while digging, chunks within player-visible neighborhood are now generated with full pipeline in one pass (`generate_chunk_cells(..., false)`) instead of `critical -> enrichment` split.
+- Fast-fall consistency update: player-visible neighborhood no longer downgrades to `critical` during high-speed fall; near-player chunks stay on full pipeline to avoid direction-dependent solid/void switching.
+- Throughput guard: streaming scheduler now scales critical chunk builds per frame by player velocity pressure (normal/high/extreme), and player-side vicinity refresh + walk-ahead priming also tighten under high-speed movement to avoid outrun gaps.
+- Hard safety guard: player dry-state fall speed now has a terminal cap (`TERMINAL_FALL_SPEED = 1280`) so physics cannot outrun guaranteed chunk readiness budget.
+- Extreme-speed valve: if target chunk is still not loaded under extreme speed, player-side guard triggers emergency synchronous load for target world position with cooldown, prioritizing zero-void continuity over transient spike risk.
+- Emergency sync consistency update: `force_load_at_world_pos(...)` now uses full generation (with immediate internals refresh) instead of critical-only preload, preventing topology mismatches after unload/reload.
+- Walking continuity guard: even at normal walk speeds, ahead chunk miss now triggers low-frequency sync guard to prevent stepping into visible unloaded strips.
+- Freefall rescue guard: long-fall rescue now requires sustained chunk-miss evidence before teleporting back to safe ground, preventing false-positive pullback during valid deep descent.
+- Distant chunks still use two-phase streaming for frame-budget safety.
+- Moving-state enrichment cooldown is reduced (`10 -> 4` frames) to shorten the time that non-visible chunks remain in critical-only state.
+
 ## Conflict Rule
 - Default: later stage overrides earlier stage output.
 - Whitelist preserve zones:
@@ -62,7 +88,8 @@ This document records the implemented Terraria-core stage family sequencing and 
 - Merge continuity fix: downward transfer into same-type liquid below now allows sub-quantum merging near capacity, preventing separated water columns that fail to combine.
 - Falling packet model: downward transfer now detaches a quantized liquid packet from the source cell, animates it through air (`water: 120ms`, `lava: 180ms`), and deposits it on arrival; this creates visible droplet-like downward motion instead of simultaneous top/bottom interpolation.
 - Lateral spill continuity fix: reduced support thresholds and added a minimum side-flow quantum floor for ledge spill, preventing side transfer from being quantized to zero at low per-step budgets.
-- Vertical cascade fix: when a cell cannot fall only because downstream capacity is temporarily full, it is immediately re-enqueued (and nudges the above cell) so stacked water columns can cascade in the same time window instead of strict one-layer serialization.
+- Vertical cascade fix: when a cell cannot fall because downstream capacity is temporarily full, runtime now prioritizes waking the below cell and schedules a delayed self-retry for the source cell, preventing busy immediate requeue while avoiding source-cell sleep starvation.
+- Vertical-priority guard: while a source cell is in downstream-capacity wait, lateral spread/edge-spill from that source is suppressed for the tick, preventing uphill-looking side growth during bottom-drain events.
 - Packet robustness fix: falling packets now validate destination chunk writability before deposit (otherwise they are returned to source), and inflight flags are rebuilt from active packets each frame to prevent stale lock states that can stop flow.
 - Scheduler fairness fix: active liquid processing switched from LIFO stack pop to FIFO queue pop, and downstream-capacity retries now prioritize waking the below cell; this prevents local requeue starvation that can freeze apparent flow.
 - Surface lake fill fix: basin water seeding now fills each basin column up to ~2/3 of depth-from-surface instead of a single bottom row, and surface-basin seed budget is raised to avoid underfilled lakes.
@@ -71,6 +98,42 @@ This document records the implemented Terraria-core stage family sequencing and 
 - Lake continuity fix: downward transfer into same-type liquid now commits directly to the destination cell (without packet detachment), preventing persistent void gaps inside lake bodies.
 - Side-fill granularity fix: lateral transfer quantum reduced (`1/64`) to improve low-volume equalization and reduce checker/void artifacts in shallow lake regions.
 - Temporal-detail tuning: downward packet quantum is refined from `1/16` to `1/32`, while per-step delay and packet travel durations are reduced proportionally (water `90/120ms` -> `45/60ms`, lava `150/180ms` -> `75/90ms`) so motion appears finer without stretching total fall completion time.
+- Worldgen pre-settle fix: chunk ingest now runs bounded immediate settle passes before first render, so newly generated water/lava appears near equilibrium at load time instead of requiring long runtime convergence.
+- Persistence parity fix: chunk liquid persistence now has an explicit `liquid_state_initialized` marker; once initialized, even empty liquid states are treated as meaningful save data and will not be replaced by regenerated `_liquid_seeds` on reload.
+- Save-time runtime sync: `InfiniteChunkManager.save_all_deltas()` now asks `LiquidManager` to flush in-memory runtime liquid state back into `WorldChunk.liquid_cells` before dirty-write scheduling, ensuring manual saves capture current liquid state even when chunks are still loaded.
+- Unload persistence ordering fix: chunk unload now syncs runtime liquid into the loaded `WorldChunk` before persistable-change checks, and liquid-touched loaded chunks are auto-registered into `world_delta_data` so liquid-only edits are not dropped.
+- Flow-fidelity continuity: transfer quanta are refined (`down: 1/16 -> 1/32`, `side: 1/32 -> 1/64`) and per-frame active-step budget is increased (`56 -> 88`) so motion remains smooth while maintaining aggregate throughput.
+- Adaptive falling cadence: fall cooldown now scales with transferred amount and local head difference, reducing binary start-stop behavior and improving continuous cavity draining.
+- Direction stability and pressure pass: near-equal lateral decisions now keep a short-lived remembered direction, and idle frames run a bounded local pressure equalization pass to reduce checkerboard/staircase fronts without whole-world sweeps.
+- Steady-state bubble fix: lateral target capacity now converges to full-cell (`1.0`), pressure equalization adds micro-gap transfer for near-equilibrium (`1.00 vs 0.96`) deadzones, and static hole fill now transfers from neighboring donor cells (mass-conservative) instead of creating liquid.
+- Bubble cleanup extension: idle pressure equalization can now transfer into supported empty side cells, allowing enclosed interior voids to be rehydrated without enabling unsupported lateral shelf spread.
+- One-layer bubble collapse: idle phase now runs a bounded enclosed-bubble pass that fills single-cell interior voids (top/bottom enclosed and 3-neighbor support) via neighbor transfer, preserving mass and preventing persistent mid-body slit bubbles.
+- Active bubble cleanup: when liquid is still flowing, a smaller per-frame bubble-collapse budget also runs so one-cell gaps are corrected without waiting for full idle.
+- Waterfall continuity: water now prefers direct open-column falling (when the next two cells are open) instead of relying on packet-only descent, producing a more Terraria-like continuous waterfall column.
+- Waterfall anti-flicker (water-only): open-column direct-fall mode now keeps a short hysteresis window and tolerates tiny near-source thin-film amounts, reducing packet/direct mode flip-flop in borderline cavities.
+- Water split tuning (water-only): lateral transfer keeps a strict bounded +1% gain (`WATER_LATERAL_SPLIT_GAIN=1.01`) after quantization, capped by source amount and target capacity to avoid runaway growth.
+- Tail cleanup guardrail: `CELL_CLEAR_EPSILON` behavior is now regression-covered to ensure tiny residual amounts are culled while just-above-threshold liquid remains persisted.
+- Waterfall vertical-priority tuning (water-only): open-column mode keeps a visible downward slice floor and shorter cooldown while still allowing moderate lateral bleed, producing less rigid pillar behavior.
+- Waterfall visual continuity: low-volume vertically-connected water cells now render as a full-width stream sheet with top-lip blending (instead of fixed narrow ribbons), reducing artificial "overlay texture" appearance.
+- Seam-void bubble fix: bubble collapse now explicitly patches top-bottom enclosed vertical seam voids (even when left/right support is missing), removing persistent one-tile horizontal cavity lines inside large water bodies while preserving mass.
+- Root-cause dead-zone fix: downward transfer no longer hard-stalls for sub-quantum films when open-fall is not active; a bounded micro-trickle path keeps thin water layers draining instead of suspending and leaving persistent air pockets.
+- Stream-lip artifact reduction: stream-sheet top lip inset was reduced to avoid rendering a fake dark gap beneath thin surface films.
+- Performance root-cause fix: cells blocked by fall cooldown are no longer re-enqueued every frame; a cooldown-ready scheduler now activates them only when their timer elapses, reducing active-queue thrash and frame spikes in heavy waterfall scenes.
+- Multi-cell seam-collapse fix: vertical seam bubble collapse now probes deeper vertical endpoints (bounded depth) instead of immediate neighbors only, so stacked air gaps between upper/lower pools collapse progressively rather than leaving apparent floating slabs.
+- Seam visibility guard: per-collapse vertical transfer was increased so bridge cells cross render visibility threshold, reducing "hidden connector" cases that looked like persistent bubbles or suspended liquid layers.
+- Deep-probe continuity fix: vertical seam endpoint probing now continues past same-type thin intermediate films instead of early-failing, so deeper stable endpoints can still be discovered and multi-row air gaps no longer persist under thin films.
+- Seam-threshold parity fix: vertical seam bridge minimum neighbor amount is now aligned with overlay visibility threshold (`RENDER_EPSILON`), so visible thin caps can still bridge with lower pools and no longer appear as suspended slabs above bubble rows.
+- Underfilled-seam candidate fix: seam collapse no longer skips same-type underfilled candidate cells (above clear epsilon but below seam threshold); these cells are now topped up as bridge cells, removing persistent algorithmic gap rows.
+- Core-logic runtime rollback: post-simulation repair passes (static hole fill, fast relax, pressure equalization, bubble collapse) are temporarily disabled in `_process`; runtime now relies on core gravity-first active-cell simulation, lateral spread, packet settlement, and cooldown-ready scheduling only.
+- Porting parity cleanup (2026-03-30): legacy post-simulation repair passes and related constants are removed from `LiquidManager`; runtime behavior is now exclusively defined by `_simulate_active_cell` core flow path and scheduler.
+- No upward insertion contract (2026-03-30): all historical upward candidate fill paths are removed, and regression tests now assert that runtime never creates new liquid cells above the source layer.
+- Bottom-anchor rendering contract (2026-03-30): liquid overlay now computes bottom-anchored fill metrics for every cell with assertions, and thin-film rendering keeps the same bottom-attached invariant to avoid same-cell floating artifacts.
+
+## Liquid Fidelity Rollout Checklist (2026-03)
+- Keep throughput parity by tuning `MAX_ACTIVE_STEPS_PER_FRAME` and `SIMULATION_BUDGET_MS` together; avoid raising one without the other.
+- Keep realism knobs aligned: `DOWN_FLOW_QUANTUM`, `SIDE_FLOW_QUANTUM`, `MAX_DOWN_FLOW_PER_STEP`, `MAX_SIDE_FLOW_PER_STEP`.
+- Validate persistence parity after any tuning change: save while loaded, unload/reload, and initialized-empty chunk paths.
+- If frame-time spikes occur, first reduce `PRESSURE_EQUALIZATION_BUDGET`; second reduce `MAX_ACTIVE_STEPS_PER_FRAME`; keep quanta unchanged unless visual continuity regresses.
 
 ## Dual Acceptance Metrics
 - `core_stage_coverage_rate`: threshold `>= 0.95`

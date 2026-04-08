@@ -10,6 +10,8 @@ signal player_movement_locked(locked: bool) # 新增：仅锁定玩家移动/跳
 signal player_health_changed(current: float, max: float)
 signal player_layer_changed(new_layer: int)
 signal player_data_refreshed # 新增：当继承或转生后刷新玩家数据
+signal player_water_state_changed(state: String, immersion: float)
+signal player_water_interaction_event(event_name: String, immersion: float)
 
 # 交互相关
 signal interaction_started(target: Node)

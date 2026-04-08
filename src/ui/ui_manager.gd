@@ -4,6 +4,8 @@ extends Node
 ## 负责管理所有 UI 窗口的打开、关闭、层级与输入拦截。
 
 const HighlightOverlayScene = preload("res://scenes/ui/tutorial/highlight_overlay.tscn")
+const LOADING_SHELL_THEME_PATH := "res://assets/ui/start_menu_shell/loading_theme.json"
+const STARTMENU_FALLBACK_ICON_PATH := "res://assets/ui/startmenu/icons/icon_start.svg"
 
 signal window_opened(window_name: String)
 signal window_closed(window_name: String)
@@ -21,6 +23,13 @@ var loading_status_label: Label = null
 var loading_error_label: Label = null
 var loading_progress_bar: ProgressBar = null
 var loading_progress_tween: Tween = null
+var loading_subtitle_label: Label = null
+var loading_percent_label: Label = null
+var loading_segment_cells: Array[ColorRect] = []
+var loading_panel_style: StyleBoxFlat = null
+var loading_progress_bg_style: StyleBoxFlat = null
+var loading_progress_fill_style: StyleBoxFlat = null
+var loading_theme_tokens: Dictionary = {}
 
 var is_ui_focused: bool = false:
 	set(value):
@@ -56,6 +65,16 @@ func clear_all_references() -> void:
 	blocking_windows.clear()
 	is_ui_focused = false
 
+func _get_active_window_if_valid(window_name: String) -> Control:
+	if not active_windows.has(window_name):
+		return null
+	var cached_window = active_windows[window_name]
+	if is_instance_valid(cached_window) and cached_window is Control:
+		return cached_window
+	active_windows.erase(window_name)
+	blocking_windows.erase(window_name)
+	return null
+
 ## 打开窗口
 func open_window(window_name: String, scene_path: String, blocks_input: bool = true) -> Control:
 	print("UIManager: 尝试打开窗口: ", window_name, " 路径: ", scene_path)
@@ -63,11 +82,7 @@ func open_window(window_name: String, scene_path: String, blocks_input: bool = t
 	var window: Control = null
 	
 	# 1. 优先从已激活窗口中找
-	if active_windows.has(window_name):
-		window = active_windows[window_name]
-		if not is_instance_valid(window):
-			active_windows.erase(window_name)
-			window = null
+	window = _get_active_window_if_valid(window_name)
 	
 	# 2. 检查场景中是否已经存在该节点 (针对 Master Scene 预置节点)
 	if not window:
@@ -172,6 +187,77 @@ func play_fade(to_black: bool, duration: float = 0.5) -> Signal:
 	tween.tween_property(fade_node, "color:a", target_alpha, duration)
 	return tween.finished
 
+func _theme_float(tokens: Dictionary, key: String, fallback: float) -> float:
+	if not tokens.has(key):
+		return fallback
+	var value = tokens.get(key)
+	if value is int or value is float:
+		return float(value)
+	return fallback
+
+func _theme_color(tokens: Dictionary, key: String, fallback: Color) -> Color:
+	if not tokens.has(key):
+		return fallback
+	var raw = tokens.get(key)
+	if raw is Array and raw.size() >= 3:
+		var r := float(raw[0])
+		var g := float(raw[1])
+		var b := float(raw[2])
+		var a := float(raw[3]) if raw.size() >= 4 else 255.0
+		if r > 1.0 or g > 1.0 or b > 1.0 or a > 1.0:
+			return Color(r / 255.0, g / 255.0, b / 255.0, a / 255.0)
+		return Color(r, g, b, a)
+	if raw is Color:
+		return raw
+	return fallback
+
+func _load_loading_shell_theme() -> Dictionary:
+	var defaults := {
+		"overlay_bg": [8, 14, 24, 234],
+		"panel_bg": [15, 22, 36, 246],
+		"panel_border": [86, 160, 210, 232],
+		"title_color": [82, 224, 255, 255],
+		"subtitle_color": [152, 174, 198, 255],
+		"header_bg": [75, 89, 116, 222],
+		"header_text_color": [225, 232, 242, 245],
+		"chrome_accent": [61, 86, 112, 255],
+		"stage_color": [193, 214, 232, 255],
+		"status_color": [154, 184, 214, 245],
+		"progress_bg": [19, 32, 52, 255],
+		"progress_fill": [70, 205, 245, 255],
+		"progress_border": [130, 216, 255, 255],
+		"segment_empty": [25, 35, 54, 255],
+		"segment_fill": [72, 208, 246, 255],
+		"percent_box_bg": [13, 27, 43, 255],
+		"percent_box_border": [116, 180, 228, 230],
+		"footer_bg": [47, 63, 85, 220],
+		"footer_text": [169, 184, 201, 240],
+		"error_color": [255, 108, 108, 255],
+		"panel_radius": 4,
+		"panel_width": 760,
+		"panel_height": 520,
+		"progress_height": 16,
+		"segment_count": 22,
+		"progress_tween_sec": 0.12,
+		"icon_path": STARTMENU_FALLBACK_ICON_PATH
+	}
+
+	if not FileAccess.file_exists(LOADING_SHELL_THEME_PATH):
+		return defaults
+
+	var file := FileAccess.open(LOADING_SHELL_THEME_PATH, FileAccess.READ)
+	if file == null:
+		return defaults
+
+	var content := file.get_as_text()
+	var parsed = JSON.parse_string(content)
+	if not (parsed is Dictionary):
+		return defaults
+
+	for key in parsed.keys():
+		defaults[key] = parsed[key]
+	return defaults
+
 func show_loading_overlay(title: String = "世界加载中", stage_text: String = "", progress: float = 0.0, status_text: String = "") -> void:
 	_ensure_loading_overlay()
 	if not is_instance_valid(loading_overlay):
@@ -180,9 +266,21 @@ func show_loading_overlay(title: String = "世界加载中", stage_text: String 
 	loading_overlay.modulate.a = 1.0
 	if is_instance_valid(loading_title_label):
 		loading_title_label.text = title
+		loading_title_label.add_theme_color_override("font_color", _theme_color(loading_theme_tokens, "title_color", Color(0.86, 0.95, 1.0)))
+	if is_instance_valid(loading_subtitle_label):
+		loading_subtitle_label.add_theme_color_override("font_color", _theme_color(loading_theme_tokens, "subtitle_color", Color(0.74, 0.81, 0.88)))
+	if is_instance_valid(loading_stage_label):
+		loading_stage_label.add_theme_color_override("font_color", _theme_color(loading_theme_tokens, "stage_color", Color(0.58, 0.82, 1.0)))
+	if is_instance_valid(loading_status_label):
+		loading_status_label.add_theme_color_override("font_color", _theme_color(loading_theme_tokens, "status_color", Color(0.78, 0.86, 0.95)))
 	if is_instance_valid(loading_error_label):
 		loading_error_label.visible = false
+	if is_instance_valid(loading_panel_style):
+		loading_panel_style.border_color = _theme_color(loading_theme_tokens, "panel_border", Color(0.36, 0.62, 0.86, 0.9))
+	if is_instance_valid(loading_progress_fill_style):
+		loading_progress_fill_style.bg_color = _theme_color(loading_theme_tokens, "progress_fill", Color(0.27, 0.77, 0.96))
 	update_loading_overlay(progress, stage_text, status_text)
+	_sync_loading_progress_visuals(loading_progress_bar.value if is_instance_valid(loading_progress_bar) else 0.0)
 
 func update_loading_overlay(progress: float, stage_text: String = "", status_text: String = "") -> void:
 	_ensure_loading_overlay()
@@ -195,10 +293,14 @@ func update_loading_overlay(progress: float, stage_text: String = "", status_tex
 		loading_status_label.text = status_text
 	if is_instance_valid(loading_progress_bar):
 		var target_value := clampf(progress, 0.0, 1.0) * 100.0
+		target_value = maxf(loading_progress_bar.value, target_value)
+		var current_value := loading_progress_bar.value
 		if is_instance_valid(loading_progress_tween):
 			loading_progress_tween.kill()
 		loading_progress_tween = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
-		loading_progress_tween.tween_property(loading_progress_bar, "value", target_value, 0.12)
+		var tween_sec := clampf(_theme_float(loading_theme_tokens, "progress_tween_sec", 0.12), 0.05, 0.3)
+		loading_progress_tween.tween_property(loading_progress_bar, "value", target_value, tween_sec)
+		loading_progress_tween.parallel().tween_method(_sync_loading_progress_visuals, current_value, target_value, tween_sec)
 
 func show_loading_failure(message: String) -> void:
 	_ensure_loading_overlay()
@@ -208,11 +310,21 @@ func show_loading_failure(message: String) -> void:
 	loading_overlay.modulate.a = 1.0
 	if is_instance_valid(loading_stage_label):
 		loading_stage_label.text = "加载失败"
+		loading_stage_label.add_theme_color_override("font_color", _theme_color(loading_theme_tokens, "error_color", Color(1.0, 0.45, 0.45)))
 	if is_instance_valid(loading_status_label):
 		loading_status_label.text = message
+		loading_status_label.add_theme_color_override("font_color", _theme_color(loading_theme_tokens, "error_color", Color(1.0, 0.45, 0.45)))
+	if is_instance_valid(loading_percent_label):
+		loading_percent_label.text = "ERR"
+		loading_percent_label.add_theme_color_override("font_color", _theme_color(loading_theme_tokens, "error_color", Color(1.0, 0.45, 0.45)))
 	if is_instance_valid(loading_error_label):
 		loading_error_label.visible = true
 		loading_error_label.text = "正在返回主菜单..."
+		loading_error_label.add_theme_color_override("font_color", _theme_color(loading_theme_tokens, "error_color", Color(1.0, 0.45, 0.45)))
+	if is_instance_valid(loading_panel_style):
+		loading_panel_style.border_color = _theme_color(loading_theme_tokens, "error_color", Color(1.0, 0.45, 0.45))
+	if is_instance_valid(loading_progress_fill_style):
+		loading_progress_fill_style.bg_color = _theme_color(loading_theme_tokens, "error_color", Color(1.0, 0.45, 0.45))
 
 func hide_loading_overlay(duration: float = 0.2) -> Signal:
 	_ensure_loading_overlay()
@@ -230,9 +342,29 @@ func dismiss_loading_overlay() -> void:
 		loading_progress_tween.kill()
 	_finalize_loading_overlay_hide()
 
+func _sync_loading_progress_visuals(value: float) -> void:
+	var clamped := clampf(value, 0.0, 100.0)
+	if is_instance_valid(loading_percent_label):
+		loading_percent_label.text = "%d%%" % int(round(clamped))
+		loading_percent_label.add_theme_color_override("font_color", _theme_color(loading_theme_tokens, "title_color", Color(0.32, 0.88, 1.0)))
+	_update_loading_segment_cells(clamped)
+
+func _update_loading_segment_cells(percent_value: float) -> void:
+	if loading_segment_cells.is_empty():
+		return
+	var lit_count := int(round((percent_value / 100.0) * float(loading_segment_cells.size())))
+	var fill_color := _theme_color(loading_theme_tokens, "segment_fill", Color(0.28, 0.81, 0.96, 1.0))
+	var empty_color := _theme_color(loading_theme_tokens, "segment_empty", Color(0.10, 0.15, 0.23, 1.0))
+	for i in range(loading_segment_cells.size()):
+		var cell := loading_segment_cells[i]
+		if not is_instance_valid(cell):
+			continue
+		cell.color = fill_color if i < lit_count else empty_color
+
 func _ensure_loading_overlay() -> void:
 	if is_instance_valid(loading_overlay):
 		return
+	loading_theme_tokens = _load_loading_shell_theme()
 
 	var root := get_tree().root
 	var loading_layer = root.get_node_or_null("GlobalLoadingLayer")
@@ -253,7 +385,7 @@ func _ensure_loading_overlay() -> void:
 
 	var background := ColorRect.new()
 	background.name = "Background"
-	background.color = Color(0.03, 0.05, 0.09, 0.92)
+	background.color = _theme_color(loading_theme_tokens, "overlay_bg", Color(0.03, 0.05, 0.09, 0.92))
 	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	background.mouse_filter = Control.MOUSE_FILTER_STOP
 	overlay.add_child(background)
@@ -264,46 +396,144 @@ func _ensure_loading_overlay() -> void:
 	panel.anchor_top = 0.5
 	panel.anchor_right = 0.5
 	panel.anchor_bottom = 0.5
-	panel.offset_left = -260
-	panel.offset_top = -120
-	panel.offset_right = 260
-	panel.offset_bottom = 120
+	var panel_width := clampf(_theme_float(loading_theme_tokens, "panel_width", 760.0), 560.0, 920.0)
+	var panel_height := clampf(_theme_float(loading_theme_tokens, "panel_height", 520.0), 360.0, 700.0)
+	panel.offset_left = -panel_width * 0.5
+	panel.offset_top = -panel_height * 0.5
+	panel.offset_right = panel_width * 0.5
+	panel.offset_bottom = panel_height * 0.5
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color(0.08, 0.12, 0.18, 0.96)
-	panel_style.border_color = Color(0.36, 0.62, 0.86, 0.9)
-	panel_style.border_width_left = 2
-	panel_style.border_width_top = 2
-	panel_style.border_width_right = 2
-	panel_style.border_width_bottom = 2
-	panel_style.corner_radius_top_left = 10
-	panel_style.corner_radius_top_right = 10
-	panel_style.corner_radius_bottom_left = 10
-	panel_style.corner_radius_bottom_right = 10
-	panel_style.content_margin_left = 24
-	panel_style.content_margin_top = 24
-	panel_style.content_margin_right = 24
-	panel_style.content_margin_bottom = 24
+	panel_style.bg_color = _theme_color(loading_theme_tokens, "panel_bg", Color(0.08, 0.12, 0.18, 0.96))
+	panel_style.border_color = _theme_color(loading_theme_tokens, "panel_border", Color(0.36, 0.62, 0.86, 0.9))
+	panel_style.border_width_left = 3
+	panel_style.border_width_top = 3
+	panel_style.border_width_right = 3
+	panel_style.border_width_bottom = 3
+	var panel_radius := int(clampf(_theme_float(loading_theme_tokens, "panel_radius", 10.0), 6.0, 28.0))
+	panel_style.corner_radius_top_left = panel_radius
+	panel_style.corner_radius_top_right = panel_radius
+	panel_style.corner_radius_bottom_left = panel_radius
+	panel_style.corner_radius_bottom_right = panel_radius
+	panel_style.content_margin_left = 0
+	panel_style.content_margin_top = 0
+	panel_style.content_margin_right = 0
+	panel_style.content_margin_bottom = 0
 	panel.add_theme_stylebox_override("panel", panel_style)
 	overlay.add_child(panel)
 
+	var frame := VBoxContainer.new()
+	frame.name = "Frame"
+	frame.add_theme_constant_override("separation", 0)
+	panel.add_child(frame)
+
+	var header_panel := PanelContainer.new()
+	header_panel.name = "HeaderBar"
+	header_panel.custom_minimum_size = Vector2(0, 42)
+	var header_style := StyleBoxFlat.new()
+	header_style.bg_color = _theme_color(loading_theme_tokens, "header_bg", Color(0.28, 0.36, 0.46, 0.9))
+	header_style.border_width_bottom = 2
+	header_style.border_color = _theme_color(loading_theme_tokens, "chrome_accent", Color(0.24, 0.34, 0.44, 1.0))
+	header_style.content_margin_left = 16
+	header_style.content_margin_right = 16
+	header_style.content_margin_top = 8
+	header_style.content_margin_bottom = 6
+	header_panel.add_theme_stylebox_override("panel", header_style)
+	frame.add_child(header_panel)
+
+	var header_row := HBoxContainer.new()
+	header_row.name = "HeaderRow"
+	header_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	header_panel.add_child(header_row)
+
+	var header_left := HBoxContainer.new()
+	header_left.add_theme_constant_override("separation", 6)
+	header_row.add_child(header_left)
+
+	for color in [Color(0.88, 0.29, 0.29), Color(0.92, 0.73, 0.20), Color(0.38, 0.81, 0.47)]:
+		var dot := ColorRect.new()
+		dot.custom_minimum_size = Vector2(14, 14)
+		dot.color = color
+		dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		header_left.add_child(dot)
+
+	var spacer_left := Control.new()
+	spacer_left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header_row.add_child(spacer_left)
+
+	var header_title := Label.new()
+	header_title.text = "LOADING"
+	header_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	header_title.add_theme_font_size_override("font_size", 30)
+	header_title.add_theme_color_override("font_color", _theme_color(loading_theme_tokens, "header_text_color", Color(0.9, 0.94, 0.98)))
+	header_row.add_child(header_title)
+
+	var spacer_right := Control.new()
+	spacer_right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header_row.add_child(spacer_right)
+
+	var header_right := HBoxContainer.new()
+	header_right.add_theme_constant_override("separation", 8)
+	header_row.add_child(header_right)
+	for i in range(3):
+		var box := ColorRect.new()
+		box.custom_minimum_size = Vector2(16, 12)
+		box.color = _theme_color(loading_theme_tokens, "chrome_accent", Color(0.34, 0.43, 0.54, 1.0))
+		box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		header_right.add_child(box)
+
+	var body_margin := MarginContainer.new()
+	body_margin.name = "BodyMargin"
+	body_margin.add_theme_constant_override("margin_left", 34)
+	body_margin.add_theme_constant_override("margin_top", 24)
+	body_margin.add_theme_constant_override("margin_right", 34)
+	body_margin.add_theme_constant_override("margin_bottom", 16)
+	body_margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	frame.add_child(body_margin)
+
 	var content := VBoxContainer.new()
 	content.name = "Content"
-	content.add_theme_constant_override("separation", 12)
-	panel.add_child(content)
+	content.add_theme_constant_override("separation", 16)
+	body_margin.add_child(content)
+
+	var title_row := HBoxContainer.new()
+	title_row.name = "TitleRow"
+	title_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	title_row.add_theme_constant_override("separation", 10)
+	content.add_child(title_row)
+
+	var icon_path := String(loading_theme_tokens.get("icon_path", STARTMENU_FALLBACK_ICON_PATH))
+	if icon_path != "" and ResourceLoader.exists(icon_path):
+		var icon := TextureRect.new()
+		icon.name = "TitleIcon"
+		icon.custom_minimum_size = Vector2(22, 22)
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.texture = load(icon_path)
+		title_row.add_child(icon)
 
 	var title := Label.new()
 	title.name = "TitleLabel"
 	title.text = "世界加载中"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 28)
-	content.add_child(title)
+	title.add_theme_font_size_override("font_size", 56)
+	title.add_theme_color_override("font_color", _theme_color(loading_theme_tokens, "title_color", Color(0.86, 0.95, 1.0)))
+	title_row.add_child(title)
+
+	var subtitle := Label.new()
+	subtitle.name = "SubtitleLabel"
+	subtitle.text = "LOADING UNIVERSE"
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.add_theme_font_size_override("font_size", 34)
+	subtitle.add_theme_color_override("font_color", _theme_color(loading_theme_tokens, "subtitle_color", Color(0.62, 0.7, 0.8, 0.95)))
+	content.add_child(subtitle)
 
 	var stage := Label.new()
 	stage.name = "StageLabel"
 	stage.text = "正在准备场景"
 	stage.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	stage.add_theme_font_size_override("font_size", 20)
+	stage.add_theme_font_size_override("font_size", 30)
+	stage.add_theme_color_override("font_color", _theme_color(loading_theme_tokens, "stage_color", Color(0.58, 0.82, 1.0)))
 	content.add_child(stage)
 
 	var status := Label.new()
@@ -311,6 +541,8 @@ func _ensure_loading_overlay() -> void:
 	status.text = "请稍候..."
 	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	status.add_theme_font_size_override("font_size", 23)
+	status.add_theme_color_override("font_color", _theme_color(loading_theme_tokens, "status_color", Color(0.78, 0.86, 0.95)))
 	content.add_child(status)
 
 	var progress_bar := ProgressBar.new()
@@ -318,30 +550,164 @@ func _ensure_loading_overlay() -> void:
 	progress_bar.min_value = 0.0
 	progress_bar.max_value = 100.0
 	progress_bar.value = 0.0
-	progress_bar.custom_minimum_size = Vector2(420, 22)
-	progress_bar.show_percentage = true
+	progress_bar.step = 1.0
+	progress_bar.custom_minimum_size = Vector2(640, clampf(_theme_float(loading_theme_tokens, "progress_height", 16.0), 12.0, 24.0))
+	progress_bar.show_percentage = false
+	progress_bar.add_theme_color_override("font_color", Color(0.95, 0.98, 1.0))
+	var progress_bg := StyleBoxFlat.new()
+	progress_bg.bg_color = _theme_color(loading_theme_tokens, "progress_bg", Color(0.07, 0.13, 0.2, 0.95))
+	progress_bg.border_color = _theme_color(loading_theme_tokens, "progress_border", Color(0.46, 0.74, 0.98, 0.88))
+	progress_bg.border_width_left = 1
+	progress_bg.border_width_top = 1
+	progress_bg.border_width_right = 1
+	progress_bg.border_width_bottom = 1
+	progress_bg.corner_radius_top_left = 3
+	progress_bg.corner_radius_top_right = 3
+	progress_bg.corner_radius_bottom_left = 3
+	progress_bg.corner_radius_bottom_right = 3
+	var progress_fill := StyleBoxFlat.new()
+	progress_fill.bg_color = _theme_color(loading_theme_tokens, "progress_fill", Color(0.27, 0.77, 0.96))
+	progress_fill.corner_radius_top_left = 2
+	progress_fill.corner_radius_top_right = 2
+	progress_fill.corner_radius_bottom_left = 2
+	progress_fill.corner_radius_bottom_right = 2
+	progress_bar.add_theme_stylebox_override("background", progress_bg)
+	progress_bar.add_theme_stylebox_override("fill", progress_fill)
 	content.add_child(progress_bar)
+
+	var segment_frame := PanelContainer.new()
+	segment_frame.name = "SegmentFrame"
+	var segment_frame_style := StyleBoxFlat.new()
+	segment_frame_style.bg_color = _theme_color(loading_theme_tokens, "progress_bg", Color(0.08, 0.13, 0.2, 1.0))
+	segment_frame_style.border_color = _theme_color(loading_theme_tokens, "progress_border", Color(0.48, 0.72, 0.9, 0.85))
+	segment_frame_style.border_width_left = 3
+	segment_frame_style.border_width_top = 3
+	segment_frame_style.border_width_right = 3
+	segment_frame_style.border_width_bottom = 3
+	segment_frame_style.content_margin_left = 10
+	segment_frame_style.content_margin_right = 10
+	segment_frame_style.content_margin_top = 10
+	segment_frame_style.content_margin_bottom = 10
+	segment_frame.add_theme_stylebox_override("panel", segment_frame_style)
+	content.add_child(segment_frame)
+
+	var segment_row := HBoxContainer.new()
+	segment_row.name = "SegmentRow"
+	segment_row.add_theme_constant_override("separation", 4)
+	segment_frame.add_child(segment_row)
+
+	loading_segment_cells.clear()
+	var segment_count := int(clampi(int(_theme_float(loading_theme_tokens, "segment_count", 22.0)), 10, 40))
+	for i in range(segment_count):
+		var cell := ColorRect.new()
+		cell.custom_minimum_size = Vector2(24, 38)
+		cell.color = _theme_color(loading_theme_tokens, "segment_empty", Color(0.10, 0.15, 0.23, 1.0))
+		cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		segment_row.add_child(cell)
+		loading_segment_cells.append(cell)
+
+	var percent_badge := PanelContainer.new()
+	percent_badge.name = "PercentBadge"
+	percent_badge.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	var badge_style := StyleBoxFlat.new()
+	badge_style.bg_color = _theme_color(loading_theme_tokens, "percent_box_bg", Color(0.06, 0.13, 0.2, 0.95))
+	badge_style.border_color = _theme_color(loading_theme_tokens, "percent_box_border", Color(0.41, 0.63, 0.84, 0.9))
+	badge_style.border_width_left = 2
+	badge_style.border_width_top = 2
+	badge_style.border_width_right = 2
+	badge_style.border_width_bottom = 2
+	badge_style.content_margin_left = 26
+	badge_style.content_margin_right = 26
+	badge_style.content_margin_top = 14
+	badge_style.content_margin_bottom = 14
+	percent_badge.add_theme_stylebox_override("panel", badge_style)
+	content.add_child(percent_badge)
+
+	var percent_label := Label.new()
+	percent_label.name = "PercentLabel"
+	percent_label.text = "0%"
+	percent_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	percent_label.add_theme_font_size_override("font_size", 58)
+	percent_label.add_theme_color_override("font_color", _theme_color(loading_theme_tokens, "title_color", Color(0.32, 0.88, 1.0)))
+	percent_badge.add_child(percent_label)
 
 	var error_label := Label.new()
 	error_label.name = "ErrorLabel"
 	error_label.visible = false
 	error_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	error_label.add_theme_color_override("font_color", Color(1.0, 0.55, 0.55))
+	error_label.add_theme_font_size_override("font_size", 25)
+	error_label.add_theme_color_override("font_color", _theme_color(loading_theme_tokens, "error_color", Color(1.0, 0.55, 0.55)))
 	content.add_child(error_label)
+
+	var body_spacer := Control.new()
+	body_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	content.add_child(body_spacer)
+
+	var footer_panel := PanelContainer.new()
+	footer_panel.name = "FooterBar"
+	footer_panel.custom_minimum_size = Vector2(0, 40)
+	var footer_style := StyleBoxFlat.new()
+	footer_style.bg_color = _theme_color(loading_theme_tokens, "footer_bg", Color(0.23, 0.28, 0.36, 0.92))
+	footer_style.border_width_top = 2
+	footer_style.border_color = _theme_color(loading_theme_tokens, "chrome_accent", Color(0.24, 0.34, 0.44, 1.0))
+	footer_style.content_margin_left = 14
+	footer_style.content_margin_right = 14
+	footer_style.content_margin_top = 8
+	footer_style.content_margin_bottom = 8
+	footer_panel.add_theme_stylebox_override("panel", footer_style)
+	frame.add_child(footer_panel)
+
+	var footer_row := HBoxContainer.new()
+	footer_row.name = "FooterRow"
+	footer_panel.add_child(footer_row)
+
+	var footer_left := Label.new()
+	footer_left.text = "READY"
+	footer_left.add_theme_font_size_override("font_size", 20)
+	footer_left.add_theme_color_override("font_color", _theme_color(loading_theme_tokens, "footer_text", Color(0.72, 0.78, 0.86, 0.95)))
+	footer_row.add_child(footer_left)
+
+	var footer_spacer := Control.new()
+	footer_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	footer_row.add_child(footer_spacer)
+
+	var footer_right := Label.new()
+	footer_right.text = "ESC: CANCEL"
+	footer_right.add_theme_font_size_override("font_size", 20)
+	footer_right.add_theme_color_override("font_color", _theme_color(loading_theme_tokens, "footer_text", Color(0.72, 0.78, 0.86, 0.95)))
+	footer_row.add_child(footer_right)
 
 	loading_overlay = overlay
 	loading_title_label = title
+	loading_subtitle_label = subtitle
 	loading_stage_label = stage
 	loading_status_label = status
 	loading_error_label = error_label
 	loading_progress_bar = progress_bar
+	loading_percent_label = percent_label
+	loading_panel_style = panel_style
+	loading_progress_bg_style = progress_bg
+	loading_progress_fill_style = progress_fill
 	loading_overlay.visible = false
+	_sync_loading_progress_visuals(0.0)
 
 func _finalize_loading_overlay_hide() -> void:
 	if not is_instance_valid(loading_overlay):
 		return
 	loading_overlay.visible = false
 	loading_overlay.modulate.a = 1.0
+	if is_instance_valid(loading_panel_style):
+		loading_panel_style.border_color = _theme_color(loading_theme_tokens, "panel_border", Color(0.36, 0.62, 0.86, 0.9))
+	if is_instance_valid(loading_progress_fill_style):
+		loading_progress_fill_style.bg_color = _theme_color(loading_theme_tokens, "progress_fill", Color(0.27, 0.77, 0.96))
+	if is_instance_valid(loading_stage_label):
+		loading_stage_label.add_theme_color_override("font_color", _theme_color(loading_theme_tokens, "stage_color", Color(0.58, 0.82, 1.0)))
+	if is_instance_valid(loading_status_label):
+		loading_status_label.add_theme_color_override("font_color", _theme_color(loading_theme_tokens, "status_color", Color(0.78, 0.86, 0.95)))
+	if is_instance_valid(loading_percent_label):
+		loading_percent_label.add_theme_color_override("font_color", _theme_color(loading_theme_tokens, "title_color", Color(0.32, 0.88, 1.0)))
+		loading_percent_label.text = "0%"
+	_update_loading_segment_cells(0.0)
 	if is_instance_valid(loading_error_label):
 		loading_error_label.visible = false
 
@@ -388,12 +754,7 @@ func close_window(window_name: String) -> void:
 				active_windows[window_name] = found
 
 	var window: Control = null
-	if active_windows.has(window_name):
-		var potential_window = active_windows[window_name]
-		if is_instance_valid(potential_window):
-			window = potential_window
-		else:
-			active_windows.erase(window_name)
+	window = _get_active_window_if_valid(window_name)
 
 	if not is_instance_valid(window):
 		active_windows.erase(window_name)
@@ -452,14 +813,14 @@ func _play_open_animation(window: Node) -> void:
 	window.scale = Vector2(0.8, 0.8)
 	window.modulate.a = 0
 	
-	var tween = create_tween().set_parallel(true).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	var tween = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS).set_parallel(true).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tween.tween_property(window, "scale", Vector2.ONE, 0.3)
 	tween.tween_property(window, "modulate:a", 1.0, 0.2)
 
 func _play_close_animation(window: Node) -> Tween:
 	if not window is Control: return null
 	
-	var tween = create_tween().set_parallel(true).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	var tween = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS).set_parallel(true).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tween.tween_property(window, "scale", Vector2(0.8, 0.8), 0.2)
 	tween.tween_property(window, "modulate:a", 0.0, 0.2)
 	return tween
@@ -490,7 +851,7 @@ func close_all_windows(only_blocking: bool = true, exclude: Array = []) -> void:
 
 ## 切换窗口状态
 func toggle_window(window_name: String, scene_path: String, blocks_input: bool = true) -> void:
-	if active_windows.has(window_name):
+	if _get_active_window_if_valid(window_name) != null:
 		close_window(window_name)
 	else:
 		open_window(window_name, scene_path, blocks_input)

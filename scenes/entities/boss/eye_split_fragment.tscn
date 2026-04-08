@@ -1,0 +1,24 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://src/systems/boss/eye_split_fragment.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/visuals/MinimalistEntity.tscn" id="2_visual"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_body"]
+size = Vector2(16, 16)
+
+[node name="EyeSplitFragment" type="CharacterBody2D"]
+collision_layer = 32
+collision_mask = 17
+script = ExtResource("1_script")
+
+[node name="MinimalistEntity" parent="." instance=ExtResource("2_visual")]
+position = Vector2(0, -8)
+shape = 3
+color = Color(1, 0.5, 0.7, 1)
+size = Vector2(14, 14)
+outline_width = 2.0
+pulse_speed = 4.0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+position = Vector2(0, -8)
+shape = SubResource("RectangleShape2D_body")

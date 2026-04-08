@@ -12,6 +12,10 @@ var player_status: PlayerStatusWidget
 var stats_widget: Control # V3: Reference to the toggleable stats panel
 var item_tooltip_label: Label
 var guide_window: GameplayGuideWindow
+var boss_hp_panel: PanelContainer
+var boss_hp_title_label: Label
+var boss_hp_bar: ProgressBar
+var boss_hp_value_label: Label
 
 func _ready() -> void:
 	# Load Styles
@@ -42,6 +46,7 @@ func _ready() -> void:
 	
 	# Instantiate Hotbar (Bottom Center)
 	_create_hotbar()
+	_create_boss_health_bar()
 	
 	# Instantiate Secondary Stats (Toggleable Modal)
 	# Replace old AttributeDisplay
@@ -64,6 +69,98 @@ func _ready() -> void:
 	stats_widget.visible = false
 	
 	add_to_group("hud")
+
+func _create_boss_health_bar() -> void:
+	boss_hp_panel = PanelContainer.new()
+	boss_hp_panel.name = "BossHealthBar"
+	boss_hp_panel.visible = false
+	boss_hp_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	boss_hp_panel.custom_minimum_size = Vector2(520, 78)
+	boss_hp_panel.position = Vector2(0, 10)
+	boss_hp_panel.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	boss_hp_panel.offset_left = 0
+	boss_hp_panel.offset_right = 0
+	boss_hp_panel.offset_top = 10
+	boss_hp_panel.offset_bottom = 88
+	add_child(boss_hp_panel)
+
+	var center := CenterContainer.new()
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	boss_hp_panel.add_child(center)
+
+	var content := VBoxContainer.new()
+	content.custom_minimum_size = Vector2(520, 66)
+	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	content.alignment = BoxContainer.ALIGNMENT_CENTER
+	content.add_theme_constant_override("separation", 4)
+	center.add_child(content)
+
+	boss_hp_title_label = Label.new()
+	boss_hp_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	boss_hp_title_label.add_theme_font_size_override("font_size", 20)
+	boss_hp_title_label.add_theme_color_override("font_color", Color(1.0, 0.88, 0.62))
+	boss_hp_title_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	boss_hp_title_label.add_theme_constant_override("outline_size", 3)
+	boss_hp_title_label.text = "BOSS"
+	content.add_child(boss_hp_title_label)
+
+	boss_hp_bar = ProgressBar.new()
+	boss_hp_bar.custom_minimum_size = Vector2(520, 20)
+	boss_hp_bar.show_percentage = false
+	content.add_child(boss_hp_bar)
+
+	boss_hp_value_label = Label.new()
+	boss_hp_value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	boss_hp_value_label.add_theme_font_size_override("font_size", 14)
+	boss_hp_value_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.9))
+	boss_hp_value_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	boss_hp_value_label.add_theme_constant_override("outline_size", 2)
+	boss_hp_value_label.text = "0 / 0"
+	content.add_child(boss_hp_value_label)
+
+	var style_bg := StyleBoxFlat.new()
+	style_bg.bg_color = Color(0.1, 0.05, 0.08, 0.88)
+	style_bg.set_corner_radius_all(8)
+	style_bg.border_width_left = 2
+	style_bg.border_width_top = 2
+	style_bg.border_width_right = 2
+	style_bg.border_width_bottom = 2
+	style_bg.border_color = Color(0.55, 0.2, 0.2, 0.95)
+	boss_hp_panel.add_theme_stylebox_override("panel", style_bg)
+
+	var bar_bg := StyleBoxFlat.new()
+	bar_bg.bg_color = Color(0.12, 0.12, 0.12, 0.95)
+	bar_bg.set_corner_radius_all(6)
+	boss_hp_bar.add_theme_stylebox_override("background", bar_bg)
+
+	var bar_fill := StyleBoxFlat.new()
+	bar_fill.bg_color = Color(0.9, 0.16, 0.2, 0.95)
+	bar_fill.set_corner_radius_all(6)
+	boss_hp_bar.add_theme_stylebox_override("fill", bar_fill)
+
+func show_boss_health_bar(boss_name: String, max_health: float, current_health: float = -1.0) -> void:
+	if boss_hp_panel == null or boss_hp_bar == null:
+		return
+	var current := current_health if current_health >= 0.0 else max_health
+	boss_hp_title_label.text = String(boss_name)
+	boss_hp_bar.max_value = maxf(1.0, max_health)
+	boss_hp_bar.value = clampf(current, 0.0, boss_hp_bar.max_value)
+	boss_hp_value_label.text = "%d / %d" % [int(round(boss_hp_bar.value)), int(round(boss_hp_bar.max_value))]
+	boss_hp_panel.visible = true
+
+func update_boss_health_bar(current_health: float, max_health: float) -> void:
+	if boss_hp_panel == null or boss_hp_bar == null:
+		return
+	if not boss_hp_panel.visible:
+		return
+	boss_hp_bar.max_value = maxf(1.0, max_health)
+	boss_hp_bar.value = clampf(current_health, 0.0, boss_hp_bar.max_value)
+	boss_hp_value_label.text = "%d / %d" % [int(round(boss_hp_bar.value)), int(round(boss_hp_bar.max_value))]
+
+func hide_boss_health_bar() -> void:
+	if boss_hp_panel:
+		boss_hp_panel.visible = false
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("toggle_character_sheet"):

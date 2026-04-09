@@ -1,31 +1,38 @@
-[gd_resource type="Resource" script_class="GuideSectionData" format=3 uid="uid://guide_inheritance_section"]
+﻿[gd_resource type="Resource" script_class="GuideSectionData" format=3 uid="uid://guide_inheritance_section"]
+
+[ext_resource type="Script" path="res://src/ui/guide/guide_section_data.gd" id="1_guide_section_data"]
+[ext_resource type="Script" path="res://src/ui/guide/guide_subsection_data.gd" id="2_guide_subsection_data"]
+[sub_resource type="Resource" id="GuideSubsectionData_1"]
+script = ExtResource("2_guide_subsection_data")
+subsection_id = "death_transition"
+title = "主角去世与流程切�?
+content = "当主角寿命耗尽后，游戏会进入继�?转生流程。\n\n你将从当前家族成员中选择或生成下一代继承人，继续推进世界发展�?
+image = null
+
+[sub_resource type="Resource" id="GuideSubsectionData_2"]
+script = ExtResource("2_guide_subsection_data")
+subsection_id = "what_is_inherited"
+title = "可继承内�?
+content = "继承系统的核心是‘延续而非重置’。\n\n一般会继承以下方向：\n1. 家族线与角色身份\n2. 已建立的世界与城镇基础\n3. 部分资源、配方或成长成果\n\n这样可以让每一代的努力都沉淀到后续玩法中�?
+image = null
+
+[sub_resource type="Resource" id="GuideSubsectionData_3"]
+script = ExtResource("2_guide_subsection_data")
+subsection_id = "strategy"
+title = "继承玩法策略"
+content = "推荐在晚年阶段提前做三件事：\n1. 整理关键物资与装备，降低交接损耗\n2. 完成重要建筑/生产链，保证下一代起步效率\n3. 留下稳定魔杖方案，避免新角色开局断档\n\n把继承当作‘阶段交棒’，而不是一次失败�?
+image = null
+
+[sub_resource type="Resource" id="GuideSubsectionData_4"]
+script = ExtResource("2_guide_subsection_data")
+subsection_id = "long_term_goal"
+title = "长期目标"
+content = "继承系统鼓励你用多代视角经营世界：\n[b]单代突破 -> 家族积累 -> 世代跃迁[/b]\n\n当你把探索、建造、魔法与经济串联起来，后代会拥有更高的起点与更大的策略空间�?
+image = null
 
 [resource]
+script = ExtResource("1_guide_section_data")
 section_id = "inheritance"
 title = "继承"
 description = "主角去世后，由子嗣接续家族发展的核心机制"
 subsections = [SubResource("GuideSubsectionData_1"), SubResource("GuideSubsectionData_2"), SubResource("GuideSubsectionData_3"), SubResource("GuideSubsectionData_4")]
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_1"]
-subsection_id = "death_transition"
-title = "主角去世与流程切换"
-content = "当主角寿命耗尽后，游戏会进入继承/转生流程。\n\n你将从当前家族成员中选择或生成下一代继承人，继续推进世界发展。"
-image = null
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_2"]
-subsection_id = "what_is_inherited"
-title = "可继承内容"
-content = "继承系统的核心是‘延续而非重置’。\n\n一般会继承以下方向：\n1. 家族线与角色身份\n2. 已建立的世界与城镇基础\n3. 部分资源、配方或成长成果\n\n这样可以让每一代的努力都沉淀到后续玩法中。"
-image = null
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_3"]
-subsection_id = "strategy"
-title = "继承玩法策略"
-content = "推荐在晚年阶段提前做三件事：\n1. 整理关键物资与装备，降低交接损耗\n2. 完成重要建筑/生产链，保证下一代起步效率\n3. 留下稳定魔杖方案，避免新角色开局断档\n\n把继承当作‘阶段交棒’，而不是一次失败。"
-image = null
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_4"]
-subsection_id = "long_term_goal"
-title = "长期目标"
-content = "继承系统鼓励你用多代视角经营世界：\n[b]单代突破 -> 家族积累 -> 世代跃迁[/b]\n\n当你把探索、建造、魔法与经济串联起来，后代会拥有更高的起点与更大的策略空间。"
-image = null

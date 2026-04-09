@@ -1,25 +1,31 @@
-[gd_resource type="Resource" script_class="GuideSectionData" format=3 uid="uid://guide_world_section"]
+﻿[gd_resource type="Resource" script_class="GuideSectionData" format=3 uid="uid://guide_world_section"]
+
+[ext_resource type="Script" path="res://src/ui/guide/guide_section_data.gd" id="1_guide_section_data"]
+[ext_resource type="Script" path="res://src/ui/guide/guide_subsection_data.gd" id="2_guide_subsection_data"]
+[sub_resource type="Resource" id="GuideSubsectionData_1"]
+script = ExtResource("2_guide_subsection_data")
+subsection_id = "map"
+title = "地图"
+content = "游戏世界由多个区域连续构成，探索时建议先建立‘出生点 -> 资源�?-> 战斗点’三角路线。\n\n地图探索建议：\n1. 先沿地表横向侦察，记录矿点和安全区。\n2. 再向地下分层探索，逐步扩展作业深度。\n3. 遇到高威胁区域时先标记位置，后续携带更高配置再返回�?
+image = null
+
+[sub_resource type="Resource" id="GuideSubsectionData_2"]
+script = ExtResource("2_guide_subsection_data")
+subsection_id = "biome"
+title = "群系"
+content = "不同群系拥有不同的资源、敌对单位和地形风险。\n\n常见规律：\n- 寒冷/冰霜群系：移动与生存压力较高，但可能产出稀有素材。\n- 沼泽/黏液群系：控制类敌人较多，注意减速与持续伤害。\n- 洞穴深层：战斗密度更高，但矿物与法术收益也更高。\n\n建议根据当前目标选择群系：采集优先稳定，刷怪优先高密度�?
+image = null
+
+[sub_resource type="Resource" id="GuideSubsectionData_3"]
+script = ExtResource("2_guide_subsection_data")
+subsection_id = "exploration_loop"
+title = "探索节奏"
+content = "推荐探索循环：\n[b]侦察 -> 采集 -> 战斗 -> 回补 -> 再深入[/b]\n\n每次外出前确认：\n1. 药品与回复是否充足。\n2. 魔杖是否为稳定配置。\n3. 背包是否预留采集空间。\n\n保持‘短周期回城’能显著降低死亡风险�?
+image = null
 
 [resource]
+script = ExtResource("1_guide_section_data")
 section_id = "world"
 title = "世界"
 description = "认识地图结构与群系分布，建立探索路线"
 subsections = [SubResource("GuideSubsectionData_1"), SubResource("GuideSubsectionData_2"), SubResource("GuideSubsectionData_3")]
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_1"]
-subsection_id = "map"
-title = "地图"
-content = "游戏世界由多个区域连续构成，探索时建议先建立‘出生点 -> 资源点 -> 战斗点’三角路线。\n\n地图探索建议：\n1. 先沿地表横向侦察，记录矿点和安全区。\n2. 再向地下分层探索，逐步扩展作业深度。\n3. 遇到高威胁区域时先标记位置，后续携带更高配置再返回。"
-image = null
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_2"]
-subsection_id = "biome"
-title = "群系"
-content = "不同群系拥有不同的资源、敌对单位和地形风险。\n\n常见规律：\n- 寒冷/冰霜群系：移动与生存压力较高，但可能产出稀有素材。\n- 沼泽/黏液群系：控制类敌人较多，注意减速与持续伤害。\n- 洞穴深层：战斗密度更高，但矿物与法术收益也更高。\n\n建议根据当前目标选择群系：采集优先稳定，刷怪优先高密度。"
-image = null
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_3"]
-subsection_id = "exploration_loop"
-title = "探索节奏"
-content = "推荐探索循环：\n[b]侦察 -> 采集 -> 战斗 -> 回补 -> 再深入[/b]\n\n每次外出前确认：\n1. 药品与回复是否充足。\n2. 魔杖是否为稳定配置。\n3. 背包是否预留采集空间。\n\n保持‘短周期回城’能显著降低死亡风险。"
-image = null

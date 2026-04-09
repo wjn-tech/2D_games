@@ -1,19 +1,26 @@
-# 问题诊断报告
+# 问题诊断报告（2026-04 更新）
 
 ## 故障现象
-在新手教程中，玩家组装好法术（Generator -> Projectile）后：
-1. **无法发射法术**：即使装备了法杖并左键点击。
-2. **目标巨石未生成**：任务阶段卡死在“等待测试发射”。
+新手教程初始 Training Wand 出现以下异常：
+1. 无任何逻辑节点时也可发射法术。
+2. 法术几乎不耗蓝，延迟体感异常偏低。
+3. 施法表现与法杖编译/连线结果不一致。
 
 ## 根本原因分析
-1.  **法力值初始化问题**：`tutorial_sequence_manager.gd` 中虽然给法杖设置了 `current_mana = 1000.0`，但 `WandData` 实际上并没有 `@export` 一个叫 `current_mana` 的变量，它是一个普通变量且在 `_ready` 或类似时机可能被重置。此外，`SpellProcessor` 在教程中虽然有绕过检查的代码，但其逻辑可能因为 `id` 匹配失败而未生效。
-2.  **法杖 ID 匹配失效**：`SpellProcessor` 中检查 `wand_data.id == "starter_wand"`，但在 `tutorial_sequence_manager.gd` 中，赋予玩家的是 `wand_item.id = "starter_wand"`，而内部的 `wand_data.id` 仍然是默认值 `"wand"`。
-3.  **编译版本不匹配**：`SpellProcessor` 使用了编译版本 `COMPILE_VERSION = 1`，如果教程中预设的 `WandData` 没经过重新编译（`compile` 调用之前就被使用了旧缓存），则无法发射。
-4.  **目标生成位置偏移**：`_spawn_target` 逻辑中，如果 `TargetMarker` 缺失，默认在法师前方生成。如果场景结构发生变化，巨石可能生成在玩家视野外或墙体内部。
-5.  **玩家输入冲突**：玩家脚本中 `_handle_continuous_actions` 是连发逻辑，但如果 `action_cooldown` 因为某些原因（如 `SpellProcessor` 返回了极大的值）卡死，则无法再次发射。
+1. `spell_processor.gd` 存在按 `wand_data.id == "starter_wand"` 的硬编码分支：
+	- 编译失败时仍允许继续施法。
+	- 根层为空时会注入一个 fallback 投射物。
+	- 每轮施法法力成本被强制为 0。
+2. 教程中训练杖曾使用 `starter_wand` 标识，触发了上述“特殊逻辑通道”，导致实际行为偏离通用编译链。
+3. 教程参数过于极端（超高回复、极短延迟）进一步放大了“不耗蓝/不走编译”的错觉。
 
-## 修复计划
-1.  **修正法杖 ID**：确保 `WandData.id` 也被设置为 `"starter_wand"`。
-2.  **强制法力充足**：在教程中将法杖的法力回复速度设为极大值，并确保初始法力满额。
-3.  **修复任务触发信号**：确保巨石生成后，玩家能够通过发射动作正确触发销毁逻辑。
-4.  **优化目标生成**：增加调试信息并确保巨石生成在合理的全局位置。
+## 已实施修复
+1. 移除 `SpellProcessor.cast_spell` 内 `starter_wand` 专用绕过与 fallback 注入，统一走编译有效性与根层校验。
+2. 移除 `_get_cycle_mana_cost` 对 `starter_wand` 的 0 蓝耗特判，统一按编译成本结算。
+3. 教程训练杖 id 改为 `training_wand`，包装 id 改为 `training_wand_item`，避免误入遗留分支。
+4. 教程训练杖数值回调为“宽松但真实”的区间，确保玩家能观察到正常蓝耗与延迟反馈。
+
+## 验收标准
+1. 无有效节点/无有效连线时，不发射法术。
+2. 连接合法节点后发射成功，且蓝耗与延迟与右侧编译统计一致。
+3. 教程流程（连接节点 -> 关闭编辑器 -> 测试发射 -> 目标销毁）可完整推进。

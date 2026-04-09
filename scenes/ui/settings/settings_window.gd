@@ -78,11 +78,11 @@ func _on_tab_pressed(tab_name: String) -> void:
 		panels[key].visible = (key == tab_name)
 
 func _on_apply_pressed() -> void:
-	# If SettingsManager exists, use it
-	if ClassDB.class_exists("SettingsManager") or has_node("/root/SettingsManager"):
-		# Assuming a singleton or static class
-		# SettingsManager.save_settings()
-		pass
+	if typeof(SettingsManager) != TYPE_NIL:
+		if SettingsManager.has_method("apply_all_settings"):
+			SettingsManager.apply_all_settings()
+		if SettingsManager.has_method("save_settings"):
+			SettingsManager.save_settings()
 	
 	# Close animation
 	var tween = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
@@ -96,8 +96,16 @@ func _on_apply_pressed() -> void:
 	)
 
 func _on_reset_pressed() -> void:
-	# Logic to reset settings
-	pass
+	if typeof(SettingsManager) != TYPE_NIL and SettingsManager.has_method("reset_to_defaults"):
+		SettingsManager.reset_to_defaults()
+		_refresh_all_panels()
+
+
+func _refresh_all_panels() -> void:
+	for key in panels.keys():
+		var panel = panels[key]
+		if panel and panel.has_method("refresh_ui"):
+			panel.call("refresh_ui")
 
 # Hover Effects Logic
 func _recursively_connect_hover(node: Node) -> void:

@@ -3,6 +3,10 @@ extends PanelContainer
 var item_data: BaseItem
 var _drag_start_pos: Vector2 = Vector2.ZERO
 
+const COLOR_BG = Color("#081325")
+const COLOR_TEXT = Color("#d9ecff")
+const COLOR_DIM = Color("#7ea6d8")
+
 func _gui_input(event):
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
@@ -28,7 +32,7 @@ func _trigger_drag():
 func setup(item):
 	item_data = item
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	custom_minimum_size = Vector2(120, 88)
+	custom_minimum_size = Vector2(220, 44)
 
 	# --- Tooltip System (Stat Display) ---
 	var tt = "[ " + item.display_name + " ]"
@@ -74,53 +78,33 @@ func setup(item):
 
 	tooltip_text = tt
 	
-	# UI Layout (Visual Tile)
-	var vbox = VBoxContainer.new()
-	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
-	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_theme_constant_override("separation", 5)
-	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	add_child(vbox)
-
-	var center_container = CenterContainer.new()
-	center_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	center_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(center_container)
+	# UI Layout (Row Card)
+	var row = HBoxContainer.new()
+	row.set_anchors_preset(Control.PRESET_FULL_RECT)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_theme_constant_override("separation", 8)
+	row.add_theme_constant_override("margin_left", 6)
+	row.add_theme_constant_override("margin_right", 6)
+	row.add_theme_constant_override("margin_top", 5)
+	row.add_theme_constant_override("margin_bottom", 5)
+	add_child(row)
 
 	var icon_box = Panel.new()
-	icon_box.custom_minimum_size = Vector2(32, 32)
+	icon_box.custom_minimum_size = Vector2(26, 26)
 	icon_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var box_style = StyleBoxFlat.new()
-	box_style.bg_color = Color.TRANSPARENT
+	box_style.bg_color = Color("#06101f")
 	box_style.border_color = item.wand_visual_color
 	box_style.border_width_left = 2
 	box_style.border_width_top = 2
 	box_style.border_width_right = 2
 	box_style.border_width_bottom = 2
-	box_style.corner_radius_top_left = 0
-	box_style.corner_radius_top_right = 0
-	box_style.corner_radius_bottom_left = 0
-	box_style.corner_radius_bottom_right = 0
-	box_style.anti_aliasing = false
+	box_style.corner_radius_top_left = 3
+	box_style.corner_radius_top_right = 3
+	box_style.corner_radius_bottom_left = 3
+	box_style.corner_radius_bottom_right = 3
 	icon_box.add_theme_stylebox_override("panel", box_style)
-	center_container.add_child(icon_box)
-
-	# Hover glow for icon box
-	icon_box.mouse_entered.connect(func():
-		var tw = create_tween()
-		if box_style:
-			box_style.shadow_color = item.wand_visual_color
-			box_style.shadow_size = 8
-			tw.tween_property(icon_box, "modulate", Color(1.1,1.1,1.05), 0.12)
-	)
-	icon_box.mouse_exited.connect(func():
-		var tw = create_tween()
-		if box_style:
-			box_style.shadow_size = 0
-			tw.tween_property(icon_box, "modulate", Color(1,1,1,1), 0.14)
-	)
+	row.add_child(icon_box)
 
 	var symbol = Label.new()
 	symbol.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -128,31 +112,67 @@ func setup(item):
 	if item.wand_logic_type == "trigger": symbol.text = "T"
 	elif item.wand_logic_type == "modifier_damage": symbol.text = "%"
 	elif item.wand_logic_type == "action_projectile": symbol.text = "!"
-
 	symbol.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	symbol.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	symbol.set_anchors_preset(Control.PRESET_FULL_RECT)
 	symbol.add_theme_color_override("font_color", item.wand_visual_color)
 	icon_box.add_child(symbol)
 
-	var lbl = Label.new()
-	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	lbl.text = item.display_name
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.add_theme_font_size_override("font_size", 12)
-	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	lbl.custom_minimum_size.x = 80
-	vbox.add_child(lbl)
+	var text_col = VBoxContainer.new()
+	text_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	text_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text_col.add_theme_constant_override("separation", 1)
+	row.add_child(text_col)
+
+	var name_label = Label.new()
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	name_label.text = item.display_name
+	name_label.add_theme_color_override("font_color", COLOR_TEXT)
+	name_label.add_theme_font_size_override("font_size", 12)
+	name_label.clip_text = true
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text_col.add_child(name_label)
+
+	var type_label = Label.new()
+	type_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	type_label.text = item.wand_logic_type
+	type_label.add_theme_color_override("font_color", COLOR_DIM)
+	type_label.add_theme_font_size_override("font_size", 10)
+	text_col.add_child(type_label)
+
+	var mana_cost_value = int(item.wand_logic_value.get("mana_cost", 0))
+	var mana_label = Label.new()
+	mana_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mana_label.text = str(mana_cost_value)
+	mana_label.add_theme_color_override("font_color", item.wand_visual_color)
+	mana_label.add_theme_font_size_override("font_size", 12)
+	mana_label.custom_minimum_size = Vector2(24, 0)
+	mana_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	row.add_child(mana_label)
 
 	var btn_style = StyleBoxFlat.new()
-	btn_style.bg_color = Color(0.12, 0.12, 0.14)
-	btn_style.border_color = Color(0.3, 0.3, 0.3)
+	btn_style.bg_color = COLOR_BG
+	btn_style.border_color = item.wand_visual_color.darkened(0.15)
 	btn_style.border_width_left = 1
 	btn_style.border_width_top = 1
 	btn_style.border_width_right = 1
 	btn_style.border_width_bottom = 1
-	btn_style.corner_radius_top_left = 8
-	btn_style.corner_radius_top_right = 8
-	btn_style.corner_radius_bottom_left = 8
-	btn_style.corner_radius_bottom_right = 8
+	btn_style.corner_radius_top_left = 4
+	btn_style.corner_radius_top_right = 4
+	btn_style.corner_radius_bottom_left = 4
+	btn_style.corner_radius_bottom_right = 4
 	add_theme_stylebox_override("panel", btn_style)
+
+	mouse_entered.connect(func():
+		var tw = create_tween()
+		btn_style.border_color = item.wand_visual_color
+		btn_style.shadow_color = item.wand_visual_color
+		btn_style.shadow_size = 8
+		tw.tween_property(self, "modulate", Color(1.08, 1.08, 1.08), 0.08)
+	)
+	mouse_exited.connect(func():
+		var tw = create_tween()
+		btn_style.border_color = item.wand_visual_color.darkened(0.15)
+		btn_style.shadow_size = 0
+		tw.tween_property(self, "modulate", Color.WHITE, 0.12)
+	)

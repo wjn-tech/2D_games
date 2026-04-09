@@ -1,0 +1,46 @@
+index.html:6: <title>法杖编程台</title>
+index.html:693: <input id="wandName" class="name-input" value="未命名法杖" maxlength="24">
+index.html:698: <span>节点:</span>
+index.html:704: <button class="px-btn" id="clearBtn">清空</button>
+index.html:705: <button class="px-btn primary" id="saveBtn">保存</button>
+index.html:706: <button class="px-btn" id="testBtn">测试</button>
+index.html:707: <button class="px-btn" id="switchBtn">切换法杖</button>
+index.html:708: <button class="px-btn" id="closeBtn">关闭</button>
+index.html:714: <input id="searchInput" class="search" placeholder="搜索...">
+index.html:716: <button class="mode-btn active" id="logicModeBtn">逻辑</button>
+index.html:717: <button class="mode-btn" id="visualModeBtn">外观</button>
+index.html:741: <div class="graph-hint">Ctrl+滚轮缩放 | 中键平移 | DEL删除 | ESC取消连线</div>
+index.html:745: <div class="visual-title" id="visualTitle">法杖外观编辑器 (16x48) | 滚轮缩放: 8x</div>
+index.html:761: <div style="font-size: 10px; color: var(--cyan);">构造详情</div>
+index.html:785: wandName: "未命名法杖",
+index.html:1002: state.wandName = String(payload.wand_name || state.wandName || "未命名法杖");
+index.html:1013: name: String(p.name || "节点"),
+index.html:1028: name: String(p.name || "模块"),
+index.html:1056: name: String(cell.name || "模块"),
+index.html:1207: source: { name: "能量源", color: "#4ade80", list: [] },
+index.html:1208: trigger: { name: "触发器", color: "#ffc800", list: [] },
+index.html:1209: modifier: { name: "修饰器", color: "#ef4444", list: [] },
+index.html:1210: action: { name: "投射物", color: "#00d9ff", list: [] },
+index.html:1211: logic: { name: "逻辑", color: "#a78bfa", list: [] }
+index.html:1616: ui.visualTitle.textContent = "法杖外观编辑器 (16x48) | 滚轮缩放: " + String(size) + "x";
+index.html:1679: card.innerHTML = '<div class="card-title">模块统计</div>' +
+index.html:1681: '<div class="kv"><span class="k">已用格子</span><span class="v">' + String(count) + ' / 768</span></div>' +
+index.html:1682: '<div class="kv"><span class="k">模块种类</span><span class="v">' + String(kinds) + '</span></div>' +
+index.html:1683: '<div class="kv"><span class="k">操作提示</span><span class="v">左键绘制 / 右键擦除</span></div>' +
+index.html:1697: card.innerHTML = '<div class="card-title">节点属性</div>' +
+index.html:1699: '<div class="kv"><span class="k">名称</span><span class="v">' + selected.display_name + '</span></div>' +
+index.html:1700: '<div class="kv"><span class="k">类型</span><span class="v">' + selected.type + '</span></div>' +
+index.html:1707: del.textContent = "删除节点";
+index.html:1717: statCard.innerHTML = '<div class="card-title">法杖属性</div>' +
+index.html:1719: '<div class="kv"><span class="k">魔力容量</span><span class="v">' + String(state.manaCapacity) + '</span></div>' +
+index.html:1720: '<div class="kv"><span class="k">逻辑槽位</span><span class="v">' + String(state.logicNodes.length) + ' / ' + String(state.logicCapacity) + '</span></div>' +
+index.html:1725: const compileText = state.compile.is_valid ? "法术可用" : "缺少投射物/编译失败";
+index.html:1728: compileCard.innerHTML = '<div class="card-title">法术预览</div>' +
+index.html:1730: '<div class="kv"><span class="k">单次爆发法力</span><span class="v">' + Number(state.compile.total_mana_cost || 0).toFixed(0) + '</span></div>' +
+index.html:1731: '<div class="kv"><span class="k">单次爆发耗时</span><span class="v">' + Number(state.compile.cycle_delay || 0).toFixed(2) + 's</span></div>' +
+index.html:1732: '<div class="kv"><span class="k">理论全额伤害</span><span class="v">' + Number(state.compile.total_damage || 0).toFixed(1) + '</span></div>' +
+index.html:1733: '<div class="kv"><span class="k">投射物数量</span><span class="v">' + String(state.compile.projectile_count || 0) + '</span></div>' +
+index.html:1734: '<div class="kv"><span class="k">状态</span><span class="v ' + compileClass + '">' + compileText + '</span></div>' +
+index.html:1741: err.innerHTML = '<div class="card-title">编译错误</div>' +
+index.html:1772: state.wandName = ui.wandName.value.trim() || "未命名法杖";
+index.html:2094: showToast("法杖编程壳已就绪", "info");

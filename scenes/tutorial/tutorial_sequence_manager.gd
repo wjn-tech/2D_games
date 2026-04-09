@@ -859,16 +859,17 @@ func _give_starter_items() -> void:
 			var wand_item = WandItem.new()
 			# Deep copy the resource so modifications in tutorial don't break the asset
 			var data = WAND_ITEM_RES.duplicate(true)
-			data.id = "starter_wand" # Ensure WandData.id matches the starter_wand
+			data.id = "training_wand"
 			
 			# Ensure it's a "Tutorial" powered wand
 			if data.embryo:
 				data.embryo = data.embryo.duplicate()
-				data.embryo.mana_capacity = 2000.0 # Increase capacity
-				data.embryo.mana_recharge_speed = 1000.0 # Extreme regen for tutorial
-				data.embryo.recharge_time = 0.1 # Real fast
-				data.embryo.cast_delay = 0.05
-			data.current_mana = 2000.0
+				# Keep tutorial forgiving but still aligned with real compile/mana behavior.
+				data.embryo.mana_capacity = 260.0
+				data.embryo.mana_recharge_speed = 40.0
+				data.embryo.recharge_time = 0.35
+				data.embryo.cast_delay = 0.12
+			data.current_mana = float(data.embryo.mana_capacity) if data.embryo else 260.0
 			
 			# FORCE logic clear to ensure tutorial starts fresh
 			data.logic_nodes = []
@@ -877,7 +878,7 @@ func _give_starter_items() -> void:
 			wand_item.wand_data = data
 			wand_item.display_name = "Training Wand"
 			wand_item.icon = WAND_ITEM_RES.icon
-			wand_item.id = "starter_wand_item" # Wrapper ID
+			wand_item.id = "training_wand_item"
 			
 			GameState.inventory.add_item(wand_item)
 			

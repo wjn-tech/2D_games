@@ -19,6 +19,9 @@ const MAGIC_BUILD_GUIDE_PATH := "res://data/guide/magic_building_guide.tres"
 const WORLD_GUIDE_PATH := "res://data/guide/world.tres"
 const NPC_GUIDE_PATH := "res://data/guide/npc_interaction.tres"
 const INHERITANCE_GUIDE_PATH := "res://data/guide/inheritance.tres"
+const WEB_SHELL_RESOURCE_PATH := "ui/web/gameplay_guide_shell/index.html"
+const WEB_PROTOCOL_VERSION := "1.0"
+const WEB_READY_WATCHDOG_SECONDS := 6.0
 
 const BASE_SPELL_IDS: Array[String] = [
 	"generator",
@@ -40,13 +43,41 @@ var _pages: Array[Dictionary] = []
 var is_open: bool = false
 var _current_page_index: int = -1
 var _syncing_tree_selection: bool = false
+var _web_shell_node: Node = null
+var _using_web_shell: bool = false
+var _web_bridge_ready: bool = false
+var _web_ready_watchdog_started: bool = false
+var _web_icon_cache: Dictionary = {}
+
+func _safe_get_string(target: Variant, key: String, fallback: String = "") -> String:
+	if target == null or not target.has_method("get"):
+		return fallback
+	var value = target.get(key)
+	if value == null:
+		return fallback
+	var text := str(value)
+	if text == "<null>":
+		return fallback
+	return text
+
+func _safe_get_array(target: Variant, key: String) -> Array:
+	if target == null or not target.has_method("get"):
+		return []
+	var value = target.get(key)
+	if value is Array:
+		return value
+	return []
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	close_button.pressed.connect(_on_close_pressed)
 	prev_button.pressed.connect(_on_prev_pressed)
 	next_button.pressed.connect(_on_next_pressed)
 	catalog_tree.item_selected.connect(_on_catalog_item_selected)
+	visibility_changed.connect(_on_visibility_changed)
 	page_image.show()
+	_using_web_shell = ClassDB.class_exists("WebView")
+	_set_native_shell_visible(true)
 	_build_catalog_and_pages()
 
 func _build_catalog_and_pages() -> void:
@@ -125,6 +156,8 @@ func _build_catalog_and_pages() -> void:
 	if not _pages.is_empty():
 		_select_page(wand_overview_index if wand_overview_index >= 0 else 0)
 
+	_sync_web_guide_state()
+
 func _append_section_overview_page(parent_item: TreeItem, path_prefix: String, section_path: String) -> int:
 	var section = load(section_path)
 	var title_text := parent_item.get_text(0)
@@ -144,8 +177,8 @@ func _append_section_overview_page(parent_item: TreeItem, path_prefix: String, s
 					if image_tex != null:
 						break
 		elif section.has_method("get"):
-			title_text = str(section.get("title"))
-			description_text = str(section.get("description"))
+			title_text = _safe_get_string(section, "title", title_text)
+			description_text = _safe_get_string(section, "description", description_text)
 
 	var overview_text := "[b]%s[/b]\n\n%s\n\n[i]点击左侧子页面可查看更细的分步说明。[/i]" % [title_text, description_text]
 	var page: Dictionary = {
@@ -170,7 +203,7 @@ func _append_pages_from_section(parent_item: TreeItem, path_prefix: String, sect
 	if section is GuideSectionData:
 		raw_subsections = (section as GuideSectionData).subsections
 	elif section.has_method("get"):
-		raw_subsections = section.get("subsections")
+		raw_subsections = _safe_get_array(section, "subsections")
 
 	for subsection in raw_subsections:
 		if subsection == null:
@@ -185,8 +218,8 @@ func _append_pages_from_section(parent_item: TreeItem, path_prefix: String, sect
 			content_text = (subsection as GuideSubsectionData).content
 			image_tex = (subsection as GuideSubsectionData).image
 		elif subsection.has_method("get"):
-			title_text = str(subsection.get("title"))
-			content_text = str(subsection.get("content"))
+			title_text = _safe_get_string(subsection, "title", title_text)
+			content_text = _safe_get_string(subsection, "content", content_text)
 			var raw_image = subsection.get("image")
 			if raw_image is Texture2D:
 				image_tex = raw_image
@@ -417,6 +450,7 @@ func _select_page(index: int) -> void:
 	next_button.disabled = index >= _pages.size() - 1
 
 	_select_tree_item_by_page_index(index)
+	_sync_web_guide_state()
 
 func _select_tree_item_by_page_index(index: int) -> void:
 	var root = catalog_tree.get_root()
@@ -451,8 +485,15 @@ func open() -> void:
 		return
 	
 	is_open = true
+	if _using_web_shell:
+		_ensure_web_shell_instance()
 	_build_catalog_and_pages()
 	show()
+	if _using_web_shell:
+		_set_native_shell_visible(false)
+		_set_web_shell_visible(true)
+		if _web_bridge_ready:
+			call_deferred("_sync_web_guide_state")
 	_pause_game()
 	_animate_in()
 
@@ -462,6 +503,10 @@ func close() -> void:
 		return
 	
 	is_open = false
+	if _using_web_shell:
+		_release_web_shell_focus()
+		_set_web_shell_visible(false)
+		_destroy_web_shell_instance()
 	_animate_out()
 	_unpause_game()
 	hide()
@@ -509,3 +554,368 @@ func _input(event: InputEvent) -> void:
 		elif event.keycode == KEY_RIGHT:
 			_on_next_pressed()
 			get_tree().root.set_input_as_handled()
+
+func _on_visibility_changed() -> void:
+	if not visible:
+		if _using_web_shell:
+			_set_web_shell_visible(false)
+			_release_web_shell_focus()
+		return
+
+	if not _using_web_shell:
+		_set_native_shell_visible(true)
+		return
+
+	_ensure_web_shell_instance()
+	if is_instance_valid(_web_shell_node):
+		_set_native_shell_visible(false)
+		_set_web_shell_visible(true)
+		if _web_bridge_ready:
+			call_deferred("_sync_web_guide_state")
+	else:
+		_set_native_shell_visible(true)
+
+func _ensure_web_shell_instance() -> void:
+	if is_instance_valid(_web_shell_node):
+		return
+
+	_web_bridge_ready = false
+	_web_ready_watchdog_started = false
+	if _try_setup_web_guide_shell():
+		_start_web_ready_watchdog()
+		return
+
+	_using_web_shell = false
+	_set_native_shell_visible(true)
+
+func _release_web_shell_focus() -> void:
+	if is_instance_valid(_web_shell_node) and _web_shell_node.has_method("set_forward_input_events"):
+		_web_shell_node.call("set_forward_input_events", false)
+
+	if is_instance_valid(_web_shell_node) and _web_shell_node.has_method("focus_parent"):
+		_web_shell_node.call("focus_parent")
+
+	if is_instance_valid(_web_shell_node) and _web_shell_node is Control:
+		var webview_control := _web_shell_node as Control
+		if webview_control.has_focus():
+			webview_control.release_focus()
+
+	var viewport := get_viewport()
+	if viewport:
+		viewport.gui_release_focus()
+
+func _destroy_web_shell_instance() -> void:
+	if is_instance_valid(_web_shell_node):
+		_web_shell_node.queue_free()
+	_web_shell_node = null
+	_web_bridge_ready = false
+	_web_ready_watchdog_started = false
+
+func _try_setup_web_guide_shell() -> bool:
+	var webview_url := _resolve_webview_url(WEB_SHELL_RESOURCE_PATH, "GameplayGuideWindow")
+	if webview_url == "":
+		return false
+
+	if not ClassDB.class_exists("WebView"):
+		push_warning("GameplayGuideWindow: WebView class unavailable. Check godot-wry plugin enabled, exported addons/godot_wry runtime files, WebView2 runtime, and VC++ x64 redistributable; using native fallback.")
+		return false
+
+	var candidate: Object = ClassDB.instantiate("WebView")
+	if candidate == null or not (candidate is Node):
+		push_warning("GameplayGuideWindow: Failed to instantiate WebView, using native fallback.")
+		return false
+
+	var webview := candidate as Node
+	if webview is Control:
+		var webview_control := webview as Control
+		webview_control.set_anchors_preset(Control.PRESET_FULL_RECT)
+		webview_control.mouse_filter = Control.MOUSE_FILTER_STOP
+
+	if _has_property(candidate, &"full_window_size"):
+		candidate.set(&"full_window_size", false)
+	if _has_property(candidate, &"url"):
+		candidate.set(&"url", webview_url)
+	if webview.has_method("set_focused_when_created"):
+		webview.call("set_focused_when_created", false)
+	if webview.has_method("set_forward_input_events"):
+		webview.call("set_forward_input_events", false)
+
+	if webview.has_signal("ipc_message"):
+		webview.connect("ipc_message", Callable(self, "_on_guide_web_ipc_message"))
+
+	add_child(webview)
+	move_child(webview, get_child_count() - 1)
+
+	if webview.has_method("load_url"):
+		webview.call("load_url", webview_url)
+
+	_web_shell_node = webview
+	return true
+
+func _has_property(instance: Object, property_name: StringName) -> bool:
+	for entry in instance.get_property_list():
+		if StringName(entry.name) == property_name:
+			return true
+	return false
+
+func _resolve_webview_url(resource_path: String, owner_tag: String) -> String:
+	var relative_path := resource_path
+	if relative_path.begins_with("res://"):
+		relative_path = relative_path.substr(6, relative_path.length() - 6)
+
+	var res_path := "res://" + relative_path
+	if FileAccess.file_exists(res_path):
+		return res_path
+
+	if FileAccess.file_exists(relative_path):
+		return relative_path
+
+	push_warning("%s: Web shell HTML missing at %s (check export include_filter includes ui/web/gameplay_guide_shell/index.html), using native fallback." % [owner_tag, res_path])
+	return ""
+
+func _set_native_shell_visible(make_visible: bool) -> void:
+	if background_overlay:
+		background_overlay.visible = make_visible
+	if window_container:
+		window_container.visible = make_visible
+
+func _set_web_shell_visible(make_visible: bool) -> void:
+	if not is_instance_valid(_web_shell_node):
+		return
+
+	if _web_shell_node.has_method("set_forward_input_events"):
+		_web_shell_node.call("set_forward_input_events", make_visible)
+
+	if not make_visible and _web_shell_node.has_method("focus_parent"):
+		_web_shell_node.call("focus_parent")
+
+	if _web_shell_node.has_method("set_visible"):
+		_web_shell_node.call("set_visible", make_visible)
+		return
+
+	if _web_shell_node is CanvasItem:
+		(_web_shell_node as CanvasItem).visible = make_visible
+		return
+
+	if make_visible:
+		if _web_shell_node.has_method("show"):
+			_web_shell_node.call("show")
+	else:
+		if _web_shell_node.has_method("hide"):
+			_web_shell_node.call("hide")
+
+func _on_guide_web_ipc_message(message: String) -> void:
+	var data := _normalize_web_payload(message)
+	if data.is_empty():
+		return
+
+	var msg_type := String(data.get("type", ""))
+	match msg_type:
+		"guide_ready":
+			_web_bridge_ready = true
+			_set_native_shell_visible(false)
+			_set_web_shell_visible(true)
+			_sync_web_guide_state()
+		"guide_request_state":
+			if not _web_bridge_ready:
+				_web_bridge_ready = true
+				_set_native_shell_visible(false)
+				_set_web_shell_visible(true)
+			_sync_web_guide_state()
+		"guide_select_page":
+			var index := int(data.get("index", -1))
+			if index >= 0 and index < _pages.size():
+				_select_page(index)
+		"guide_prev_page":
+			_on_prev_pressed()
+		"guide_next_page":
+			_on_next_pressed()
+		"guide_close":
+			close()
+		"guide_bridge_error":
+			_activate_native_fallback("Shell reported a runtime bridge error.")
+
+func _normalize_web_payload(raw_message: String) -> Dictionary:
+	var payload: Variant = JSON.parse_string(raw_message)
+	for _i in range(6):
+		if typeof(payload) == TYPE_STRING:
+			payload = JSON.parse_string(String(payload))
+			continue
+
+		if typeof(payload) != TYPE_DICTIONARY:
+			return {}
+
+		var data: Dictionary = payload
+		if data.has("type"):
+			return data
+
+		if data.has("raw_payload") and typeof(data.get("raw_payload")) == TYPE_STRING:
+			payload = JSON.parse_string(String(data.get("raw_payload", "")))
+			continue
+
+		var stepped := false
+		for key in ["detail", "data", "payload", "message"]:
+			if data.has(key):
+				payload = data.get(key)
+				stepped = true
+				break
+
+		if stepped:
+			continue
+
+		return data
+
+	return {}
+
+func _sync_web_guide_state() -> void:
+	if not _using_web_shell:
+		return
+	if not is_instance_valid(_web_shell_node):
+		return
+	if not _web_bridge_ready:
+		return
+	if not _web_shell_node.has_method("post_message"):
+		_activate_native_fallback("Web shell post_message is unavailable.")
+		return
+
+	_web_shell_node.call("post_message", JSON.stringify(_build_web_guide_payload()))
+
+func _build_web_guide_payload() -> Dictionary:
+	var pages_payload: Array = []
+	for i in range(_pages.size()):
+		var page := _pages[i]
+		var image_tex: Texture2D = page.get("image", null)
+		pages_payload.append({
+			"index": i,
+			"title": String(page.get("title", "")),
+			"path": String(page.get("path", "")),
+			"content": String(page.get("content", "")),
+			"image_data_url": _texture_to_data_url(image_tex)
+		})
+
+	var title_text := "游戏引导"
+	var header_title = get_node_or_null("WindowContainer/PanelContainer/VBoxContainer/HeaderHBoxContainer/TitleLabel")
+	if header_title and header_title is Label:
+		title_text = String((header_title as Label).text)
+
+	return {
+		"type": "guide_state",
+		"protocol": WEB_PROTOCOL_VERSION,
+		"title": title_text,
+		"current_page_index": _current_page_index,
+		"total_pages": _pages.size(),
+		"pages": pages_payload,
+		"catalog": _build_catalog_snapshot(),
+		"texts": {
+			"close": String(close_button.text),
+			"prev": String(prev_button.text),
+			"next": String(next_button.text)
+		}
+	}
+
+func _build_catalog_snapshot() -> Array:
+	var root = catalog_tree.get_root()
+	if root == null:
+		return []
+
+	var result: Array = []
+	var child = root.get_first_child()
+	while child != null:
+		result.append(_serialize_catalog_item(child))
+		child = child.get_next()
+
+	return result
+
+func _serialize_catalog_item(item: TreeItem) -> Dictionary:
+	var children: Array = []
+	var child = item.get_first_child()
+	while child != null:
+		children.append(_serialize_catalog_item(child))
+		child = child.get_next()
+
+	var metadata = item.get_metadata(0)
+	var page_index := -1
+	if metadata != null:
+		page_index = int(metadata)
+
+	return {
+		"text": item.get_text(0),
+		"page_index": page_index,
+		"selectable": item.is_selectable(0),
+		"collapsed": item.collapsed,
+		"children": children
+	}
+
+func _start_web_ready_watchdog() -> void:
+	if _web_ready_watchdog_started:
+		return
+	_web_ready_watchdog_started = true
+	var timer := get_tree().create_timer(WEB_READY_WATCHDOG_SECONDS)
+	timer.timeout.connect(func() -> void:
+		_web_ready_watchdog_started = false
+		if _using_web_shell and not _web_bridge_ready:
+			_activate_native_fallback("Web shell bridge did not become ready in %.1fs." % WEB_READY_WATCHDOG_SECONDS)
+	)
+
+func _activate_native_fallback(reason: String) -> void:
+	push_warning("GameplayGuideWindow: %s Falling back to native guide window." % reason)
+	_using_web_shell = false
+	_release_web_shell_focus()
+	_destroy_web_shell_instance()
+	_set_native_shell_visible(true)
+
+func _texture_to_data_url(texture: Texture2D) -> String:
+	if texture == null:
+		return ""
+
+	var cache_key := texture.resource_path
+	if cache_key.is_empty():
+		cache_key = str(texture.get_instance_id())
+
+	if _web_icon_cache.has(cache_key):
+		return String(_web_icon_cache[cache_key])
+
+	var image := _extract_texture_image(texture)
+	if image == null or image.is_empty():
+		return ""
+
+	var png_bytes := image.save_png_to_buffer()
+	if png_bytes.is_empty():
+		return ""
+
+	var data_url := "data:image/png;base64,%s" % Marshalls.raw_to_base64(png_bytes)
+	_web_icon_cache[cache_key] = data_url
+	return data_url
+
+func _extract_texture_image(texture: Texture2D) -> Image:
+	if texture is AtlasTexture:
+		var atlas_texture := texture as AtlasTexture
+		if atlas_texture.atlas == null:
+			return null
+		var atlas_image := atlas_texture.atlas.get_image()
+		if atlas_image == null or atlas_image.is_empty():
+			return null
+
+		var region := atlas_texture.region
+		var region_rect := Rect2i(
+			maxi(int(region.position.x), 0),
+			maxi(int(region.position.y), 0),
+			maxi(int(region.size.x), 0),
+			maxi(int(region.size.y), 0)
+		)
+
+		if region_rect.size.x <= 0 or region_rect.size.y <= 0:
+			return atlas_image
+
+		region_rect.size.x = mini(region_rect.size.x, atlas_image.get_width() - region_rect.position.x)
+		region_rect.size.y = mini(region_rect.size.y, atlas_image.get_height() - region_rect.position.y)
+		if region_rect.size.x <= 0 or region_rect.size.y <= 0:
+			return null
+
+		return atlas_image.get_region(region_rect)
+
+	return texture.get_image()
+
+func _exit_tree() -> void:
+	_release_web_shell_focus()
+	_destroy_web_shell_instance()

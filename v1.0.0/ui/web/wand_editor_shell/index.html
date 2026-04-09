@@ -1,0 +1,3374 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>法杖编程台</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+    :root {
+      --black: #0f0f1b;
+      --dark-blue: #1a1a2e;
+      --navy: #16213e;
+      --nebula: #24153f;
+      --purple: #4a1c6b;
+      --magenta: #c62c75;
+      --cyan: #00d9ff;
+      --gold: #ffc800;
+      --green: #4ade80;
+      --red: #ef4444;
+      --white: #f8f8f8;
+      --dim: #7ca8dc;
+      --panel-border: #5c49a6;
+      --px: 4px;
+
+      --left-ratio: 10%;
+      --right-ratio: 10%;
+      --top-ratio: 0.06;
+    }
+
+    * {
+      box-sizing: border-box;
+      image-rendering: pixelated;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--black);
+      color: var(--white);
+      font-family: "Press Start 2P", "Cascadia Mono", "Consolas", "Microsoft YaHei", monospace;
+      letter-spacing: 0.02em;
+    }
+
+    #starfield {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 0;
+      display: block;
+      pointer-events: none;
+    }
+
+    .crt {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background:
+        repeating-linear-gradient(
+          0deg,
+          transparent,
+          transparent 2px,
+          rgba(0, 0, 0, 0.18) 2px,
+          rgba(0, 0, 0, 0.18) 4px
+        ),
+        linear-gradient(180deg, rgba(10, 10, 26, 0.04), rgba(10, 10, 26, 0.38), rgba(10, 10, 26, 0.76));
+    }
+
+    .grid-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background-size: 60px 60px;
+      background-image:
+        linear-gradient(to right, rgba(138, 43, 226, 0.05) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(138, 43, 226, 0.05) 1px, transparent 1px);
+      opacity: 0.45;
+    }
+
+    .root {
+      position: fixed;
+      inset: 0;
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      opacity: 0;
+      transform: translateY(8px);
+      animation: root-enter 260ms steps(8, end) forwards;
+    }
+
+    @keyframes root-enter {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .frame {
+      width: min(1760px, 96vw);
+      height: min(940px, 95vh);
+      border: var(--px) solid var(--panel-border);
+      outline: var(--px) solid rgba(13, 18, 38, 0.95);
+      outline-offset: calc(var(--px) * -1);
+      background:
+        linear-gradient(180deg, rgba(26, 26, 46, 0.9), rgba(15, 15, 27, 0.96)),
+        repeating-linear-gradient(
+          90deg,
+          rgba(255, 255, 255, 0.03),
+          rgba(255, 255, 255, 0.03) 2px,
+          transparent 2px,
+          transparent 6px
+        );
+      box-shadow:
+        0 0 0 var(--px) rgba(0, 217, 255, 0.22),
+        0 0 0 calc(var(--px) * 2) rgba(10, 10, 26, 0.95),
+        0 18px 40px rgba(0, 0, 0, 0.45);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .frame::before,
+    .frame::after {
+      content: "";
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      z-index: 4;
+      pointer-events: none;
+    }
+
+    .frame::before {
+      left: 10px;
+      top: 10px;
+      background: var(--cyan);
+      box-shadow: 0 0 10px rgba(0, 217, 255, 0.35);
+    }
+
+    .frame::after {
+      right: 10px;
+      bottom: 10px;
+      background: var(--gold);
+      box-shadow: 0 0 10px rgba(255, 200, 0, 0.35);
+    }
+
+    .topbar {
+      height: 48px;
+      min-height: 48px;
+      border-bottom: 2px solid var(--cyan);
+      background: linear-gradient(180deg, var(--nebula), var(--dark-blue));
+      box-shadow: 0 4px 20px rgba(0, 217, 255, 0.2);
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      gap: 10px;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 3;
+    }
+
+    .name-input {
+      width: 120px;
+      max-width: 18vw;
+      border: none;
+      background: transparent;
+      color: var(--cyan);
+      height: 20px;
+      padding: 0;
+      font-size: 9px;
+      text-shadow: 0 0 8px rgba(0, 217, 255, 0.38);
+    }
+
+    .name-input:focus {
+      outline: 1px solid var(--cyan);
+      outline-offset: 1px;
+    }
+
+    .toolbar-divider {
+      width: 1px;
+      height: 16px;
+      background: var(--cyan);
+      opacity: 0.9;
+    }
+
+    .stat-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--dim);
+      font-size: 6px;
+    }
+
+    .stat-chip {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .stat-icon {
+      color: var(--cyan);
+      font-size: 10px;
+      line-height: 1;
+    }
+
+    .stat-value {
+      color: var(--cyan);
+      font-size: 7px;
+    }
+
+    .toolbar-spacer {
+      flex: 1;
+    }
+
+    .px-btn {
+      border: 2px solid var(--purple);
+      background: linear-gradient(180deg, rgba(26, 26, 46, 0.96), rgba(22, 33, 62, 0.96));
+      color: var(--cyan);
+      min-height: 26px;
+      padding: 0 12px;
+      cursor: pointer;
+      font-size: 8px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 0 1px rgba(10, 10, 26, 0.85);
+      transition: transform 120ms steps(2, end), border-color 120ms steps(2, end), color 120ms steps(2, end), box-shadow 120ms steps(2, end), filter 120ms steps(2, end);
+    }
+
+    .px-btn.primary {
+      border-color: var(--gold);
+      color: #fff8e8;
+      background: linear-gradient(90deg, #8d4e13, #5a2989 55%, #2f3f94);
+    }
+
+    .px-btn:hover,
+    .px-btn:focus-visible {
+      transform: translate(-2px, -2px);
+      border-color: var(--cyan);
+      box-shadow: 6px 6px 0 rgba(0, 217, 255, 0.16);
+      color: var(--white);
+      filter: brightness(1.06);
+      outline: none;
+    }
+
+    .px-btn:active {
+      transform: translate(1px, 1px);
+      box-shadow: none;
+    }
+
+    .px-btn.primary:hover,
+    .px-btn.primary:focus-visible {
+      border-color: #ffe78b;
+      box-shadow: 8px 8px 0 rgba(255, 200, 0, 0.22);
+    }
+
+    .content {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+    }
+
+    .left-panel,
+    .right-panel {
+      min-width: 120px;
+      max-width: 320px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      position: relative;
+      z-index: 2;
+    }
+
+    .panel-splitter {
+      width: 8px;
+      min-width: 8px;
+      cursor: col-resize;
+      position: relative;
+      z-index: 4;
+      background: linear-gradient(180deg, rgba(10, 18, 34, 0.95), rgba(11, 24, 42, 0.95));
+      border-left: 1px solid rgba(0, 217, 255, 0.18);
+      border-right: 1px solid rgba(0, 217, 255, 0.18);
+    }
+
+    .panel-splitter::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 2px;
+      height: 42px;
+      transform: translate(-50%, -50%);
+      background: repeating-linear-gradient(
+        180deg,
+        rgba(0, 217, 255, 0.65),
+        rgba(0, 217, 255, 0.65) 3px,
+        rgba(0, 217, 255, 0.08) 3px,
+        rgba(0, 217, 255, 0.08) 6px
+      );
+    }
+
+    .panel-splitter:hover,
+    .panel-splitter.active {
+      background: linear-gradient(180deg, rgba(18, 32, 56, 0.98), rgba(14, 30, 52, 0.98));
+      border-left-color: rgba(0, 217, 255, 0.46);
+      border-right-color: rgba(0, 217, 255, 0.46);
+      box-shadow: inset 0 0 10px rgba(0, 217, 255, 0.2);
+    }
+
+    .left-panel {
+      flex: 0 0 var(--left-ratio);
+      background: linear-gradient(90deg, var(--navy) 0%, var(--dark-blue) 100%);
+      border-right: 2px solid var(--panel-border);
+    }
+
+    .right-panel {
+      flex: 0 0 var(--right-ratio);
+      background: linear-gradient(270deg, var(--navy) 0%, var(--dark-blue) 100%);
+      border-left: 2px solid var(--panel-border);
+    }
+
+    .center-panel {
+      flex: 1;
+      min-width: 0;
+      position: relative;
+      background: radial-gradient(circle at 50% 30%, rgba(22, 34, 80, 0.42), rgba(8, 12, 28, 0.96));
+      border-left: 1px solid rgba(0, 217, 255, 0.2);
+      border-right: 1px solid rgba(0, 217, 255, 0.2);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 8px;
+      border-bottom: 1px solid rgba(0, 217, 255, 0.18);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: rgba(12, 24, 52, 0.4);
+    }
+
+    .search {
+      width: 100%;
+      height: 22px;
+      background: var(--black);
+      border: 1px solid var(--cyan);
+      color: #d9ecff;
+      padding: 0 8px;
+      font-size: 7px;
+    }
+
+    .search:focus {
+      outline: 1px solid var(--cyan);
+      outline-offset: 1px;
+    }
+
+    .mode-switch {
+      display: flex;
+      gap: 6px;
+    }
+
+    .mode-btn {
+      flex: 1;
+      height: 22px;
+      border: 1px solid var(--cyan);
+      background: transparent;
+      color: var(--dim);
+      font-size: 7px;
+      cursor: pointer;
+    }
+
+    .mode-btn.active {
+      color: var(--cyan);
+      background: rgba(0, 217, 255, 0.12);
+      box-shadow: none;
+    }
+
+    .palette {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .group {
+      border: none;
+      background: transparent;
+    }
+
+    .group-title {
+      min-height: 18px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 8px;
+      font-size: 7px;
+      color: #9bc4f2;
+      border-left: 2px solid rgba(124, 168, 220, 0.6);
+      border-bottom: none;
+      background: rgba(124, 168, 220, 0.06);
+      letter-spacing: 0.02em;
+    }
+
+    .group-items {
+      padding: 4px 0 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .palette-item {
+      min-height: 26px;
+      border: 1px solid rgba(124, 168, 220, 0.4);
+      background: rgba(8, 19, 37, 0.9);
+      color: #d9ecff;
+      display: grid;
+      grid-template-columns: 14px 1fr auto;
+      gap: 6px;
+      align-items: center;
+      padding: 4px 8px;
+      cursor: pointer;
+      font-size: 7px;
+      text-align: left;
+      image-rendering: pixelated;
+    }
+
+    .palette-item:hover,
+    .palette-item.active {
+      border-color: var(--cyan);
+      box-shadow: 0 0 8px rgba(0, 217, 255, 0.18), inset 0 0 10px rgba(0, 217, 255, 0.08);
+    }
+
+    .palette-item-icon {
+      color: #67e8f9;
+      font-size: 10px;
+      line-height: 1;
+      text-shadow: 0 0 8px rgba(103, 232, 249, 0.36);
+    }
+
+    .palette-color {
+      width: 12px;
+      height: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      justify-self: center;
+    }
+
+    .palette-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      letter-spacing: 0.03em;
+    }
+
+    .palette-mana {
+      color: var(--cyan);
+      font-size: 6px;
+    }
+
+    .graph-wrap,
+    .visual-wrap {
+      position: absolute;
+      inset: 0;
+    }
+
+    .graph-wrap.hidden,
+    .visual-wrap.hidden {
+      display: none;
+    }
+
+    .graph-board {
+      position: absolute;
+      inset: 0;
+      cursor: grab;
+      background-image:
+        linear-gradient(rgba(0, 217, 255, 0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 217, 255, 0.06) 1px, transparent 1px);
+      background-size: 16px 16px;
+      overflow: hidden;
+    }
+
+    .graph-layer {
+      position: absolute;
+      inset: 0;
+      transform-origin: 0 0;
+    }
+
+    .links {
+      position: absolute;
+      inset: 0;
+      overflow: visible;
+      pointer-events: auto;
+      z-index: 1;
+    }
+
+    #nodesLayer {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+    }
+
+    .graph-marquee {
+      position: absolute;
+      border: 1px dashed rgba(0, 217, 255, 0.9);
+      background: rgba(0, 217, 255, 0.12);
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    .logic-node {
+      position: absolute;
+      width: 140px;
+      min-height: 66px;
+      border: 2px solid #66aaff;
+      background: linear-gradient(180deg, rgba(20, 30, 48, 0.96), rgba(8, 18, 33, 0.94));
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      cursor: grab;
+      image-rendering: pixelated;
+      z-index: 2;
+    }
+
+    .logic-node.selected {
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35), 0 0 20px rgba(102, 170, 255, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    }
+
+    .node-title {
+      height: 22px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 0 6px;
+      font-size: 7px;
+      border-bottom: 1px solid rgba(124, 168, 220, 0.35);
+      color: #d9ecff;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      background: rgba(14, 30, 58, 0.65);
+      letter-spacing: 0.04em;
+    }
+
+    .node-title-icon {
+      width: 16px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      color: #67e8f9;
+    }
+
+    .node-sub {
+      position: relative;
+      padding: 5px 6px 7px;
+      color: #7ca8dc;
+      font-size: 6px;
+      min-height: 32px;
+      word-break: break-all;
+    }
+
+    .node-param-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      line-height: 1.45;
+    }
+
+    .node-param-key {
+      color: #6b6b8d;
+      flex: 0 0 auto;
+    }
+
+    .node-param-val {
+      color: #d8d8ef;
+      flex: 1;
+      text-align: right;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .node-mana-tag {
+      position: absolute;
+      top: -9px;
+      right: -10px;
+      padding: 1px 4px;
+      background: #0f0f1b;
+      border: 1px solid #00d9ff;
+      color: #00d9ff;
+      font-size: 7px;
+      line-height: 1.2;
+      text-shadow: 0 0 6px rgba(0, 217, 255, 0.34);
+      box-shadow: 0 0 8px rgba(0, 217, 255, 0.2);
+    }
+
+    .port-wrap {
+      position: absolute;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      cursor: crosshair;
+      z-index: 4;
+    }
+
+    .port-wrap.input {
+      left: -16px;
+      justify-content: flex-start;
+    }
+
+    .port-wrap.output {
+      right: -16px;
+      justify-content: flex-end;
+    }
+
+    .port {
+      width: 14px;
+      height: 14px;
+      border: 3px solid #d9ecff;
+      background: #00d9ff;
+      box-shadow: 0 0 8px rgba(0, 217, 255, 0.5), inset 0 0 4px rgba(0, 217, 255, 0.35);
+      border-radius: 2px;
+    }
+
+    .graph-overlay {
+      position: absolute;
+      right: 8px;
+      bottom: 8px;
+      z-index: 4;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(8, 16, 34, 0.9);
+      border: 1px solid rgba(0, 217, 255, 0.45);
+      padding: 4px;
+      font-size: 9px;
+      color: #d9ecff;
+    }
+
+    .mini-btn {
+      width: 22px;
+      height: 22px;
+      border: 1px solid rgba(0, 217, 255, 0.45);
+      background: rgba(11, 25, 46, 0.95);
+      color: var(--cyan);
+      font-size: 10px;
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .mini-btn:hover {
+      border-color: var(--gold);
+      color: var(--gold);
+    }
+
+    .graph-hint {
+      position: absolute;
+      left: 8px;
+      bottom: 8px;
+      padding: 4px 6px;
+      font-size: 6px;
+      color: #7ca8dc;
+      border: 1px solid rgba(124, 168, 220, 0.35);
+      background: rgba(8, 16, 34, 0.75);
+      z-index: 4;
+    }
+
+    .visual-wrap {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 10px;
+      background-image:
+        linear-gradient(rgba(0, 217, 255, 0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 217, 255, 0.06) 1px, transparent 1px);
+      background-size: 16px 16px;
+    }
+
+    .visual-title {
+      font-size: 10px;
+      color: var(--cyan);
+      text-shadow: 0 0 8px rgba(0, 217, 255, 0.4);
+    }
+
+    .visual-scroller {
+      max-width: 100%;
+      max-height: 100%;
+      overflow: auto;
+      border: 2px solid rgba(0, 217, 255, 0.45);
+      background: rgba(6, 10, 22, 0.92);
+      padding: 8px;
+    }
+
+    .visual-grid {
+      display: grid;
+      grid-template-columns: repeat(16, 1fr);
+      gap: 1px;
+      background: rgba(0, 217, 255, 0.15);
+      border: 1px solid rgba(0, 217, 255, 0.35);
+    }
+
+    .visual-cell {
+      background: rgba(7, 14, 29, 0.95);
+      border: 1px solid rgba(0, 217, 255, 0.06);
+      cursor: crosshair;
+    }
+
+    .visual-cell:hover {
+      outline: 1px solid rgba(0, 217, 255, 0.6);
+      outline-offset: -1px;
+    }
+
+    .right-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .card {
+      border: 2px solid rgba(0, 217, 255, 0.58);
+      background: linear-gradient(180deg, var(--dark-blue), var(--black));
+      box-shadow: inset 0 0 18px rgba(0, 217, 255, 0.08), 0 0 0 1px rgba(13, 18, 38, 0.95);
+    }
+
+    .card-title {
+      height: 20px;
+      border-bottom: 1px solid rgba(0, 217, 255, 0.25);
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      font-size: 8px;
+      color: var(--cyan);
+      background: linear-gradient(180deg, rgba(0, 217, 255, 0.16), rgba(0, 217, 255, 0.06));
+      text-shadow: 0 0 8px rgba(0, 217, 255, 0.35);
+    }
+
+    .card-body {
+      padding: 8px;
+      font-size: 7px;
+      color: #d9ecff;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .kv {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      line-height: 1.3;
+    }
+
+    .kv .k {
+      color: #7ca8dc;
+    }
+
+    .kv .v {
+      color: #d9ecff;
+      text-align: right;
+      word-break: break-all;
+    }
+
+    .compile-ok {
+      color: var(--green);
+    }
+
+    .compile-bad {
+      color: #ff6666;
+    }
+
+    .toast {
+      position: absolute;
+      right: 14px;
+      bottom: 12px;
+      z-index: 6;
+      border: 1px solid rgba(0, 217, 255, 0.45);
+      background: rgba(9, 20, 40, 0.95);
+      color: #d9ecff;
+      padding: 8px 10px;
+      font-size: 9px;
+      min-width: 180px;
+      opacity: 0;
+      transform: translateY(6px);
+      pointer-events: none;
+      transition: opacity 120ms steps(2, end), transform 120ms steps(2, end);
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .hover-info {
+      position: fixed;
+      z-index: 12;
+      min-width: 220px;
+      max-width: 320px;
+      border: 2px solid rgba(0, 217, 255, 0.7);
+      background: linear-gradient(180deg, rgba(11, 20, 40, 0.96), rgba(7, 14, 30, 0.97));
+      box-shadow: 0 0 0 1px rgba(13, 18, 38, 0.95), 0 8px 22px rgba(0, 0, 0, 0.45), inset 0 0 14px rgba(0, 217, 255, 0.12);
+      color: #d9ecff;
+      pointer-events: none;
+      padding: 8px;
+      font-size: 7px;
+      line-height: 1.45;
+      opacity: 0;
+      transform: translateY(4px);
+      transition: opacity 80ms steps(2, end), transform 80ms steps(2, end);
+    }
+
+    .hover-info.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .hover-info-title {
+      color: var(--cyan);
+      font-size: 8px;
+      margin-bottom: 4px;
+      text-shadow: 0 0 8px rgba(0, 217, 255, 0.35);
+    }
+
+    .hover-info-desc {
+      color: #b8d7f8;
+      white-space: pre-wrap;
+      margin-bottom: 6px;
+    }
+
+    .hover-info-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 2px;
+    }
+
+    .hover-info-meta-k {
+      color: #7ca8dc;
+      flex: 0 0 auto;
+    }
+
+    .hover-info-meta-v {
+      color: #d9ecff;
+      text-align: right;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    ::-webkit-scrollbar {
+      width: 7px;
+      height: 7px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #090f20;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #1f3d72;
+      border: 1px solid rgba(0, 217, 255, 0.24);
+    }
+  </style>
+</head>
+<body>
+  <canvas id="starfield"></canvas>
+  <div class="crt"></div>
+  <div class="grid-overlay"></div>
+
+  <div class="root">
+    <div class="frame" id="frame">
+      <header class="topbar">
+        <span style="color: var(--gold);">✧</span>
+        <input id="wandName" class="name-input" value="未命名法杖" maxlength="24">
+
+        <div class="toolbar-divider"></div>
+
+        <div class="stat-row">
+          <div class="stat-chip">
+            <span class="stat-icon">♦</span>
+            <span>MP:</span>
+            <span id="manaText" class="stat-value">0/0</span>
+          </div>
+          <div class="stat-chip">
+            <span class="stat-icon" style="color: var(--gold);">◆</span>
+            <span>节点:</span>
+            <span id="nodeText" class="stat-value">0/0</span>
+          </div>
+        </div>
+
+        <div class="toolbar-spacer"></div>
+
+        <button class="px-btn" id="clearBtn">清空</button>
+        <button class="px-btn primary" id="saveBtn">保存</button>
+        <button class="px-btn" id="switchBtn">切换法杖</button>
+        <button class="px-btn" id="closeBtn">关闭</button>
+      </header>
+
+      <div class="content">
+        <aside class="left-panel">
+          <div class="panel-head">
+            <input id="searchInput" class="search" placeholder="搜索...">
+            <div class="mode-switch">
+              <button class="mode-btn active" id="logicModeBtn">逻辑</button>
+              <button class="mode-btn" id="visualModeBtn">外观</button>
+            </div>
+          </div>
+
+          <div class="palette" id="logicPalette"></div>
+          <div class="palette hidden" id="visualPalette"></div>
+        </aside>
+
+        <div class="panel-splitter" id="leftSplitter" title="拖拽调整左侧宽度" role="separator" aria-orientation="vertical"></div>
+
+        <section class="center-panel">
+          <div class="graph-wrap" id="graphWrap">
+            <div class="graph-board" id="graphBoard">
+              <div class="graph-layer" id="graphLayer">
+                <svg class="links" id="graphLinks"></svg>
+                <div id="nodesLayer"></div>
+              </div>
+            </div>
+
+            <div class="graph-overlay">
+              <button class="mini-btn" id="zoomOutBtn">-</button>
+              <span id="zoomText">100%</span>
+              <button class="mini-btn" id="zoomInBtn">+</button>
+              <button class="mini-btn" id="zoomResetBtn">R</button>
+            </div>
+
+            <div class="graph-hint">Ctrl+滚轮缩放 | 中键平移 | DEL删除 | 右键端口拆线 | ESC取消连线</div>
+          </div>
+
+          <div class="visual-wrap hidden" id="visualWrap">
+            <div class="visual-title" id="visualTitle">法杖外观编辑器 (16x48) | 滚轮缩放: 8x</div>
+            <div class="visual-scroller" id="visualScroller">
+              <div class="visual-grid" id="visualGrid"></div>
+            </div>
+
+            <div class="graph-overlay">
+              <button class="mini-btn" id="vZoomOutBtn">-</button>
+              <span id="vZoomText">8x</span>
+              <button class="mini-btn" id="vZoomInBtn">+</button>
+              <button class="mini-btn" id="vZoomResetBtn">R</button>
+            </div>
+          </div>
+        </section>
+
+        <div class="panel-splitter" id="rightSplitter" title="拖拽调整右侧宽度" role="separator" aria-orientation="vertical"></div>
+
+        <aside class="right-panel">
+          <div class="panel-head" style="gap: 4px;">
+            <div style="font-size: 10px; color: var(--cyan);">构造详情</div>
+          </div>
+
+          <div class="right-scroll" id="rightContent"></div>
+        </aside>
+      </div>
+
+      <div class="toast" id="toast"></div>
+    </div>
+  </div>
+
+  <div class="hover-info" id="hoverInfo"></div>
+
+  <script>
+    (function () {
+      const GRID_W = 16;
+      const GRID_H = 48;
+      const MAX_SCALE = 2;
+      const MIN_SCALE = 0.5;
+      const MAX_VIS_SCALE = 12;
+      const MIN_VIS_SCALE = 1;
+      const MIN_CENTER_RATIO = 0.80;
+      const MAX_SIDE_TOTAL = 1 - MIN_CENTER_RATIO;
+      const MIN_SIDE_RATIO = 0.06;
+      const MIN_TOP_RATIO = 0.045;
+      const MAX_TOP_RATIO = 0.08;
+      const NODE_WIDTH = 140;
+      const NODE_HEIGHT = 66;
+      const PORT_WRAP_SIZE = 28;
+      const PORT_TOP_BASE = 18;
+      const PORT_STEP = 18;
+      const ROUTE_STUB = 30;
+      const ROUTE_MARGIN = 14;
+      const ROUTE_BYPASS = 44;
+      const ROUTE_PENALTY = 100000;
+      const PX = 4;
+
+      const state = {
+        activeTab: "logic",
+        wandName: "未命名法杖",
+        mana: 0,
+        manaCapacity: 0,
+        logicCapacity: 0,
+        logicNodes: [],
+        logicConnections: [],
+        logicPalette: [],
+        visualPalette: [],
+        visualCells: new Map(),
+        selectedNodeId: null,
+        selectedNodeIds: [],
+        selectedConnectionKey: "",
+        connectFrom: null,
+        canvasOffset: { x: 0, y: 0 },
+        canvasScale: 1,
+        visualScale: 8,
+        visualBrushId: "",
+        compile: {
+          is_valid: false,
+          errors: [],
+          total_mana_cost: 0,
+          projectile_count: 0,
+          total_damage: 0,
+          cycle_delay: 0
+        },
+        searchQuery: "",
+        layoutRatios: {
+          left_ratio: 0.10,
+          center_ratio: 0.80,
+          right_ratio: 0.10,
+          top_ratio: 0.06
+        }
+      };
+
+      const drag = {
+        nodeId: "",
+        startMouse: { x: 0, y: 0 },
+        startPos: { x: 0, y: 0 },
+        panning: false,
+        paletteItem: null,
+        paletteGhost: null,
+        paletteMoved: false,
+        paletteStart: { x: 0, y: 0 },
+        paint: false,
+        paintErase: false,
+        graphPanning: false,
+        graphStartMouse: { x: 0, y: 0 },
+        graphStartOffset: { x: 0, y: 0 },
+        resizing: "",
+        resizeStartX: 0,
+        resizeStartLeft: 0,
+        resizeStartRight: 0,
+        connectHover: null,
+        selecting: false,
+        selectStart: { x: 0, y: 0 },
+        selectCurrent: { x: 0, y: 0 }
+      };
+
+      let graphSyncTimer = 0;
+      let visualSyncTimer = 0;
+      let toastTimer = 0;
+      let bridgeUnavailableWarned = false;
+
+      const ui = {
+        frame: document.getElementById("frame"),
+        content: document.querySelector(".content"),
+        wandName: document.getElementById("wandName"),
+        manaText: document.getElementById("manaText"),
+        nodeText: document.getElementById("nodeText"),
+        clearBtn: document.getElementById("clearBtn"),
+        saveBtn: document.getElementById("saveBtn"),
+        switchBtn: document.getElementById("switchBtn"),
+        closeBtn: document.getElementById("closeBtn"),
+        searchInput: document.getElementById("searchInput"),
+        logicModeBtn: document.getElementById("logicModeBtn"),
+        visualModeBtn: document.getElementById("visualModeBtn"),
+        logicPalette: document.getElementById("logicPalette"),
+        visualPalette: document.getElementById("visualPalette"),
+        leftSplitter: document.getElementById("leftSplitter"),
+        rightSplitter: document.getElementById("rightSplitter"),
+        graphWrap: document.getElementById("graphWrap"),
+        graphBoard: document.getElementById("graphBoard"),
+        graphLayer: document.getElementById("graphLayer"),
+        graphLinks: document.getElementById("graphLinks"),
+        nodesLayer: document.getElementById("nodesLayer"),
+        zoomOutBtn: document.getElementById("zoomOutBtn"),
+        zoomInBtn: document.getElementById("zoomInBtn"),
+        zoomResetBtn: document.getElementById("zoomResetBtn"),
+        zoomText: document.getElementById("zoomText"),
+        visualWrap: document.getElementById("visualWrap"),
+        visualGrid: document.getElementById("visualGrid"),
+        visualTitle: document.getElementById("visualTitle"),
+        vZoomOutBtn: document.getElementById("vZoomOutBtn"),
+        vZoomInBtn: document.getElementById("vZoomInBtn"),
+        vZoomResetBtn: document.getElementById("vZoomResetBtn"),
+        vZoomText: document.getElementById("vZoomText"),
+        rightContent: document.getElementById("rightContent"),
+        toast: document.getElementById("toast")
+      };
+      ui.hoverInfo = document.getElementById("hoverInfo");
+
+      const selectionBox = document.createElement("div");
+      selectionBox.className = "graph-marquee hidden";
+      ui.graphWrap.appendChild(selectionBox);
+      ui.selectionBox = selectionBox;
+
+      function deepClone(v) {
+        return JSON.parse(JSON.stringify(v));
+      }
+
+      function escapeHtml(text) {
+        return String(text || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function postToGodot(type, body) {
+        const payload = Object.assign({ type: type }, body || {});
+        const serialized = JSON.stringify(payload);
+        let delivered = false;
+
+        if (typeof ipc !== "undefined" && ipc && typeof ipc.postMessage === "function") {
+          ipc.postMessage(serialized);
+          delivered = true;
+        }
+
+        if (!delivered && window.ipc && typeof window.ipc.postMessage === "function") {
+          window.ipc.postMessage(serialized);
+          delivered = true;
+        }
+
+        if (!delivered && window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === "function") {
+          window.chrome.webview.postMessage(serialized);
+          delivered = true;
+        }
+
+        if (!delivered && window.external && typeof window.external.invoke === "function") {
+          window.external.invoke(serialized);
+          delivered = true;
+        }
+
+        if (!delivered && type !== "wand_graph_changed" && type !== "wand_visual_changed" && !bridgeUnavailableWarned) {
+          showToast("未检测到桥接通道，请检查 WebView IPC", "error");
+          bridgeUnavailableWarned = true;
+        }
+
+        if (delivered) {
+          bridgeUnavailableWarned = false;
+        }
+
+        return delivered;
+      }
+
+      function normalizeIncomingPayload(raw) {
+        let payload = raw;
+
+        for (let depth = 0; depth < 5; depth += 1) {
+          if (payload == null) {
+            return null;
+          }
+
+          if (typeof payload === "string") {
+            const text = payload.trim();
+            if (text === "") {
+              return null;
+            }
+            try {
+              payload = JSON.parse(text);
+              continue;
+            } catch (_) {
+              return null;
+            }
+          }
+
+          if (typeof payload !== "object") {
+            return null;
+          }
+
+          if (Object.prototype.hasOwnProperty.call(payload, "raw_payload") && typeof payload.raw_payload === "string") {
+            payload = payload.raw_payload;
+            continue;
+          }
+
+          if (Object.prototype.hasOwnProperty.call(payload, "detail")) {
+            payload = payload.detail;
+            continue;
+          }
+
+          if (Object.prototype.hasOwnProperty.call(payload, "data")) {
+            payload = payload.data;
+            continue;
+          }
+
+          if (Object.prototype.hasOwnProperty.call(payload, "payload")) {
+            payload = payload.payload;
+            continue;
+          }
+
+          break;
+        }
+
+        return payload && typeof payload === "object" ? payload : null;
+      }
+
+      function colorForType(type, fallback) {
+        if (fallback) {
+          return fallback;
+        }
+        if (String(type).indexOf("generator") >= 0) return "#4ade80";
+        if (String(type).indexOf("trigger") >= 0) return "#ffc800";
+        if (String(type).indexOf("damage") >= 0) return "#ef4444";
+        if (String(type).indexOf("element") >= 0) return "#c084fc";
+        if (String(type).indexOf("projectile") >= 0) return "#00d9ff";
+        return "#7ca8dc";
+      }
+
+      function nodeVisualStyle(type, fallback) {
+        const nodeType = String(type || "").toLowerCase();
+        if (nodeType.indexOf("generator") >= 0 || nodeType === "source") {
+          return { fill: "#143423", stroke: "#4ade80", glow: "#86efac", iconKey: "generator" };
+        }
+        if (nodeType.indexOf("trigger") >= 0) {
+          return { fill: "#3d2d08", stroke: "#ffc800", glow: "#ffe17a", iconKey: "trigger" };
+        }
+        if (nodeType.indexOf("damage") >= 0) {
+          return { fill: "#40161a", stroke: "#ef4444", glow: "#fda4af", iconKey: "damage" };
+        }
+        if (nodeType.indexOf("element") >= 0) {
+          return { fill: "#342049", stroke: "#c084fc", glow: "#e9d5ff", iconKey: "element" };
+        }
+        if (nodeType.indexOf("projectile") >= 0) {
+          return { fill: "#132b43", stroke: "#00d9ff", glow: "#67e8f9", iconKey: "projectile" };
+        }
+        const stroke = fallback || "#7c62cc";
+        return { fill: "#201d3b", stroke: stroke, glow: "#a78bfa", iconKey: "logic" };
+      }
+
+      function categoryGlyph(name) {
+        if (name === "能量源") return "⚡";
+        if (name === "触发器") return "◎";
+        if (name === "修饰器") return "✦";
+        if (name === "投射物") return "●";
+        return "◈";
+      }
+
+      function pixelIconSvg(iconKey) {
+        if (iconKey === "generator") {
+          return '<svg viewBox="0 0 8 8" width="16" height="16" style="image-rendering:pixelated"><rect x="2" y="1" width="4" height="1" fill="currentColor"/><rect x="1" y="2" width="6" height="4" fill="currentColor"/><rect x="2" y="6" width="1" height="1" fill="currentColor"/><rect x="5" y="6" width="1" height="1" fill="currentColor"/><rect x="3" y="3" width="2" height="2" fill="#0a0a1a"/></svg>';
+        }
+        if (iconKey === "trigger") {
+          return '<svg viewBox="0 0 8 8" width="16" height="16" style="image-rendering:pixelated"><rect x="3" y="1" width="2" height="1" fill="currentColor"/><rect x="2" y="2" width="4" height="1" fill="currentColor"/><rect x="1" y="3" width="6" height="3" fill="currentColor"/><rect x="2" y="6" width="4" height="1" fill="currentColor"/><rect x="3" y="7" width="2" height="1" fill="currentColor"/></svg>';
+        }
+        if (iconKey === "damage") {
+          return '<svg viewBox="0 0 8 8" width="16" height="16" style="image-rendering:pixelated"><rect x="3" y="0" width="2" height="2" fill="currentColor"/><rect x="1" y="2" width="6" height="1" fill="currentColor"/><rect x="0" y="3" width="8" height="2" fill="currentColor"/><rect x="1" y="5" width="6" height="1" fill="currentColor"/><rect x="3" y="6" width="2" height="2" fill="currentColor"/></svg>';
+        }
+        if (iconKey === "element") {
+          return '<svg viewBox="0 0 8 8" width="16" height="16" style="image-rendering:pixelated"><rect x="3" y="0" width="2" height="2" fill="currentColor"/><rect x="2" y="2" width="4" height="2" fill="currentColor"/><rect x="1" y="4" width="6" height="2" fill="currentColor"/><rect x="2" y="6" width="4" height="2" fill="currentColor"/></svg>';
+        }
+        if (iconKey === "projectile") {
+          return '<svg viewBox="0 0 8 8" width="16" height="16" style="image-rendering:pixelated"><rect x="4" y="0" width="1" height="1" fill="currentColor"/><rect x="3" y="1" width="2" height="1" fill="currentColor"/><rect x="2" y="2" width="4" height="1" fill="currentColor"/><rect x="1" y="3" width="6" height="2" fill="currentColor"/><rect x="2" y="5" width="4" height="1" fill="currentColor"/><rect x="3" y="6" width="2" height="1" fill="currentColor"/><rect x="4" y="7" width="1" height="1" fill="currentColor"/></svg>';
+        }
+        return '<svg viewBox="0 0 8 8" width="16" height="16" style="image-rendering:pixelated"><rect x="0" y="3" width="3" height="2" fill="currentColor"/><rect x="3" y="2" width="2" height="4" fill="currentColor"/><rect x="5" y="3" width="3" height="2" fill="currentColor"/></svg>';
+      }
+
+      function inferNodeManaCost(node) {
+        if (!node || !node.value || typeof node.value !== "object") return 0;
+        const raw = node.value.mana_cost;
+        if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+        return 0;
+      }
+
+      function inferPorts(type, item) {
+        const nodeType = String(type || "").toLowerCase();
+        if (item && typeof item.inputs === "number" && typeof item.outputs === "number") {
+          return { inputs: item.inputs, outputs: item.outputs };
+        }
+        if (nodeType === "generator" || nodeType === "source") return { inputs: 0, outputs: 1 };
+        if (nodeType === "action_projectile") return { inputs: 1, outputs: 0 };
+        if (nodeType === "splitter") return { inputs: 1, outputs: 2 };
+        if (nodeType === "logic_sequence") return { inputs: 1, outputs: 3 };
+        return { inputs: 1, outputs: 1 };
+      }
+
+      function connectionKey(conn) {
+        return String(conn.from_id) + ":" + String(conn.from_port || 0) + "->" + String(conn.to_id) + ":" + String(conn.to_port || 0);
+      }
+
+      function isNodeSelected(nodeId) {
+        if (state.selectedNodeId === nodeId) return true;
+        return state.selectedNodeIds.indexOf(nodeId) >= 0;
+      }
+
+      function boardLocalFromClient(clientX, clientY) {
+        const rect = ui.graphBoard.getBoundingClientRect();
+        return {
+          x: clientX - rect.left,
+          y: clientY - rect.top
+        };
+      }
+
+      function worldFromBoardLocal(pos) {
+        return {
+          x: (pos.x - state.canvasOffset.x) / state.canvasScale,
+          y: (pos.y - state.canvasOffset.y) / state.canvasScale
+        };
+      }
+
+      function updateSelectionBox() {
+        if (!drag.selecting) {
+          ui.selectionBox.classList.add("hidden");
+          return;
+        }
+
+        const sx = drag.selectStart.x;
+        const sy = drag.selectStart.y;
+        const cx = drag.selectCurrent.x;
+        const cy = drag.selectCurrent.y;
+        const left = Math.min(sx, cx);
+        const top = Math.min(sy, cy);
+        const width = Math.max(1, Math.abs(cx - sx));
+        const height = Math.max(1, Math.abs(cy - sy));
+
+        ui.selectionBox.style.left = String(left) + "px";
+        ui.selectionBox.style.top = String(top) + "px";
+        ui.selectionBox.style.width = String(width) + "px";
+        ui.selectionBox.style.height = String(height) + "px";
+        ui.selectionBox.classList.remove("hidden");
+      }
+
+      function clearSelectionBox() {
+        drag.selecting = false;
+        ui.selectionBox.classList.add("hidden");
+      }
+
+      function finalizeMarqueeSelection() {
+        if (!drag.selecting) return;
+
+        const startWorld = worldFromBoardLocal(drag.selectStart);
+        const endWorld = worldFromBoardLocal(drag.selectCurrent);
+        const minX = Math.min(startWorld.x, endWorld.x);
+        const maxX = Math.max(startWorld.x, endWorld.x);
+        const minY = Math.min(startWorld.y, endWorld.y);
+        const maxY = Math.max(startWorld.y, endWorld.y);
+
+        const selectedIds = state.logicNodes.filter(function (node) {
+          const nx1 = node.position.x;
+          const ny1 = node.position.y;
+          const nx2 = nx1 + NODE_WIDTH;
+          const ny2 = ny1 + NODE_HEIGHT;
+          return !(nx2 < minX || nx1 > maxX || ny2 < minY || ny1 > maxY);
+        }).map(function (node) { return node.id; });
+
+        state.selectedNodeIds = selectedIds;
+        state.selectedNodeId = selectedIds.length === 1 ? selectedIds[0] : null;
+        state.selectedConnectionKey = "";
+        clearSelectionBox();
+        renderGraph();
+        renderRightPanel();
+      }
+
+      function normalizeNode(raw) {
+        const pos = raw && raw.position ? raw.position : { x: 0, y: 0 };
+        const item = state.logicPalette.find(function (p) { return p.type === raw.type && p.name === raw.display_name; }) || null;
+        const ports = inferPorts(raw.type, item);
+        return {
+          id: String(raw.id || "node_" + Date.now()),
+          type: String(raw.type || "modifier"),
+          display_name: String(raw.display_name || raw.name || "Node"),
+          value: raw.value && typeof raw.value === "object" ? deepClone(raw.value) : {},
+          position: {
+            x: Number(pos.x || 0),
+            y: Number(pos.y || 0)
+          },
+          visual_color: colorForType(raw.type, raw.visual_color || raw.color),
+          icon_path: String(raw.icon_path || ""),
+          inputs: ports.inputs,
+          outputs: ports.outputs
+        };
+      }
+
+      function normalizeConn(raw) {
+        return {
+          from_id: String(raw.from_id || raw.from_node || ""),
+          from_port: Number(raw.from_port || 0),
+          to_id: String(raw.to_id || raw.to_node || ""),
+          to_port: Number(raw.to_port || 0)
+        };
+      }
+
+      function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+      }
+
+      function normalizeLayoutRatios(input, preferredSide) {
+        let left = Number(input.left_ratio);
+        let right = Number(input.right_ratio);
+        let top = Number(input.top_ratio);
+
+        if (!Number.isFinite(left)) left = state.layoutRatios.left_ratio;
+        if (!Number.isFinite(right)) right = state.layoutRatios.right_ratio;
+        if (!Number.isFinite(top)) top = state.layoutRatios.top_ratio;
+
+        top = clamp(top, MIN_TOP_RATIO, MAX_TOP_RATIO);
+        left = Math.max(MIN_SIDE_RATIO, left);
+        right = Math.max(MIN_SIDE_RATIO, right);
+
+        if (preferredSide === "left") {
+          left = clamp(left, MIN_SIDE_RATIO, MAX_SIDE_TOTAL - MIN_SIDE_RATIO);
+          right = clamp(right, MIN_SIDE_RATIO, MAX_SIDE_TOTAL - left);
+        } else if (preferredSide === "right") {
+          right = clamp(right, MIN_SIDE_RATIO, MAX_SIDE_TOTAL - MIN_SIDE_RATIO);
+          left = clamp(left, MIN_SIDE_RATIO, MAX_SIDE_TOTAL - right);
+        } else {
+          const sideSum = left + right;
+          if (sideSum > MAX_SIDE_TOTAL) {
+            const scale = MAX_SIDE_TOTAL / sideSum;
+            left = Math.max(MIN_SIDE_RATIO, left * scale);
+            right = Math.max(MIN_SIDE_RATIO, right * scale);
+
+            const overflow = left + right - MAX_SIDE_TOTAL;
+            if (overflow > 0) {
+              if (left >= right) {
+                left = Math.max(MIN_SIDE_RATIO, left - overflow);
+              } else {
+                right = Math.max(MIN_SIDE_RATIO, right - overflow);
+              }
+            }
+          }
+        }
+
+        const center = Math.max(MIN_CENTER_RATIO, 1 - left - right);
+        return {
+          left_ratio: left,
+          center_ratio: center,
+          right_ratio: right,
+          top_ratio: top
+        };
+      }
+
+      function applyLayoutRatios(ratios, preferredSide) {
+        if (!ratios || typeof ratios !== "object") return;
+        const merged = Object.assign({}, state.layoutRatios, ratios);
+        state.layoutRatios = normalizeLayoutRatios(merged, preferredSide || "balanced");
+        document.documentElement.style.setProperty("--left-ratio", String((state.layoutRatios.left_ratio * 100).toFixed(2)) + "%");
+        document.documentElement.style.setProperty("--right-ratio", String((state.layoutRatios.right_ratio * 100).toFixed(2)) + "%");
+        document.documentElement.style.setProperty("--top-ratio", state.layoutRatios.top_ratio.toFixed(4));
+      }
+
+      function startPanelResize(side, event) {
+        if (event.button !== 0) return;
+        drag.resizing = side;
+        drag.resizeStartX = event.clientX;
+        drag.resizeStartLeft = state.layoutRatios.left_ratio;
+        drag.resizeStartRight = state.layoutRatios.right_ratio;
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+        ui.leftSplitter.classList.toggle("active", side === "left");
+        ui.rightSplitter.classList.toggle("active", side === "right");
+        event.preventDefault();
+      }
+
+      function stopPanelResize() {
+        if (!drag.resizing) return;
+        drag.resizing = "";
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        ui.leftSplitter.classList.remove("active");
+        ui.rightSplitter.classList.remove("active");
+      }
+
+      function applyWandState(payload) {
+        state.wandName = String(payload.wand_name || state.wandName || "未命名法杖");
+        state.activeTab = String(payload.active_tab || state.activeTab || "logic") === "visual" ? "visual" : "logic";
+        state.mana = Number(payload.mana || 0);
+        state.manaCapacity = Number(payload.mana_capacity || 0);
+        state.logicCapacity = Number(payload.logic_capacity || 0);
+
+        if (Array.isArray(payload.logic_palette)) {
+          state.logicPalette = payload.logic_palette.map(function (p) {
+            const ports = inferPorts(p.type, p);
+            return {
+              item_id: String(p.item_id || ""),
+              name: String(p.name || "节点"),
+              description: String(p.description || ""),
+              type: String(p.type || "modifier"),
+              color: colorForType(p.type, p.color),
+              value: p.value && typeof p.value === "object" ? deepClone(p.value) : {},
+              mana_cost: Number(p.mana_cost || 0),
+              inputs: ports.inputs,
+              outputs: ports.outputs
+            };
+          });
+        }
+
+        if (Array.isArray(payload.visual_palette)) {
+          state.visualPalette = payload.visual_palette.map(function (p) {
+            return {
+              item_id: String(p.item_id || ""),
+              name: String(p.name || "模块"),
+              visual_type: String(p.visual_type || "hull"),
+              color: p.color || "#66ccff"
+            };
+          });
+        }
+
+        if (Array.isArray(payload.logic_nodes)) {
+          state.logicNodes = payload.logic_nodes.map(normalizeNode);
+        }
+
+        if (Array.isArray(payload.logic_connections)) {
+          state.logicConnections = payload.logic_connections.map(normalizeConn).filter(function (c) {
+            return c.from_id && c.to_id;
+          });
+        }
+
+        if (Array.isArray(payload.visual_cells)) {
+          const next = new Map();
+          payload.visual_cells.forEach(function (cell) {
+            const x = Number(cell.x);
+            const y = Number(cell.y);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+            const key = String(x) + "," + String(y);
+            next.set(key, {
+              x: x,
+              y: y,
+              item_id: String(cell.item_id || ""),
+              name: String(cell.name || "模块"),
+              visual_type: String(cell.visual_type || "hull"),
+              color: cell.color || "#66ccff"
+            });
+          });
+          state.visualCells = next;
+        }
+
+        if (payload.compile && typeof payload.compile === "object") {
+          state.compile = Object.assign({}, state.compile, payload.compile);
+        }
+
+        if (payload.layout_ratios) {
+          applyLayoutRatios(payload.layout_ratios);
+        }
+
+        renderAll();
+      }
+
+      function showToast(text, level) {
+        ui.toast.textContent = text || "";
+        ui.toast.style.borderColor = level === "error" ? "rgba(255, 102, 102, 0.6)" : "rgba(0, 217, 255, 0.45)";
+        ui.toast.classList.add("show");
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () {
+          ui.toast.classList.remove("show");
+        }, 1600);
+      }
+
+      function onGodotMessage(raw) {
+        const payload = normalizeIncomingPayload(raw);
+        if (!payload || typeof payload !== "object") return;
+
+        if (payload.type === "wand_state_full") {
+          applyWandState(payload);
+          return;
+        }
+
+        if (payload.type === "wand_state") {
+          state.wandName = String(payload.wand_name || state.wandName);
+          state.mana = Number(payload.mana || state.mana);
+          state.manaCapacity = Number(payload.mana_capacity || state.manaCapacity);
+          state.logicCapacity = Number(payload.logic_capacity || state.logicCapacity);
+          renderTopStats();
+          return;
+        }
+      }
+
+      function serializeGraphNodes() {
+        return state.logicNodes.map(function (n) {
+          return {
+            id: n.id,
+            type: n.type,
+            display_name: n.display_name,
+            value: deepClone(n.value || {}),
+            position: { x: n.position.x, y: n.position.y },
+            visual_color: n.visual_color,
+            icon_path: n.icon_path || ""
+          };
+        });
+      }
+
+      function serializeGraphConns() {
+        return state.logicConnections.map(function (c) {
+          return {
+            from_id: c.from_id,
+            from_port: Number(c.from_port || 0),
+            to_id: c.to_id,
+            to_port: Number(c.to_port || 0)
+          };
+        });
+      }
+
+      function serializeVisualCells() {
+        return Array.from(state.visualCells.values()).map(function (c) {
+          return {
+            x: c.x,
+            y: c.y,
+            item_id: c.item_id,
+            name: c.name,
+            visual_type: c.visual_type,
+            color: c.color
+          };
+        });
+      }
+
+      function scheduleGraphSync() {
+        if (graphSyncTimer) clearTimeout(graphSyncTimer);
+        graphSyncTimer = setTimeout(function () {
+          postToGodot("wand_graph_changed", {
+            nodes: serializeGraphNodes(),
+            connections: serializeGraphConns()
+          });
+        }, 90);
+      }
+
+      function flushGraphSync() {
+        if (graphSyncTimer) {
+          clearTimeout(graphSyncTimer);
+          graphSyncTimer = 0;
+        }
+        postToGodot("wand_graph_changed", {
+          nodes: serializeGraphNodes(),
+          connections: serializeGraphConns()
+        });
+      }
+
+      function scheduleVisualSync() {
+        if (visualSyncTimer) clearTimeout(visualSyncTimer);
+        visualSyncTimer = setTimeout(function () {
+          postToGodot("wand_visual_changed", { cells: serializeVisualCells() });
+        }, 120);
+      }
+
+      function flushVisualSync() {
+        if (visualSyncTimer) {
+          clearTimeout(visualSyncTimer);
+          visualSyncTimer = 0;
+        }
+        postToGodot("wand_visual_changed", { cells: serializeVisualCells() });
+      }
+
+      function updateIssuesBadge() {
+        return;
+      }
+
+      function setActiveTab(tab, emit) {
+        state.activeTab = tab === "visual" ? "visual" : "logic";
+
+        ui.logicModeBtn.classList.toggle("active", state.activeTab === "logic");
+        ui.visualModeBtn.classList.toggle("active", state.activeTab === "visual");
+        ui.logicPalette.classList.toggle("hidden", state.activeTab !== "logic");
+        ui.visualPalette.classList.toggle("hidden", state.activeTab !== "visual");
+        ui.graphWrap.classList.toggle("hidden", state.activeTab !== "logic");
+        ui.visualWrap.classList.toggle("hidden", state.activeTab !== "visual");
+
+        renderRightPanel();
+
+        if (emit) {
+          postToGodot("wand_set_active_tab", { tab: state.activeTab });
+        }
+      }
+
+      function groupLogicPalette(items) {
+        const groups = {
+          source: { name: "能量源", color: "#4ade80", list: [] },
+          trigger: { name: "触发器", color: "#ffc800", list: [] },
+          modifier: { name: "修饰器", color: "#ef4444", list: [] },
+          action: { name: "投射物", color: "#00d9ff", list: [] },
+          logic: { name: "逻辑", color: "#a78bfa", list: [] }
+        };
+
+        items.forEach(function (item) {
+          const t = String(item.type || "");
+          let key = "logic";
+          if (t === "generator" || t === "source") key = "source";
+          else if (t.indexOf("trigger") >= 0) key = "trigger";
+          else if (t.indexOf("action_projectile") >= 0) key = "action";
+          else if (t.indexOf("modifier") >= 0) key = "modifier";
+          groups[key].list.push(item);
+        });
+
+        return Object.keys(groups).map(function (k) { return groups[k]; }).filter(function (g) { return g.list.length > 0; });
+      }
+
+      function renderLogicPalette() {
+        const q = state.searchQuery.trim().toLowerCase();
+        const filtered = state.logicPalette.filter(function (item) {
+          if (q === "") return true;
+          return String(item.name).toLowerCase().indexOf(q) >= 0;
+        });
+
+        const groups = groupLogicPalette(filtered);
+        ui.logicPalette.innerHTML = "";
+
+        groups.forEach(function (group) {
+          const g = document.createElement("section");
+          g.className = "group";
+
+          const title = document.createElement("div");
+          title.className = "group-title";
+          title.style.color = group.color;
+          const groupIcon = categoryGlyph(group.name);
+          title.textContent = groupIcon + " " + group.name;
+          title.style.borderLeftColor = group.color;
+          g.appendChild(title);
+
+          const wrap = document.createElement("div");
+          wrap.className = "group-items";
+
+          group.list.forEach(function (item) {
+            const row = document.createElement("button");
+            row.className = "palette-item";
+            row.dataset.itemId = item.item_id;
+            const nodeStyle = nodeVisualStyle(item.type, item.color);
+            row.style.background = nodeStyle.fill;
+            row.style.borderColor = nodeStyle.stroke;
+
+            const icon = document.createElement("span");
+            icon.className = "palette-item-icon";
+            icon.innerHTML = pixelIconSvg(nodeStyle.iconKey);
+            icon.style.color = nodeStyle.glow;
+
+            const name = document.createElement("div");
+            name.className = "palette-name";
+            name.textContent = item.name;
+            name.style.color = nodeStyle.glow;
+
+            const mana = document.createElement("div");
+            mana.className = "palette-mana";
+            mana.textContent = String(item.mana_cost || 0);
+            mana.style.color = "#00d9ff";
+
+            row.appendChild(icon);
+            row.appendChild(name);
+            row.appendChild(mana);
+
+            row.addEventListener("mouseenter", function (event) {
+              showHoverInfo(item, event);
+            });
+            row.addEventListener("mousemove", function (event) {
+              moveHoverInfo(event.clientX, event.clientY);
+            });
+            row.addEventListener("mouseleave", function () {
+              hideHoverInfo();
+            });
+
+            row.addEventListener("mousedown", function (event) {
+              beginLogicPaletteDrag(item, event);
+            });
+
+            wrap.appendChild(row);
+          });
+
+          g.appendChild(wrap);
+          ui.logicPalette.appendChild(g);
+        });
+      }
+
+      function showHoverInfo(item, event) {
+        if (!ui.hoverInfo || !item) return;
+        const values = item.value && typeof item.value === "object" ? item.value : {};
+        const desc = String(item.description || "").trim();
+        const detailRows = [
+          { k: "类型", v: String(item.type || "-") },
+          { k: "法力", v: String(item.mana_cost || 0) },
+          { k: "端口", v: String(item.inputs || 0) + " in / " + String(item.outputs || 0) + " out" }
+        ];
+
+        Object.keys(values).slice(0, 4).forEach(function (key) {
+          if (key === "mana_cost") return;
+          detailRows.push({ k: key, v: String(values[key]) });
+        });
+
+        var html = '<div class="hover-info-title">' + escapeHtml(item.name) + '</div>';
+        if (desc !== "") {
+          html += '<div class="hover-info-desc">' + escapeHtml(desc) + '</div>';
+        }
+        html += detailRows.map(function (row) {
+          return '<div class="hover-info-meta"><span class="hover-info-meta-k">' + escapeHtml(row.k) + '</span><span class="hover-info-meta-v">' + escapeHtml(row.v) + '</span></div>';
+        }).join("");
+
+        ui.hoverInfo.innerHTML = html;
+        ui.hoverInfo.classList.add("show");
+        moveHoverInfo(event.clientX, event.clientY);
+      }
+
+      function moveHoverInfo(clientX, clientY) {
+        if (!ui.hoverInfo || !ui.hoverInfo.classList.contains("show")) return;
+        const gap = 14;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const rect = ui.hoverInfo.getBoundingClientRect();
+
+        var left = clientX + gap;
+        var top = clientY + gap;
+
+        if (left + rect.width > vw - 8) {
+          left = Math.max(8, clientX - rect.width - gap);
+        }
+        if (top + rect.height > vh - 8) {
+          top = Math.max(8, vh - rect.height - 8);
+        }
+
+        ui.hoverInfo.style.left = String(left) + "px";
+        ui.hoverInfo.style.top = String(top) + "px";
+      }
+
+      function hideHoverInfo() {
+        if (!ui.hoverInfo) return;
+        ui.hoverInfo.classList.remove("show");
+      }
+
+      function renderVisualPalette() {
+        const groups = {};
+        state.visualPalette.forEach(function (item) {
+          const key = item.visual_type || "misc";
+          if (!groups[key]) {
+            groups[key] = [];
+          }
+          groups[key].push(item);
+        });
+
+        ui.visualPalette.innerHTML = "";
+        Object.keys(groups).forEach(function (key) {
+          const section = document.createElement("section");
+          section.className = "group";
+
+          const title = document.createElement("div");
+          title.className = "group-title";
+          title.style.color = "#9bc4f2";
+          title.textContent = "◆ " + key;
+          section.appendChild(title);
+
+          const wrap = document.createElement("div");
+          wrap.className = "group-items";
+
+          groups[key].forEach(function (item) {
+            const row = document.createElement("button");
+            row.className = "palette-item" + (state.visualBrushId === item.item_id ? " active" : "");
+            row.dataset.itemId = item.item_id;
+
+            const dot = document.createElement("div");
+            dot.className = "palette-color";
+            dot.style.background = item.color;
+
+            const name = document.createElement("div");
+            name.className = "palette-name";
+            name.textContent = item.name;
+
+            const empty = document.createElement("div");
+            empty.className = "palette-mana";
+            empty.textContent = "";
+
+            row.appendChild(dot);
+            row.appendChild(name);
+            row.appendChild(empty);
+
+            row.addEventListener("click", function () {
+              state.visualBrushId = item.item_id;
+              renderVisualPalette();
+            });
+
+            wrap.appendChild(row);
+          });
+
+          section.appendChild(wrap);
+          ui.visualPalette.appendChild(section);
+        });
+      }
+
+      function graphPositionFromClient(clientX, clientY) {
+        const rect = ui.graphBoard.getBoundingClientRect();
+        return {
+          x: Math.round(((clientX - rect.left - state.canvasOffset.x) / state.canvasScale) / 8) * 8,
+          y: Math.round(((clientY - rect.top - state.canvasOffset.y) / state.canvasScale) / 8) * 8
+        };
+      }
+
+      function addNodeFromPalette(item, clientX, clientY) {
+        const pos = (typeof clientX === "number" && typeof clientY === "number")
+          ? graphPositionFromClient(clientX, clientY)
+          : {
+              x: Math.round(((-state.canvasOffset.x + 220) / state.canvasScale) / 8) * 8,
+              y: Math.round(((-state.canvasOffset.y + 160) / state.canvasScale) / 8) * 8
+            };
+        const node = {
+          id: "node_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
+          type: item.type,
+          display_name: item.name,
+          value: deepClone(item.value || {}),
+          position: pos,
+          visual_color: item.color || colorForType(item.type),
+          icon_path: "",
+          inputs: item.inputs,
+          outputs: item.outputs
+        };
+        state.logicNodes.push(node);
+        state.selectedNodeId = node.id;
+        renderTopStats();
+        renderGraph();
+        renderRightPanel();
+        scheduleGraphSync();
+      }
+
+      function isInsideGraphBoard(clientX, clientY) {
+        const rect = ui.graphBoard.getBoundingClientRect();
+        return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+      }
+
+      function updatePaletteGhost(clientX, clientY) {
+        if (!drag.paletteGhost) return;
+        drag.paletteGhost.style.left = String(clientX + 14) + "px";
+        drag.paletteGhost.style.top = String(clientY + 14) + "px";
+        drag.paletteGhost.style.display = "block";
+      }
+
+      function clearPaletteGhost() {
+        if (drag.paletteGhost && drag.paletteGhost.parentNode) {
+          drag.paletteGhost.parentNode.removeChild(drag.paletteGhost);
+        }
+        drag.paletteGhost = null;
+      }
+
+      function beginLogicPaletteDrag(item, event) {
+        if (event.button !== 0) return;
+        drag.paletteItem = item;
+        drag.paletteMoved = false;
+        drag.paletteStart.x = event.clientX;
+        drag.paletteStart.y = event.clientY;
+
+        const ghost = document.createElement("div");
+        ghost.className = "palette-item";
+        const nodeStyle = nodeVisualStyle(item.type, item.color);
+        ghost.style.position = "fixed";
+        ghost.style.width = "220px";
+        ghost.style.pointerEvents = "none";
+        ghost.style.opacity = "0.92";
+        ghost.style.zIndex = "99";
+        ghost.style.boxShadow = "0 0 12px rgba(0, 217, 255, 0.35)";
+        ghost.style.background = nodeStyle.fill;
+        ghost.style.borderColor = nodeStyle.stroke;
+        ghost.innerHTML =
+          '<span class="palette-item-icon" style="color:' + nodeStyle.glow + '">' + pixelIconSvg(nodeStyle.iconKey) + '</span>' +
+          '<div class="palette-name" style="color:' + nodeStyle.glow + '">' + item.name + '</div>' +
+          '<div class="palette-mana">' + String(item.mana_cost || 0) + '</div>';
+        document.body.appendChild(ghost);
+        drag.paletteGhost = ghost;
+        updatePaletteGhost(event.clientX, event.clientY);
+        event.preventDefault();
+      }
+
+      function finalizeLogicPaletteDrag(event) {
+        if (!drag.paletteItem) return;
+        const item = drag.paletteItem;
+        const x = event ? event.clientX : 0;
+        const y = event ? event.clientY : 0;
+        if (state.activeTab === "logic" && isInsideGraphBoard(x, y)) {
+          addNodeFromPalette(item, x, y);
+        }
+        drag.paletteItem = null;
+        drag.paletteMoved = false;
+        clearPaletteGhost();
+      }
+
+      function nodeById(id) {
+        return state.logicNodes.find(function (n) { return n.id === id; }) || null;
+      }
+
+      function connectionExists(a, b, c, d) {
+        return state.logicConnections.some(function (x) {
+          return x.from_id === a && x.from_port === b && x.to_id === c && x.to_port === d;
+        });
+      }
+
+      function removeNode(nodeId) {
+        state.logicNodes = state.logicNodes.filter(function (n) { return n.id !== nodeId; });
+        state.logicConnections = state.logicConnections.filter(function (c) {
+          return c.from_id !== nodeId && c.to_id !== nodeId;
+        });
+        if (state.selectedNodeId === nodeId) {
+          state.selectedNodeId = null;
+        }
+        state.selectedNodeIds = state.selectedNodeIds.filter(function (id) { return id !== nodeId; });
+        if (state.selectedConnectionKey !== "") {
+          const stillExists = state.logicConnections.some(function (conn) {
+            return connectionKey(conn) === state.selectedConnectionKey;
+          });
+          if (!stillExists) {
+            state.selectedConnectionKey = "";
+          }
+        }
+        renderTopStats();
+        renderGraph();
+        renderRightPanel();
+        scheduleGraphSync();
+      }
+
+      function removeNodes(nodeIds) {
+        const idSet = {};
+        nodeIds.forEach(function (id) { idSet[id] = true; });
+        state.logicNodes = state.logicNodes.filter(function (n) { return !idSet[n.id]; });
+        state.logicConnections = state.logicConnections.filter(function (c) {
+          return !idSet[c.from_id] && !idSet[c.to_id];
+        });
+        state.selectedNodeId = null;
+        state.selectedNodeIds = [];
+        state.selectedConnectionKey = "";
+        renderTopStats();
+        renderGraph();
+        renderRightPanel();
+        scheduleGraphSync();
+      }
+
+      function removeConnectionByKey(connKey) {
+        const before = state.logicConnections.length;
+        state.logicConnections = state.logicConnections.filter(function (conn) {
+          return connectionKey(conn) !== connKey;
+        });
+        if (state.logicConnections.length !== before) {
+          state.selectedConnectionKey = "";
+          renderGraph();
+          renderRightPanel();
+          scheduleGraphSync();
+        }
+      }
+
+      function removeConnectionsByPort(nodeId, side, portIndex) {
+        const before = state.logicConnections.length;
+        state.logicConnections = state.logicConnections.filter(function (conn) {
+          if (side === "input") {
+            return !(conn.to_id === nodeId && Number(conn.to_port || 0) === portIndex);
+          }
+          return !(conn.from_id === nodeId && Number(conn.from_port || 0) === portIndex);
+        });
+
+        if (state.logicConnections.length !== before) {
+          if (state.selectedConnectionKey !== "") {
+            const stillExists = state.logicConnections.some(function (conn) {
+              return connectionKey(conn) === state.selectedConnectionKey;
+            });
+            if (!stillExists) {
+              state.selectedConnectionKey = "";
+            }
+          }
+          renderGraph();
+          renderRightPanel();
+          scheduleGraphSync();
+        }
+      }
+
+      function updateGraphTransform() {
+        ui.graphLayer.style.transform = "translate(" + state.canvasOffset.x + "px, " + state.canvasOffset.y + "px) scale(" + state.canvasScale + ")";
+        ui.zoomText.textContent = String(Math.round(state.canvasScale * 100)) + "%";
+      }
+
+      function getPortAnchor(node, side, index) {
+        const y = node.position.y + PORT_TOP_BASE + (PORT_WRAP_SIZE / 2) + index * PORT_STEP;
+        if (side === "output") {
+          return { x: node.position.x + NODE_WIDTH, y: y };
+        }
+        return { x: node.position.x, y: y };
+      }
+
+      function buildRoutingObstacles(ignoreNodeIds) {
+        const ignore = ignoreNodeIds || {};
+        return state.logicNodes.filter(function (node) {
+          return !ignore[node.id];
+        }).map(function (node) {
+          return {
+            left: node.position.x - ROUTE_MARGIN,
+            right: node.position.x + NODE_WIDTH + ROUTE_MARGIN,
+            top: node.position.y - ROUTE_MARGIN,
+            bottom: node.position.y + NODE_HEIGHT + ROUTE_MARGIN
+          };
+        });
+      }
+
+      function segmentHitsRect(a, b, rect) {
+        if (a.x === b.x) {
+          const y1 = Math.min(a.y, b.y);
+          const y2 = Math.max(a.y, b.y);
+          return a.x >= rect.left && a.x <= rect.right && y2 >= rect.top && y1 <= rect.bottom;
+        }
+        if (a.y === b.y) {
+          const x1 = Math.min(a.x, b.x);
+          const x2 = Math.max(a.x, b.x);
+          return a.y >= rect.top && a.y <= rect.bottom && x2 >= rect.left && x1 <= rect.right;
+        }
+        return true;
+      }
+
+      function routeCollisionCount(points, obstacles) {
+        let collisions = 0;
+        for (let i = 1; i < points.length; i += 1) {
+          const a = points[i - 1];
+          const b = points[i];
+          for (let j = 0; j < obstacles.length; j += 1) {
+            if (segmentHitsRect(a, b, obstacles[j])) {
+              collisions += 1;
+            }
+          }
+        }
+        return collisions;
+      }
+
+      function routeDistance(points) {
+        let distance = 0;
+        for (let i = 1; i < points.length; i += 1) {
+          distance += Math.abs(points[i].x - points[i - 1].x) + Math.abs(points[i].y - points[i - 1].y);
+        }
+        return distance;
+      }
+
+      function simplifyRoute(points) {
+        const compact = [];
+        points.forEach(function (p) {
+          if (!compact.length) {
+            compact.push({ x: p.x, y: p.y });
+            return;
+          }
+          const prev = compact[compact.length - 1];
+          if (prev.x === p.x && prev.y === p.y) return;
+          compact.push({ x: p.x, y: p.y });
+        });
+
+        const simplified = [];
+        for (let i = 0; i < compact.length; i += 1) {
+          const prev = simplified[simplified.length - 1];
+          const curr = compact[i];
+          const next = compact[i + 1];
+
+          if (prev && next) {
+            const sameX = prev.x === curr.x && curr.x === next.x;
+            const sameY = prev.y === curr.y && curr.y === next.y;
+            if (sameX || sameY) {
+              continue;
+            }
+          }
+
+          simplified.push(curr);
+        }
+
+        return simplified;
+      }
+
+      function pointsToPath(points) {
+        if (!points.length) return "";
+        const cmds = ["M", points[0].x, points[0].y];
+        for (let i = 1; i < points.length; i += 1) {
+          cmds.push("L", points[i].x, points[i].y);
+        }
+        return cmds.join(" ");
+      }
+
+      function routeStubX(point, side, towardX) {
+        if (side === "output") {
+          return point.x + ROUTE_STUB;
+        }
+        if (side === "input") {
+          return point.x - ROUTE_STUB;
+        }
+        return towardX >= point.x ? point.x + ROUTE_STUB : point.x - ROUTE_STUB;
+      }
+
+      function collectRouteYCandidates(from, to, obstacles) {
+        const result = [];
+        const marker = {};
+
+        function addY(value) {
+          if (!Number.isFinite(value)) return;
+          const y = Math.round(value);
+          const key = String(y);
+          if (marker[key]) return;
+          marker[key] = true;
+          result.push(y);
+        }
+
+        addY(from.y);
+        addY(to.y);
+        addY((from.y + to.y) * 0.5);
+        addY(Math.min(from.y, to.y) - ROUTE_BYPASS);
+        addY(Math.max(from.y, to.y) + ROUTE_BYPASS);
+
+        obstacles.forEach(function (rect) {
+          addY(rect.top - ROUTE_BYPASS);
+          addY(rect.bottom + ROUTE_BYPASS);
+        });
+
+        return result;
+      }
+
+      function horizontalRoutePoints(from, to, routeY) {
+        return simplifyRoute([
+          { x: from.x, y: from.y },
+          { x: from.x, y: routeY },
+          { x: to.x, y: routeY },
+          { x: to.x, y: to.y }
+        ]);
+      }
+
+      function outerRoutePoints(from, to, outerX) {
+        return simplifyRoute([
+          { x: from.x, y: from.y },
+          { x: outerX, y: from.y },
+          { x: outerX, y: from.y },
+          { x: outerX, y: to.y },
+          { x: to.x, y: to.y },
+          { x: to.x, y: to.y }
+        ]);
+      }
+
+      function routePoints(from, to, obstacles) {
+        const candidates = [];
+        const yCandidates = collectRouteYCandidates(from, to, obstacles);
+
+        yCandidates.forEach(function (routeY) {
+          candidates.push(horizontalRoutePoints(from, to, routeY));
+        });
+
+        let minLeft = Math.min(from.x, to.x);
+        let maxRight = Math.max(from.x, to.x);
+        obstacles.forEach(function (rect) {
+          minLeft = Math.min(minLeft, rect.left);
+          maxRight = Math.max(maxRight, rect.right);
+        });
+
+        candidates.push(outerRoutePoints(from, to, minLeft - ROUTE_BYPASS));
+        candidates.push(outerRoutePoints(from, to, maxRight + ROUTE_BYPASS));
+
+        let bestPoints = candidates[0] || simplifyRoute([{ x: from.x, y: from.y }, { x: to.x, y: to.y }]);
+        let bestScore = routeCollisionCount(bestPoints, obstacles) * ROUTE_PENALTY + routeDistance(bestPoints);
+
+        for (let i = 1; i < candidates.length; i += 1) {
+          const points = candidates[i];
+          const score = routeCollisionCount(points, obstacles) * ROUTE_PENALTY + routeDistance(points);
+          if (score < bestScore) {
+            bestScore = score;
+            bestPoints = points;
+          }
+        }
+
+        return bestPoints;
+      }
+
+      function drawPath(from, to, color, options) {
+        const opts = options || {};
+        const fromSide = opts.fromSide || "output";
+        const toSide = opts.toSide || "input";
+        const obstacles = Array.isArray(opts.obstacles) ? opts.obstacles : [];
+        const fromStub = {
+          x: routeStubX(from, fromSide, to.x),
+          y: from.y
+        };
+        const toStub = {
+          x: routeStubX(to, toSide, from.x),
+          y: to.y
+        };
+        const routed = routePoints(fromStub, toStub, obstacles);
+        const points = simplifyRoute([
+          { x: from.x, y: from.y }
+        ].concat(routed).concat([
+          { x: to.x, y: to.y }
+        ]));
+        const d = pointsToPath(points);
+
+        const glow = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        glow.setAttribute("d", d);
+        glow.setAttribute("fill", "none");
+        glow.setAttribute("stroke", color);
+        glow.setAttribute("stroke-width", "4");
+        glow.setAttribute("stroke-opacity", "0.28");
+        glow.setAttribute("filter", "url(#none)");
+        glow.style.pointerEvents = "none";
+
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        line.setAttribute("d", d);
+        line.setAttribute("fill", "none");
+        line.setAttribute("stroke", color);
+        line.setAttribute("stroke-width", "2");
+        line.style.pointerEvents = "none";
+
+        return { glow: glow, line: line, d: d };
+      }
+
+      function renderGraph() {
+        updateGraphTransform();
+        ui.nodesLayer.innerHTML = "";
+        ui.graphLinks.innerHTML = "";
+
+        const hasSelectedConnection = state.logicConnections.some(function (conn) {
+          return connectionKey(conn) === state.selectedConnectionKey;
+        });
+        if (!hasSelectedConnection) {
+          state.selectedConnectionKey = "";
+        }
+
+        state.logicConnections.forEach(function (conn) {
+          const fromNode = nodeById(conn.from_id);
+          const toNode = nodeById(conn.to_id);
+          if (!fromNode || !toNode) return;
+          const from = getPortAnchor(fromNode, "output", conn.from_port || 0);
+          const to = getPortAnchor(toNode, "input", conn.to_port || 0);
+          const obstacles = buildRoutingObstacles({});
+          const color = colorForType(fromNode.type, fromNode.visual_color);
+          const key = connectionKey(conn);
+          const p = drawPath(from, to, color, {
+            fromSide: "output",
+            toSide: "input",
+            obstacles: obstacles
+          });
+          ui.graphLinks.appendChild(p.glow);
+          ui.graphLinks.appendChild(p.line);
+
+          const hit = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          hit.setAttribute("d", p.d);
+          hit.setAttribute("fill", "none");
+          hit.setAttribute("stroke", "rgba(0,0,0,0)");
+          hit.setAttribute("stroke-width", "12");
+          hit.style.pointerEvents = "stroke";
+          hit.style.cursor = "pointer";
+          hit.addEventListener("click", function (event) {
+            event.stopPropagation();
+            if (event.altKey || event.ctrlKey || event.metaKey) {
+              removeConnectionByKey(key);
+              return;
+            }
+            state.selectedConnectionKey = key;
+            state.selectedNodeId = null;
+            state.selectedNodeIds = [];
+            renderGraph();
+            renderRightPanel();
+          });
+          hit.addEventListener("contextmenu", function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            removeConnectionByKey(key);
+          });
+          ui.graphLinks.appendChild(hit);
+
+          if (state.selectedConnectionKey === key) {
+            const selected = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            selected.setAttribute("d", p.d);
+            selected.setAttribute("fill", "none");
+            selected.setAttribute("stroke", "#ffc800");
+            selected.setAttribute("stroke-width", "3");
+            selected.style.pointerEvents = "none";
+            ui.graphLinks.appendChild(selected);
+          }
+        });
+
+        if (state.connectFrom) {
+          const startNode = nodeById(state.connectFrom.nodeId);
+          if (startNode) {
+            const fromSide = state.connectFrom.side;
+            const from = getPortAnchor(startNode, fromSide, state.connectFrom.portIndex || 0);
+            const to = state.connectFrom.cursor || from;
+            const p = drawPath(from, to, "#00d9ff", {
+              fromSide: fromSide,
+              toSide: drag.connectHover ? drag.connectHover.side : "auto",
+              obstacles: buildRoutingObstacles({})
+            });
+            ui.graphLinks.appendChild(p.glow);
+            ui.graphLinks.appendChild(p.line);
+          }
+        }
+
+        state.logicNodes.forEach(function (node) {
+          const card = document.createElement("article");
+          card.className = "logic-node" + (isNodeSelected(node.id) ? " selected" : "");
+          card.style.left = String(node.position.x) + "px";
+          card.style.top = String(node.position.y) + "px";
+          const nodeStyle = nodeVisualStyle(node.type, node.visual_color);
+          card.style.borderColor = nodeStyle.stroke;
+          card.style.background = "linear-gradient(180deg, " + nodeStyle.fill + ", rgba(8, 18, 33, 0.96))";
+
+          const title = document.createElement("div");
+          title.className = "node-title";
+          title.style.background = nodeStyle.stroke + "15";
+          title.style.borderBottomColor = nodeStyle.stroke + "40";
+          const icon = document.createElement("span");
+          icon.className = "node-title-icon";
+          icon.style.color = nodeStyle.glow;
+          icon.innerHTML = pixelIconSvg(nodeStyle.iconKey);
+          const titleText = document.createElement("span");
+          titleText.textContent = node.display_name.length > 10 ? node.display_name.slice(0, 10) + ".." : node.display_name;
+          titleText.style.color = nodeStyle.glow;
+          title.appendChild(icon);
+          title.appendChild(titleText);
+          function startNodeDrag(event) {
+            if (event.button !== 0) return;
+            if (event.target && (event.target.closest(".port") || event.target.closest(".port-wrap"))) return;
+            state.selectedConnectionKey = "";
+            if (!event.shiftKey) {
+              state.selectedNodeIds = [];
+            }
+            state.selectedNodeId = node.id;
+            if (state.selectedNodeIds.indexOf(node.id) < 0) {
+              state.selectedNodeIds.push(node.id);
+            }
+            drag.nodeId = node.id;
+            drag.startMouse.x = event.clientX;
+            drag.startMouse.y = event.clientY;
+            drag.startPos.x = node.position.x;
+            drag.startPos.y = node.position.y;
+            event.stopPropagation();
+            event.preventDefault();
+            renderGraph();
+            renderRightPanel();
+          }
+          title.addEventListener("mousedown", startNodeDrag);
+
+          const sub = document.createElement("div");
+          sub.className = "node-sub";
+          const entries = Object.entries(node.value || {}).slice(0, 2);
+          if (entries.length > 0) {
+            entries.forEach(function (entry) {
+              const row = document.createElement("div");
+              row.className = "node-param-row";
+              const keyEl = document.createElement("span");
+              keyEl.className = "node-param-key";
+              keyEl.textContent = String(entry[0]) + ":";
+              const valEl = document.createElement("span");
+              valEl.className = "node-param-val";
+              valEl.style.color = nodeStyle.glow;
+              valEl.textContent = String(entry[1]);
+              row.appendChild(keyEl);
+              row.appendChild(valEl);
+              sub.appendChild(row);
+            });
+          } else {
+            const row = document.createElement("div");
+            row.className = "node-param-row";
+            const keyEl = document.createElement("span");
+            keyEl.className = "node-param-key";
+            keyEl.textContent = "type:";
+            const valEl = document.createElement("span");
+            valEl.className = "node-param-val";
+            valEl.style.color = nodeStyle.glow;
+            valEl.textContent = node.type;
+            row.appendChild(keyEl);
+            row.appendChild(valEl);
+            sub.appendChild(row);
+          }
+
+          const manaTag = document.createElement("div");
+          const manaCost = inferNodeManaCost(node);
+          manaTag.className = "node-mana-tag";
+          manaTag.textContent = String(manaCost);
+          if (manaCost <= 0) {
+            manaTag.style.borderColor = "#4ade80";
+            manaTag.style.color = "#86efac";
+            manaTag.style.boxShadow = "0 0 8px rgba(74, 222, 128, 0.18)";
+          }
+          sub.appendChild(manaTag);
+
+          card.appendChild(title);
+          card.appendChild(sub);
+          card.addEventListener("mousedown", startNodeDrag);
+
+          const forcedPorts = inferPorts(node.type, null);
+          var inCount = Number(node.inputs);
+          var outCount = Number(node.outputs);
+          if (!Number.isFinite(inCount)) inCount = forcedPorts.inputs;
+          if (!Number.isFinite(outCount)) outCount = forcedPorts.outputs;
+          if (forcedPorts.inputs === 0) inCount = 0;
+          if (forcedPorts.outputs === 0) outCount = 0;
+          inCount = Math.max(0, Math.floor(inCount));
+          outCount = Math.max(0, Math.floor(outCount));
+
+          for (let i = 0; i < inCount; i += 1) {
+            const wrap = document.createElement("div");
+            wrap.className = "port-wrap input";
+            wrap.style.top = String(PORT_TOP_BASE + i * PORT_STEP) + "px";
+            wrap.dataset.nodeId = node.id;
+            wrap.dataset.side = "input";
+            wrap.dataset.portIndex = String(i);
+            const port = document.createElement("div");
+            port.className = "port";
+            port.style.background = isNodeSelected(node.id) ? nodeStyle.glow : nodeStyle.stroke;
+            port.style.borderColor = nodeStyle.glow;
+            port.style.boxShadow = "0 0 8px " + nodeStyle.glow + "80, inset 0 0 4px " + nodeStyle.glow + "40";
+            wrap.appendChild(port);
+            wrap.addEventListener("mousedown", function (event) {
+              if (event.button !== 0) return;
+              event.stopPropagation();
+              event.preventDefault();
+              beginPortConnect(node.id, "input", i, event);
+            });
+            wrap.addEventListener("mouseenter", function () {
+              drag.connectHover = { nodeId: node.id, side: "input", portIndex: i };
+            });
+            wrap.addEventListener("mouseleave", function () {
+              drag.connectHover = null;
+            });
+            wrap.addEventListener("click", function (event) {
+              event.stopPropagation();
+              event.preventDefault();
+              onPortClick(node.id, "input", i, event);
+            });
+            wrap.addEventListener("contextmenu", function (event) {
+              event.preventDefault();
+              event.stopPropagation();
+              removeConnectionsByPort(node.id, "input", i);
+            });
+            card.appendChild(wrap);
+          }
+
+          for (let i = 0; i < outCount; i += 1) {
+            const wrap = document.createElement("div");
+            wrap.className = "port-wrap output";
+            wrap.style.top = String(PORT_TOP_BASE + i * PORT_STEP) + "px";
+            wrap.dataset.nodeId = node.id;
+            wrap.dataset.side = "output";
+            wrap.dataset.portIndex = String(i);
+            const port = document.createElement("div");
+            port.className = "port";
+            port.style.background = isNodeSelected(node.id) ? nodeStyle.glow : nodeStyle.stroke;
+            port.style.borderColor = nodeStyle.glow;
+            port.style.boxShadow = "0 0 8px " + nodeStyle.glow + "80, inset 0 0 4px " + nodeStyle.glow + "40";
+            wrap.appendChild(port);
+            wrap.addEventListener("mousedown", function (event) {
+              if (event.button !== 0) return;
+              event.stopPropagation();
+              event.preventDefault();
+              beginPortConnect(node.id, "output", i, event);
+            });
+            wrap.addEventListener("mouseenter", function () {
+              drag.connectHover = { nodeId: node.id, side: "output", portIndex: i };
+            });
+            wrap.addEventListener("mouseleave", function () {
+              drag.connectHover = null;
+            });
+            wrap.addEventListener("click", function (event) {
+              event.stopPropagation();
+              event.preventDefault();
+              onPortClick(node.id, "output", i, event);
+            });
+            wrap.addEventListener("contextmenu", function (event) {
+              event.preventDefault();
+              event.stopPropagation();
+              removeConnectionsByPort(node.id, "output", i);
+            });
+            card.appendChild(wrap);
+          }
+
+          ui.nodesLayer.appendChild(card);
+        });
+
+        updateIssuesBadge();
+      }
+
+      function onPortClick(nodeId, side, portIndex, event) {
+        if (event && (event.altKey || event.ctrlKey || event.metaKey)) {
+          state.connectFrom = null;
+          removeConnectionsByPort(nodeId, side, portIndex);
+          return;
+        }
+
+        if (!state.connectFrom) {
+          state.selectedConnectionKey = "";
+          state.connectFrom = {
+            nodeId: nodeId,
+            side: side,
+            portIndex: portIndex,
+            cursor: null
+          };
+          renderGraph();
+          return;
+        }
+
+        const from = state.connectFrom;
+        if (from.nodeId === nodeId && from.side === side) {
+          state.connectFrom = null;
+          renderGraph();
+          return;
+        }
+
+        if (from.side === side) {
+          state.connectFrom = {
+            nodeId: nodeId,
+            side: side,
+            portIndex: portIndex,
+            cursor: null
+          };
+          renderGraph();
+          return;
+        }
+
+        let conn;
+        if (from.side === "output") {
+          conn = {
+            from_id: from.nodeId,
+            from_port: from.portIndex,
+            to_id: nodeId,
+            to_port: portIndex
+          };
+        } else {
+          conn = {
+            from_id: nodeId,
+            from_port: portIndex,
+            to_id: from.nodeId,
+            to_port: from.portIndex
+          };
+        }
+
+        if (!connectionExists(conn.from_id, conn.from_port, conn.to_id, conn.to_port)) {
+          state.logicConnections.push(conn);
+          state.selectedConnectionKey = "";
+          scheduleGraphSync();
+        }
+
+        state.connectFrom = null;
+        renderGraph();
+      }
+
+      function trackGraphPointer(clientX, clientY) {
+        if (!state.connectFrom) return;
+        const rect = ui.graphBoard.getBoundingClientRect();
+        state.connectFrom.cursor = {
+          x: (clientX - rect.left - state.canvasOffset.x) / state.canvasScale,
+          y: (clientY - rect.top - state.canvasOffset.y) / state.canvasScale
+        };
+        renderGraph();
+      }
+
+      function beginPortConnect(nodeId, side, portIndex, event) {
+        state.connectFrom = {
+          nodeId: nodeId,
+          side: side,
+          portIndex: portIndex,
+          cursor: null
+        };
+        trackGraphPointer(event.clientX, event.clientY);
+      }
+
+      function finalizePortConnection(targetNodeId, targetSide, targetPortIndex) {
+        if (!state.connectFrom) return;
+        const from = state.connectFrom;
+        state.connectFrom = null;
+
+        if (!targetNodeId || !targetSide || typeof targetPortIndex !== "number") {
+          renderGraph();
+          return;
+        }
+
+        if (from.nodeId === targetNodeId && from.side === targetSide) {
+          renderGraph();
+          return;
+        }
+
+        if (from.side === targetSide) {
+          renderGraph();
+          return;
+        }
+
+        let conn;
+        if (from.side === "output") {
+          conn = {
+            from_id: from.nodeId,
+            from_port: from.portIndex,
+            to_id: targetNodeId,
+            to_port: targetPortIndex
+          };
+        } else {
+          conn = {
+            from_id: targetNodeId,
+            from_port: targetPortIndex,
+            to_id: from.nodeId,
+            to_port: from.portIndex
+          };
+        }
+
+        if (!connectionExists(conn.from_id, conn.from_port, conn.to_id, conn.to_port)) {
+          state.logicConnections.push(conn);
+          scheduleGraphSync();
+        }
+
+        renderGraph();
+      }
+
+      function setCell(x, y, brush, erase) {
+        const key = String(x) + "," + String(y);
+        if (erase || !brush) {
+          state.visualCells.delete(key);
+        } else {
+          state.visualCells.set(key, {
+            x: x,
+            y: y,
+            item_id: brush.item_id,
+            name: brush.name,
+            visual_type: brush.visual_type,
+            color: brush.color
+          });
+        }
+      }
+
+      function renderVisualGrid() {
+        const size = Math.max(MIN_VIS_SCALE, Math.min(MAX_VIS_SCALE, state.visualScale));
+        const cellSize = Math.max(2, Math.floor(size));
+
+        ui.vZoomText.textContent = String(size) + "x";
+        ui.visualTitle.textContent = "法杖外观编辑器 (16x48) | 滚轮缩放: " + String(size) + "x";
+
+        ui.visualGrid.style.gridTemplateColumns = "repeat(" + String(GRID_W) + ", " + String(cellSize) + "px)";
+        ui.visualGrid.innerHTML = "";
+
+        for (let y = 0; y < GRID_H; y += 1) {
+          for (let x = 0; x < GRID_W; x += 1) {
+            const key = String(x) + "," + String(y);
+            const cell = state.visualCells.get(key) || null;
+            const el = document.createElement("div");
+            el.className = "visual-cell";
+            el.style.width = String(cellSize) + "px";
+            el.style.height = String(cellSize) + "px";
+            if (cell) {
+              el.style.background = cell.color;
+            }
+            el.dataset.x = String(x);
+            el.dataset.y = String(y);
+
+            el.addEventListener("mousedown", function (event) {
+              event.preventDefault();
+              const brush = state.visualPalette.find(function (p) { return p.item_id === state.visualBrushId; }) || null;
+              drag.paint = event.button === 0;
+              drag.paintErase = event.button === 2;
+              setCell(x, y, brush, drag.paintErase);
+              renderVisualGrid();
+              renderRightPanel();
+              scheduleVisualSync();
+            });
+
+            el.addEventListener("mouseenter", function () {
+              if (!drag.paint && !drag.paintErase) return;
+              const brush = state.visualPalette.find(function (p) { return p.item_id === state.visualBrushId; }) || null;
+              setCell(x, y, brush, drag.paintErase);
+              renderVisualGrid();
+              renderRightPanel();
+              scheduleVisualSync();
+            });
+
+            el.addEventListener("contextmenu", function (event) {
+              event.preventDefault();
+            });
+
+            ui.visualGrid.appendChild(el);
+          }
+        }
+      }
+
+      function renderTopStats() {
+        ui.wandName.value = state.wandName;
+        ui.manaText.textContent = String(state.mana) + "/" + String(state.manaCapacity);
+        ui.nodeText.textContent = String(state.logicNodes.length) + "/" + String(state.logicCapacity);
+      }
+
+      function createPixelPanel(title, accentColor, bodyHtml) {
+        const card = document.createElement("section");
+        card.className = "card";
+        card.style.borderColor = accentColor;
+        card.style.boxShadow = "inset 0 0 18px " + accentColor + "15, 0 0 0 1px rgba(13, 18, 38, 0.95)";
+
+        const titleBar = document.createElement("div");
+        titleBar.className = "card-title";
+        titleBar.style.color = accentColor;
+        titleBar.style.background = "linear-gradient(180deg, " + accentColor + "28, " + accentColor + "10)";
+        titleBar.style.borderBottomColor = accentColor + "40";
+        titleBar.textContent = title;
+        card.appendChild(titleBar);
+
+        const body = document.createElement("div");
+        body.className = "card-body";
+        body.innerHTML = bodyHtml;
+        card.appendChild(body);
+        return card;
+      }
+
+      function renderRightPanel() {
+        ui.rightContent.innerHTML = "";
+
+        if (state.activeTab === "visual") {
+          const count = state.visualCells.size;
+          const kinds = new Set(Array.from(state.visualCells.values()).map(function (c) { return c.item_id; })).size;
+
+          const card = createPixelPanel(
+            "模块统计",
+            "#00d9ff",
+            '<div class="kv"><span class="k">已用格子</span><span class="v" style="color:#00d9ff">' + String(count) + ' / 768</span></div>' +
+            '<div class="kv"><span class="k">模块种类</span><span class="v" style="color:#ffc800">' + String(kinds) + '</span></div>' +
+            '<div class="kv"><span class="k">操作提示</span><span class="v" style="color:#6b6b8d">左键绘制 / 右键擦除</span></div>'
+          );
+          ui.rightContent.appendChild(card);
+          return;
+        }
+
+        const selected = state.logicNodes.find(function (n) { return n.id === state.selectedNodeId; }) || null;
+        if (state.selectedNodeIds.length > 1) {
+          const card = createPixelPanel(
+            "多选节点",
+            "#ffc800",
+            '<div class="kv"><span class="k">已选数量</span><span class="v" style="color:#ffc800">' + String(state.selectedNodeIds.length) + '</span></div>' +
+            '<div class="kv"><span class="k">提示</span><span class="v">按 Delete 可批量删除</span></div>'
+          );
+          ui.rightContent.appendChild(card);
+
+          const batchDel = document.createElement("button");
+          batchDel.className = "px-btn";
+          batchDel.textContent = "删除已选节点";
+          batchDel.addEventListener("click", function () {
+            removeNodes(state.selectedNodeIds.slice());
+          });
+          ui.rightContent.appendChild(batchDel);
+          return;
+        }
+
+        if (state.selectedConnectionKey) {
+          const conn = state.logicConnections.find(function (x) { return connectionKey(x) === state.selectedConnectionKey; }) || null;
+          if (conn) {
+            const card = createPixelPanel(
+              "连线属性",
+              "#00d9ff",
+              '<div class="kv"><span class="k">起点</span><span class="v">' + conn.from_id + ':' + String(conn.from_port || 0) + '</span></div>' +
+              '<div class="kv"><span class="k">终点</span><span class="v">' + conn.to_id + ':' + String(conn.to_port || 0) + '</span></div>'
+            );
+            ui.rightContent.appendChild(card);
+
+            const delConn = document.createElement("button");
+            delConn.className = "px-btn";
+            delConn.textContent = "删除连线";
+            delConn.addEventListener("click", function () {
+              removeConnectionByKey(state.selectedConnectionKey);
+            });
+            ui.rightContent.appendChild(delConn);
+            return;
+          }
+        }
+
+        if (selected) {
+          const kvRows = Object.keys(selected.value || {}).map(function (k) {
+            return '<div class="kv"><span class="k">' + k + '</span><span class="v">' + String(selected.value[k]) + '</span></div>';
+          }).join("");
+
+          const selectedStyle = nodeVisualStyle(selected.type, selected.visual_color);
+          const card = createPixelPanel(
+            "节点属性",
+            selectedStyle.stroke,
+            '<div class="kv"><span class="k">名称</span><span class="v" style="color:' + selectedStyle.glow + '">' + selected.display_name + '</span></div>' +
+            '<div class="kv"><span class="k">类型</span><span class="v">' + selected.type + '</span></div>' +
+            kvRows
+          );
+          ui.rightContent.appendChild(card);
+
+          const del = document.createElement("button");
+          del.className = "px-btn";
+          del.textContent = "删除节点";
+          del.addEventListener("click", function () {
+            removeNode(selected.id);
+          });
+          ui.rightContent.appendChild(del);
+          return;
+        }
+
+        const statCard = createPixelPanel(
+          "法杖属性",
+          "#00d9ff",
+          '<div class="kv"><span class="k">魔力容量</span><span class="v" style="color:#00d9ff">' + String(state.manaCapacity) + '</span></div>' +
+          '<div class="kv"><span class="k">逻辑槽位</span><span class="v" style="color:#a78bfa">' + String(state.logicNodes.length) + '/' + String(state.logicCapacity) + '</span></div>'
+        );
+        ui.rightContent.appendChild(statCard);
+
+        const compileCard = createPixelPanel(
+          "法术统计",
+          "#ffc800",
+          '<div class="kv"><span class="k">总消耗</span><span class="v" style="color:#ffc800">' + Number(state.compile.total_mana_cost || 0).toFixed(0) + '</span></div>' +
+          '<div class="kv"><span class="k">延迟</span><span class="v" style="color:#86efac">' + Number(state.compile.cycle_delay || 0).toFixed(2) + 's</span></div>' +
+          '<div class="kv"><span class="k">投射物</span><span class="v" style="color:#67e8f9">' + String(state.compile.projectile_count || 0) + '</span></div>' +
+          '<div class="kv"><span class="k">理论伤害</span><span class="v" style="color:#fda4af">' + Number(state.compile.total_damage || 0).toFixed(1) + '</span></div>'
+        );
+        ui.rightContent.appendChild(compileCard);
+
+        const status = document.createElement("section");
+        const ok = !!state.compile.is_valid;
+        status.style.padding = "8px";
+        status.style.textAlign = "center";
+        status.style.background = ok ? "rgba(74, 222, 128, 0.12)" : "rgba(255, 200, 0, 0.12)";
+        status.style.border = "2px solid " + (ok ? "#4ade80" : "#ffc800");
+        status.innerHTML = '<span style="font-size:8px;color:' + (ok ? '#86efac' : '#ffc800') + '">' + (ok ? '✓ 法术可用' : '⚠ 缺少投射物') + '</span>';
+        ui.rightContent.appendChild(status);
+
+        if (!state.compile.is_valid && Array.isArray(state.compile.errors) && state.compile.errors.length > 0) {
+          const err = createPixelPanel(
+            "编译错误",
+            "#ef4444",
+            '<div class="compile-bad">' + String(state.compile.errors[0]) + '</div>'
+          );
+          ui.rightContent.appendChild(err);
+        }
+      }
+
+      function renderAll() {
+        renderTopStats();
+        setActiveTab(state.activeTab, false);
+        renderLogicPalette();
+        renderVisualPalette();
+        renderGraph();
+        renderVisualGrid();
+        renderRightPanel();
+      }
+
+      function bindEvents() {
+        ui.leftSplitter.addEventListener("mousedown", function (event) {
+          startPanelResize("left", event);
+        });
+
+        ui.rightSplitter.addEventListener("mousedown", function (event) {
+          startPanelResize("right", event);
+        });
+
+        ui.logicModeBtn.addEventListener("click", function () {
+          setActiveTab("logic", true);
+        });
+
+        ui.visualModeBtn.addEventListener("click", function () {
+          setActiveTab("visual", true);
+        });
+
+        ui.searchInput.addEventListener("input", function () {
+          state.searchQuery = ui.searchInput.value || "";
+          renderLogicPalette();
+        });
+
+        ui.wandName.addEventListener("change", function () {
+          state.wandName = ui.wandName.value.trim() || "未命名法杖";
+          postToGodot("wand_set_name", { wand_name: state.wandName });
+        });
+
+        ui.clearBtn.addEventListener("click", function () {
+          if (state.activeTab === "logic") {
+            state.logicNodes = [];
+            state.logicConnections = [];
+            state.selectedNodeId = null;
+            state.selectedNodeIds = [];
+            state.selectedConnectionKey = "";
+            renderTopStats();
+            renderGraph();
+            renderRightPanel();
+            flushGraphSync();
+          } else {
+            state.visualCells.clear();
+            renderVisualGrid();
+            renderRightPanel();
+            flushVisualSync();
+          }
+          postToGodot("wand_clear", { mode: state.activeTab });
+        });
+
+        ui.saveBtn.addEventListener("click", function () {
+          flushGraphSync();
+          flushVisualSync();
+          const ok = postToGodot("wand_save", {
+            nodes: serializeGraphNodes(),
+            connections: serializeGraphConns(),
+            cells: serializeVisualCells()
+          });
+          if (!ok) {
+            showToast("保存消息发送失败", "error");
+          }
+        });
+
+        ui.switchBtn.addEventListener("click", function () {
+          const ok = postToGodot("wand_open_selector", {});
+          if (!ok) {
+            showToast("切换法杖消息发送失败", "error");
+          }
+        });
+
+        ui.closeBtn.addEventListener("click", function () {
+          postToGodot("wand_close", {});
+        });
+
+        ui.zoomOutBtn.addEventListener("click", function () {
+          state.canvasScale = Math.max(MIN_SCALE, state.canvasScale / 1.2);
+          updateGraphTransform();
+        });
+
+        ui.zoomInBtn.addEventListener("click", function () {
+          state.canvasScale = Math.min(MAX_SCALE, state.canvasScale * 1.2);
+          updateGraphTransform();
+        });
+
+        ui.zoomResetBtn.addEventListener("click", function () {
+          state.canvasScale = 1;
+          state.canvasOffset.x = 0;
+          state.canvasOffset.y = 0;
+          updateGraphTransform();
+        });
+
+        ui.vZoomOutBtn.addEventListener("click", function () {
+          state.visualScale = Math.max(MIN_VIS_SCALE, state.visualScale - 1);
+          renderVisualGrid();
+        });
+
+        ui.vZoomInBtn.addEventListener("click", function () {
+          state.visualScale = Math.min(MAX_VIS_SCALE, state.visualScale + 1);
+          renderVisualGrid();
+        });
+
+        ui.vZoomResetBtn.addEventListener("click", function () {
+          state.visualScale = 8;
+          renderVisualGrid();
+        });
+
+        ui.graphBoard.addEventListener("mousedown", function (event) {
+          if (event.button === 1) {
+            drag.graphPanning = true;
+            drag.graphStartMouse.x = event.clientX;
+            drag.graphStartMouse.y = event.clientY;
+            drag.graphStartOffset.x = state.canvasOffset.x;
+            drag.graphStartOffset.y = state.canvasOffset.y;
+            ui.graphBoard.style.cursor = "grabbing";
+            event.preventDefault();
+            return;
+          }
+
+          if (event.button === 0) {
+            const target = event.target;
+            const isDomNode = !!(target && typeof target.closest === "function");
+            const hitNode = isDomNode ? target.closest(".logic-node") : null;
+            const hitPort = isDomNode ? (target.closest(".port") || target.closest(".port-wrap")) : null;
+            const hitConnection = !!(target && target.tagName && String(target.tagName).toLowerCase() === "path");
+            if (hitNode || hitPort || hitConnection) {
+              return;
+            }
+
+            const local = boardLocalFromClient(event.clientX, event.clientY);
+            drag.selecting = true;
+            drag.selectStart = local;
+            drag.selectCurrent = local;
+            updateSelectionBox();
+
+            state.selectedNodeId = null;
+            state.selectedNodeIds = [];
+            state.selectedConnectionKey = "";
+            state.connectFrom = null;
+            renderGraph();
+            renderRightPanel();
+          }
+        });
+
+        window.addEventListener("mousemove", function (event) {
+          if (drag.resizing) {
+            const width = Math.max(ui.content.clientWidth, 1);
+            const dxRatio = (event.clientX - drag.resizeStartX) / width;
+            if (drag.resizing === "left") {
+              applyLayoutRatios({
+                left_ratio: drag.resizeStartLeft + dxRatio,
+                right_ratio: drag.resizeStartRight
+              }, "left");
+            } else {
+              applyLayoutRatios({
+                left_ratio: drag.resizeStartLeft,
+                right_ratio: drag.resizeStartRight - dxRatio
+              }, "right");
+            }
+            return;
+          }
+
+          if (drag.paletteItem) {
+            const dx = Math.abs(event.clientX - drag.paletteStart.x);
+            const dy = Math.abs(event.clientY - drag.paletteStart.y);
+            if (dx > 3 || dy > 3) {
+              drag.paletteMoved = true;
+            }
+            updatePaletteGhost(event.clientX, event.clientY);
+          }
+
+          if (drag.nodeId) {
+            const node = nodeById(drag.nodeId);
+            if (!node) return;
+            const dx = (event.clientX - drag.startMouse.x) / state.canvasScale;
+            const dy = (event.clientY - drag.startMouse.y) / state.canvasScale;
+            node.position.x = Math.round((drag.startPos.x + dx) / 8) * 8;
+            node.position.y = Math.round((drag.startPos.y + dy) / 8) * 8;
+            renderGraph();
+            scheduleGraphSync();
+            return;
+          }
+
+          if (drag.graphPanning) {
+            state.canvasOffset.x = drag.graphStartOffset.x + (event.clientX - drag.graphStartMouse.x);
+            state.canvasOffset.y = drag.graphStartOffset.y + (event.clientY - drag.graphStartMouse.y);
+            updateGraphTransform();
+            return;
+          }
+
+          if (drag.selecting) {
+            drag.selectCurrent = boardLocalFromClient(event.clientX, event.clientY);
+            updateSelectionBox();
+            return;
+          }
+
+          if (state.connectFrom) {
+            trackGraphPointer(event.clientX, event.clientY);
+          }
+        });
+
+        window.addEventListener("mouseup", function (event) {
+          stopPanelResize();
+          finalizeLogicPaletteDrag(event);
+
+          if (state.connectFrom && drag.connectHover) {
+            finalizePortConnection(
+              drag.connectHover.nodeId,
+              drag.connectHover.side,
+              Number(drag.connectHover.portIndex || 0)
+            );
+          } else if (state.connectFrom) {
+            finalizePortConnection("", "", 0);
+          }
+
+          if (drag.selecting) {
+            finalizeMarqueeSelection();
+          }
+
+          drag.nodeId = "";
+          drag.graphPanning = false;
+          drag.paint = false;
+          drag.paintErase = false;
+          drag.connectHover = null;
+          ui.graphBoard.style.cursor = "grab";
+        });
+
+        ui.graphBoard.addEventListener("wheel", function (event) {
+          if (!event.ctrlKey && !event.metaKey) return;
+          event.preventDefault();
+          const mul = event.deltaY > 0 ? 0.92 : 1.08;
+          state.canvasScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, state.canvasScale * mul));
+          updateGraphTransform();
+        }, { passive: false });
+
+        ui.visualWrap.addEventListener("contextmenu", function (event) {
+          event.preventDefault();
+        });
+
+        ui.visualWrap.addEventListener("wheel", function (event) {
+          event.preventDefault();
+          state.visualScale = Math.max(MIN_VIS_SCALE, Math.min(MAX_VIS_SCALE, state.visualScale + (event.deltaY > 0 ? -1 : 1)));
+          renderVisualGrid();
+        }, { passive: false });
+
+        window.addEventListener("keydown", function (event) {
+          const target = event ? event.target : null;
+          const tagName = String(target && target.tagName ? target.tagName : "").toUpperCase();
+          const isTypingElement = tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT" || (target && target.isContentEditable === true);
+          const loweredKey = String(event && event.key ? event.key : "").toLowerCase();
+          if (!isTypingElement && (
+            loweredKey === "w" || loweredKey === "a" || loweredKey === "s" || loweredKey === "d" ||
+            loweredKey === "arrowup" || loweredKey === "arrowdown" || loweredKey === "arrowleft" || loweredKey === "arrowright" ||
+            loweredKey === " "
+          )) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+
+          if (event.key === "Escape") {
+            state.connectFrom = null;
+            if (state.selectedNodeId) {
+              state.selectedNodeId = null;
+              state.selectedNodeIds = [];
+              state.selectedConnectionKey = "";
+              renderRightPanel();
+            }
+            clearSelectionBox();
+            renderGraph();
+            return;
+          }
+
+          if (event.key === "Delete" || event.key === "Backspace") {
+            const selectedBatch = state.selectedNodeIds.slice();
+            if (selectedBatch.length > 0) {
+              event.preventDefault();
+              removeNodes(selectedBatch);
+              return;
+            }
+
+            if (state.selectedNodeId) {
+              event.preventDefault();
+              removeNode(state.selectedNodeId);
+              return;
+            }
+
+            if (state.selectedConnectionKey) {
+              event.preventDefault();
+              removeConnectionByKey(state.selectedConnectionKey);
+            }
+          }
+        });
+      }
+
+      function bootStars() {
+        const canvas = document.getElementById("starfield");
+        const ctx = canvas.getContext("2d", { alpha: true });
+        const stars = [];
+        const meteors = [];
+        let width = 1;
+        let height = 1;
+        let rotation = 0;
+
+        function rand(min, max) {
+          return Math.random() * (max - min) + min;
+        }
+
+        function toPx(v) {
+          return Math.floor(v / PX) * PX;
+        }
+
+        function resize() {
+          width = Math.max(window.innerWidth, 1);
+          height = Math.max(window.innerHeight, 1);
+          canvas.width = width;
+          canvas.height = height;
+          stars.length = 0;
+          for (let i = 0; i < 150; i += 1) {
+            stars.push({
+              x: Math.random() * width,
+              y: Math.random() * height,
+              layer: Math.floor(Math.random() * 3),
+              speed: rand(0.15, 0.6),
+              twinkle: Math.random() * Math.PI * 2
+            });
+          }
+        }
+
+        function drawGalaxy() {
+          rotation += 0.001;
+          for (let layer = 0; layer < 3; layer += 1) {
+            const centerX = width * 0.7;
+            const centerY = height * 0.3;
+            const radius = 140 + layer * 46;
+            const dir = layer % 2 === 0 ? 1 : -1;
+            ctx.save();
+            ctx.translate(centerX, centerY);
+            ctx.rotate(rotation * dir * (1 + layer * 0.2));
+            for (let i = 0; i < 140; i += 1) {
+              const t = i / 140;
+              const angle = t * Math.PI * 4;
+              const d = t * radius;
+              const x = toPx(Math.cos(angle) * d);
+              const y = toPx(Math.sin(angle) * d);
+              const a = (0.08 + t * 0.2) * (0.35 + layer * 0.16);
+              ctx.fillStyle = "rgba(138, 43, 226, " + a.toFixed(3) + ")";
+              ctx.fillRect(x, y, 2, 2);
+            }
+            ctx.restore();
+          }
+        }
+
+        function drawStars(frame) {
+          const colors = ["#4a1c6b", "#00d9ff", "#ffc800"];
+          stars.forEach(function (s) {
+            s.twinkle += 0.012;
+            const pulse = 0.3 + Math.sin(s.twinkle + frame * 0.03) * 0.5;
+            const size = (s.layer + 1) * PX;
+            const x = toPx(s.x);
+            const y = toPx(s.y);
+            ctx.globalAlpha = Math.max(0.16, pulse);
+            ctx.fillStyle = colors[s.layer];
+            ctx.fillRect(x, y, size, size);
+            ctx.globalAlpha = 1;
+            s.y += s.speed + s.layer * 0.12;
+            if (s.y > height + PX) {
+              s.y = -PX;
+              s.x = Math.random() * width;
+            }
+          });
+        }
+
+        function drawMeteors() {
+          if (meteors.length < 3 && Math.random() < 0.012) {
+            meteors.push({
+              x: Math.random() * width,
+              y: Math.random() * (height * 0.2),
+              length: rand(40, 120),
+              speed: rand(4, 10),
+              opacity: 1,
+              angle: Math.PI / 4 + Math.random() * 0.2
+            });
+          }
+
+          for (let i = meteors.length - 1; i >= 0; i -= 1) {
+            const m = meteors[i];
+            const tailX = m.x - Math.cos(m.angle) * m.length;
+            const tailY = m.y - Math.sin(m.angle) * m.length;
+            const g = ctx.createLinearGradient(m.x, m.y, tailX, tailY);
+            g.addColorStop(0, "rgba(255,255,255," + m.opacity.toFixed(3) + ")");
+            g.addColorStop(1, "rgba(255,255,255,0)");
+            ctx.strokeStyle = g;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(toPx(m.x), toPx(m.y));
+            ctx.lineTo(toPx(tailX), toPx(tailY));
+            ctx.stroke();
+            m.x += Math.cos(m.angle) * m.speed;
+            m.y += Math.sin(m.angle) * m.speed;
+            m.opacity -= 0.01;
+            if (m.opacity <= 0 || m.y > height + 30) {
+              meteors.splice(i, 1);
+            }
+          }
+        }
+
+        function frame(ts) {
+          ctx.fillStyle = "#0a0a1a";
+          ctx.fillRect(0, 0, width, height);
+          drawGalaxy();
+          drawStars(Math.floor(ts / 16));
+          drawMeteors();
+          requestAnimationFrame(frame);
+        }
+
+        window.addEventListener("resize", resize, { passive: true });
+        resize();
+        frame(0);
+      }
+
+      // Receive state from Godot.
+      document.addEventListener("message", function (event) {
+        if (!event) return;
+        const raw = typeof event.detail !== "undefined" ? event.detail : event.data;
+        onGodotMessage(raw);
+      });
+
+      window.addEventListener("message", function (event) {
+        if (!event) return;
+        const raw = typeof event.detail !== "undefined" ? event.detail : event.data;
+        onGodotMessage(raw);
+      });
+
+      window.godotReceive = onGodotMessage;
+
+      bindEvents();
+      bootStars();
+      applyLayoutRatios(state.layoutRatios, "balanced");
+      renderAll();
+
+      postToGodot("wand_ready", {});
+      postToGodot("wand_request_state", {});
+      showToast("法杖编程壳已就绪", "info");
+    })();
+  </script>
+</body>
+</html>

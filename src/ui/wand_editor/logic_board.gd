@@ -32,14 +32,18 @@ func _ready():
 		menu.visible = false
 		
 func _process(delta):
-	# No longer locking scroll or forcing layout
-	pass
+	queue_redraw()
 
 func _draw():
-	# Standard GraphEdit handles the background and grid now.
-	# We only draw custom overlay if needed.
-	# Currently disabling custom draw to rely on native infinite canvas.
-	pass
+	# Keep GraphEdit native grid and add light blueprint/star accents.
+	draw_rect(Rect2(Vector2.ZERO, size), Color(0.02, 0.06, 0.12, 0.22), false, 1.0)
+
+	var twinkle := Time.get_ticks_msec() / 1000.0
+	for i in range(64):
+		var x = int((i * 97) % int(max(size.x, 1.0)))
+		var y = int((i * 53) % int(max(size.y, 1.0)))
+		var pulse = 0.2 + 0.35 * abs(sin(twinkle + float(i) * 0.31))
+		draw_rect(Rect2(Vector2(x, y), Vector2(2, 2)), Color(0.45, 0.75, 1.0, pulse), true)
 
 func set_data(data: WandData):
 	wand_data = data
@@ -124,7 +128,7 @@ func _on_delete_nodes_request(nodes: Array):
 	for node_name in nodes:
 		var node = get_node_or_null(str(node_name))
 		if node:
-			node.queue_free()
+			node.free()
 	
 	nodes_changed.emit()
 
@@ -132,7 +136,7 @@ func clear_board():
 	clear_connections()
 	for child in get_children():
 		if child is GraphNode:
-			child.queue_free()
+			child.free()
 
 func load_from_data(nodes: Array, connections: Array):
 	clear_board()
@@ -155,9 +159,9 @@ func add_logic_node(node_data: Dictionary, item: BaseItem = null):
 	
 	gnode.resizable = false
 	
-	# Force fixed size for grid
-	gnode.custom_minimum_size = Vector2(64, 64)
-	gnode.size = Vector2(64, 64)
+	# Use rectangular cards instead of tiny square chips
+	gnode.custom_minimum_size = Vector2(170, 76)
+	gnode.size = Vector2(170, 76)
 	
 	# Store key data in meta for retrieval
 	gnode.set_meta("node_type", node_data.get("type", "modifier"))
@@ -191,18 +195,18 @@ func add_logic_node(node_data: Dictionary, item: BaseItem = null):
 	gnode.set_meta("visual_color", border_color)
 
 	var sb = StyleBoxFlat.new()
-	sb.bg_color = Color(0.08, 0.08, 0.1, 0.9) # Dark background matching palette icon style
+	sb.bg_color = Color("#0a1324")
 	sb.border_color = border_color
-	# Make it look like a chip
 	sb.border_width_bottom = 2
 	sb.border_width_top = 2
 	sb.border_width_left = 2
 	sb.border_width_right = 2
-	sb.corner_radius_bottom_left = 6
-	sb.corner_radius_bottom_right = 6
-	sb.corner_radius_top_left = 6
-	sb.corner_radius_top_right = 6
-	# Compact Margins
+	sb.corner_radius_bottom_left = 4
+	sb.corner_radius_bottom_right = 4
+	sb.corner_radius_top_left = 4
+	sb.corner_radius_top_right = 4
+	sb.shadow_color = border_color.darkened(0.3)
+	sb.shadow_size = 6
 	sb.content_margin_left = 0
 	sb.content_margin_right = 0
 	sb.content_margin_top = 0
@@ -210,8 +214,8 @@ func add_logic_node(node_data: Dictionary, item: BaseItem = null):
 	
 	# Selected Style (Glow)
 	var sb_selected = sb.duplicate()
-	sb_selected.border_color = Color(1.2, 1.2, 1.2) # Brighter
-	sb_selected.shadow_size = 4
+	sb_selected.border_color = Color(0.92, 0.98, 1.0, 1.0)
+	sb_selected.shadow_size = 10
 	sb_selected.shadow_color = border_color
 	
 	# Remove standard TitleBar
@@ -222,31 +226,40 @@ func add_logic_node(node_data: Dictionary, item: BaseItem = null):
 	gnode.add_theme_stylebox_override("slot", StyleBoxEmpty.new()) # Fix odd port graphics if any
 	gnode.add_theme_constant_override("separation", 0)
 
-	# Content Layout
-	var box = CenterContainer.new()
-	# Size properly - ensure it fits inside grid
-	box.custom_minimum_size = Vector2(64, 64)
-	
-	# Text Code
-	var lbl = Label.new()
-	var code = type.left(1).to_upper() # Match Palette Single Char Style
-	if type == "action_projectile": code = "!"
-	elif type == "modifier_damage": code = "%"
-	elif type == "modifier_element": code = "E"
-	elif type == "trigger": code = "T"
-	elif type == "splitter": code = "Y"
-	elif type == "generator": code = "G"
-	
-	if item and item.display_name:
-		# Use first letter of display name if generic
-		if code.length() > 1: code = item.display_name.left(1)
-	
-	lbl.text = code
-	lbl.add_theme_font_size_override("font_size", 24)
-	lbl.add_theme_color_override("font_color", border_color) # Colored text
-	box.add_child(lbl)
-	
-	gnode.add_child(box)
+	# Content Layout: title + short property line
+	var shell := MarginContainer.new()
+	shell.add_theme_constant_override("margin_left", 10)
+	shell.add_theme_constant_override("margin_top", 8)
+	shell.add_theme_constant_override("margin_right", 10)
+	shell.add_theme_constant_override("margin_bottom", 8)
+	gnode.add_child(shell)
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 4)
+	shell.add_child(box)
+
+	var title := Label.new()
+	title.text = str(node_data.get("display_name", "Node"))
+	title.clip_text = true
+	title.add_theme_font_size_override("font_size", 13)
+	title.add_theme_color_override("font_color", border_color.lightened(0.15))
+	box.add_child(title)
+
+	var node_values = node_data.get("value", {})
+	var key_text := ""
+	if node_values is Dictionary and not node_values.is_empty():
+		var keys = node_values.keys()
+		if not keys.is_empty():
+			var first_key = str(keys[0])
+			var first_val = node_values.get(keys[0])
+			key_text = "%s: %s" % [first_key, str(first_val)]
+
+	var sub := Label.new()
+	sub.text = key_text
+	sub.clip_text = true
+	sub.add_theme_font_size_override("font_size", 10)
+	sub.add_theme_color_override("font_color", Color("#7ca8dc"))
+	box.add_child(sub)
 
 	# --- Tooltip Logic Start ---
 	gnode.set_script(preload("res://src/ui/wand_editor/components/logic_node_script.gd"))
@@ -268,11 +281,11 @@ func add_logic_node(node_data: Dictionary, item: BaseItem = null):
 	var tooltip = "[b][font_size=18][color=#ffffff]%s[/color][/font_size][/b]" % t_title
 	if t_desc != "": tooltip += "\n[color=#cccccc]%s[/color]" % t_desc
 	
-	var val = node_data.get("value", {})
-	if not val.is_empty():
+	var tooltip_values = node_data.get("value", {})
+	if not tooltip_values.is_empty():
 		tooltip += "\n[color=#555555]----------------[/color]"
-		for k in val:
-			var v = val[k]
+		for k in tooltip_values:
+			var v = tooltip_values[k]
 			var k_map = {
 				"amount": "数值", "damage": "伤害", "speed": "速度", 
 				"duration": "持续", "radius": "半径", "force": "力度",
@@ -348,6 +361,8 @@ func get_logic_data() -> Dictionary:
 	
 	for child in get_children():
 		if child is GraphNode:
+			if child.is_queued_for_deletion():
+				continue
 			var n = {
 				"id": child.name,
 				"type": child.get_meta("node_type", "modifier"),

@@ -1,7 +1,6 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://c003kdl6tlrd3"]
 
 [node name="Boot" type="Node"]
 
 [node name="UI" type="CanvasLayer" parent="."]
 process_mode = 3
-layer = 1

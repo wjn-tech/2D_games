@@ -1,34 +1,41 @@
-[gd_resource type="Resource" script_class="GuideSectionData" format=3 uid="uid://guide_magic_section"]
+﻿[gd_resource type="Resource" script_class="GuideSectionData" format=3 uid="uid://guide_magic_section"]
 
+[ext_resource type="Script" path="res://src/ui/guide/guide_section_data.gd" id="1_guide_section_data"]
+[ext_resource type="Script" path="res://src/ui/guide/guide_subsection_data.gd" id="2_guide_subsection_data"]
 [ext_resource type="Texture2D" path="res://data/guide/images/Magic Interface.png" id="1_magic_ui"]
 [ext_resource type="Texture2D" path="res://data/guide/images/Rare Magics(example).png" id="2_rare_magic"]
 
+[sub_resource type="Resource" id="GuideSubsectionData_1"]
+script = ExtResource("2_guide_subsection_data")
+subsection_id = "open_magic_interface"
+title = "1) 打开魔杖界面"
+content = "按下 [b]K[/b] 打开魔杖编程界面。\n\n[b]下方示意图[/b] 展示了界面的基本结构：\n[b]左侧[/b]是法术模块列表，方便你拖入组件；\n[b]中间[/b]是逻辑网格，用来组织节点和连线；\n[b]右侧[/b]是属�?说明区域，用于查看当前模块信息。\n\n建议先熟悉这个布局，再开始组装第一条法术链�?
+image = ExtResource("1_magic_ui")
+
+[sub_resource type="Resource" id="GuideSubsectionData_2"]
+script = ExtResource("2_guide_subsection_data")
+subsection_id = "build_basic_chain"
+title = "2) 搭建第一条法术链"
+content = "新手推荐从最简单的链路开始：\n[color=yellow][b]Generator -> Projectile[/b][/color]\n\n这张示意图对应的是最基础的编程思路：先有起点，再有输出。\n\n操作步骤：\n1. 从模块列表拖�?[b]Generator[/b]（法�?触发源）\n2. 再拖�?[b]Projectile[/b]（弹体输出）\n3. �?Generator 输出端口拖线�?Projectile 输入端口\n\n连线成功后，法术链就具备了可执行的基础结构�?
+image = ExtResource("1_magic_ui")
+
+[sub_resource type="Resource" id="GuideSubsectionData_3"]
+script = ExtResource("2_guide_subsection_data")
+subsection_id = "test_and_iterate"
+title = "3) 测试与调�?
+content = "关闭编辑界面后，使用鼠标左键进行施法测试。\n\n如果没有效果，优先检查：\n[b]1.[/b] 是否存在起点模块（如 Generator）\n[b]2.[/b] 连线是否正确连接到输出模块\n[b]3.[/b] 是否装备了当前魔杖\n\n建议每次只改动一个节点或一条连线，再次测试，方便定位问题。\n\n这一步主要是确认你的法术链是否能正确执行�?
+image = null
+
+[sub_resource type="Resource" id="GuideSubsectionData_4"]
+script = ExtResource("2_guide_subsection_data")
+subsection_id = "rare_magic_preview"
+title = "4) 稀有法术与进阶组合"
+content = "当你熟悉基础链路后，可以尝试更复杂的组合：\n[b]多段触发[/b]、[b]分支弹道[/b]、[b]范围效果[/b]、[b]状态附加[/b]。\n\n下方示例图展示了更复杂的法术组合风格，你可以把它理解为“多种模块叠加后形成的高级法术预览”。\n\n稀有法术通常具有更高的消耗与更强的效果，请根据战斗场景权衡稳定性和爆发力。\n\n建议先保存当前稳定方案，再进行进阶实验�?
+image = ExtResource("2_rare_magic")
+
 [resource]
+script = ExtResource("1_guide_section_data")
 section_id = "magic"
 title = "魔杖编程"
 description = "从界面认知、基础连线到进阶示例的基础流程"
 subsections = [SubResource("GuideSubsectionData_1"), SubResource("GuideSubsectionData_2"), SubResource("GuideSubsectionData_3"), SubResource("GuideSubsectionData_4")]
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_1"]
-subsection_id = "open_magic_interface"
-title = "1) 打开魔杖界面"
-content = "按下 [b]K[/b] 打开魔杖编程界面。\n\n[b]下方示意图[/b] 展示了界面的基本结构：\n[b]左侧[/b]是法术模块列表，方便你拖入组件；\n[b]中间[/b]是逻辑网格，用来组织节点和连线；\n[b]右侧[/b]是属性/说明区域，用于查看当前模块信息。\n\n建议先熟悉这个布局，再开始组装第一条法术链。"
-image = ExtResource("1_magic_ui")
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_2"]
-subsection_id = "build_basic_chain"
-title = "2) 搭建第一条法术链"
-content = "新手推荐从最简单的链路开始：\n[color=yellow][b]Generator -> Projectile[/b][/color]\n\n这张示意图对应的是最基础的编程思路：先有起点，再有输出。\n\n操作步骤：\n1. 从模块列表拖入 [b]Generator[/b]（法力/触发源）\n2. 再拖入 [b]Projectile[/b]（弹体输出）\n3. 从 Generator 输出端口拖线到 Projectile 输入端口\n\n连线成功后，法术链就具备了可执行的基础结构。"
-image = ExtResource("1_magic_ui")
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_3"]
-subsection_id = "test_and_iterate"
-title = "3) 测试与调试"
-content = "关闭编辑界面后，使用鼠标左键进行施法测试。\n\n如果没有效果，优先检查：\n[b]1.[/b] 是否存在起点模块（如 Generator）\n[b]2.[/b] 连线是否正确连接到输出模块\n[b]3.[/b] 是否装备了当前魔杖\n\n建议每次只改动一个节点或一条连线，再次测试，方便定位问题。\n\n这一步主要是确认你的法术链是否能正确执行。"
-image = null
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_4"]
-subsection_id = "rare_magic_preview"
-title = "4) 稀有法术与进阶组合"
-content = "当你熟悉基础链路后，可以尝试更复杂的组合：\n[b]多段触发[/b]、[b]分支弹道[/b]、[b]范围效果[/b]、[b]状态附加[/b]。\n\n下方示例图展示了更复杂的法术组合风格，你可以把它理解为“多种模块叠加后形成的高级法术预览”。\n\n稀有法术通常具有更高的消耗与更强的效果，请根据战斗场景权衡稳定性和爆发力。\n\n建议先保存当前稳定方案，再进行进阶实验。"
-image = ExtResource("2_rare_magic")

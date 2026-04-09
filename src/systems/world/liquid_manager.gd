@@ -1286,7 +1286,10 @@ func _parse_local_key(key: Variant) -> Variant:
 	return null
 
 func _get_world_topology() -> Node:
-	return get_node_or_null("/root/WorldTopology")
+	var scene_tree := get_tree()
+	if scene_tree == null or scene_tree.root == null:
+		return null
+	return scene_tree.root.get_node_or_null("WorldTopology")
 
 func _canonical_chunk_coord(coord: Vector2i) -> Vector2i:
 	var world_topology = _get_world_topology()

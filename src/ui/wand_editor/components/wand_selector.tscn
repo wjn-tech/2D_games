@@ -3,18 +3,73 @@
 [ext_resource type="Script" path="res://src/ui/wand_editor/components/wand_selector.gd" id="1_script"]
 
 [node name="WandSelector" type="PanelContainer"]
-custom_minimum_size = Vector2(200, 300)
+custom_minimum_size = Vector2(960, 640)
 script = ExtResource("1_script")
 
-[node name="VBoxContainer" type="VBoxContainer" parent="."]
+[node name="Backdrop" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.72)
+
+[node name="CenterContainer" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="DialogPanel" type="PanelContainer" parent="CenterContainer"]
+custom_minimum_size = Vector2(880, 560)
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer"]
+[node name="DialogMargin" type="MarginContainer" parent="CenterContainer/DialogPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 16
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CenterContainer/DialogPanel/DialogMargin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="TitleLabel" type="Label" parent="CenterContainer/DialogPanel/DialogMargin/VBoxContainer"]
 layout_mode = 2
 text = "选择法杖"
 horizontal_alignment = 1
+theme_override_font_sizes/font_size = 22
 
-[node name="ItemList" type="ItemList" parent="VBoxContainer"]
+[node name="SubtitleLabel" type="Label" parent="CenterContainer/DialogPanel/DialogMargin/VBoxContainer"]
+layout_mode = 2
+text = "从快捷栏或背包中选择需要编辑的法杖"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 12
+autowrap_mode = 2
+
+[node name="ItemList" type="ItemList" parent="CenterContainer/DialogPanel/DialogMargin/VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
 fixed_icon_size = Vector2(32, 32)
+same_column_width = true
+max_text_lines = 2
+
+[node name="BottomRow" type="HBoxContainer" parent="CenterContainer/DialogPanel/DialogMargin/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="HintLabel" type="Label" parent="CenterContainer/DialogPanel/DialogMargin/VBoxContainer/BottomRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "双击或单击列表项即可切换，Esc 关闭"
+theme_override_font_sizes/font_size = 11
+vertical_alignment = 1
+
+[node name="CloseButton" type="Button" parent="CenterContainer/DialogPanel/DialogMargin/VBoxContainer/BottomRow"]
+custom_minimum_size = Vector2(120, 36)
+layout_mode = 2
+text = "返回"

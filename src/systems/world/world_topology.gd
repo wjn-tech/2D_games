@@ -3,6 +3,7 @@ extends Node
 const TOPOLOGY_MODE_LEGACY := "legacy_infinite"
 const TOPOLOGY_MODE_PLANETARY := "planetary_v1"
 const TOPOLOGY_VERSION := 1
+const WORLDGEN_CONTRACT_REVISION := 3
 const DEFAULT_WORLD_SIZE_PRESET := "medium"
 const CHUNK_SIZE := 64
 const TILE_SIZE := 16
@@ -150,6 +151,7 @@ func reset_to_legacy(seed: int = 0) -> void:
 		"spawn_safe_radius_chunks": 0,
 		"seam_buffer_chunks": 0,
 		"world_plan_revision": 0,
+		"worldgen_contract_revision": 0,
 		"depth_boundary_enabled": false,
 		"depth_reference_surface_y": DEPTH_REFERENCE_SURFACE_Y,
 		"bedrock_start_depth": 0,
@@ -184,6 +186,7 @@ func create_new_world(seed: int, world_size_preset: String = DEFAULT_WORLD_SIZE_
 		"spawn_safe_radius_chunks": spawn_safe_radius_chunks,
 		"seam_buffer_chunks": seam_buffer_chunks,
 		"world_plan_revision": 1,
+		"worldgen_contract_revision": WORLDGEN_CONTRACT_REVISION,
 		"depth_boundary_enabled": true,
 		"depth_reference_surface_y": DEPTH_REFERENCE_SURFACE_Y,
 		"bedrock_start_depth": int(preset_info.get("bedrock_start_depth", 500)),
@@ -228,6 +231,7 @@ func load_world_metadata(metadata: Dictionary) -> void:
 	incoming["spawn_safe_radius_chunks"] = int(incoming.get("spawn_safe_radius_chunks", preset_info.get("spawn_safe_radius_chunks", 16)))
 	incoming["seam_buffer_chunks"] = int(incoming.get("seam_buffer_chunks", preset_info.get("seam_buffer_chunks", 20)))
 	incoming["world_plan_revision"] = int(incoming.get("world_plan_revision", 1))
+	incoming["worldgen_contract_revision"] = int(incoming.get("worldgen_contract_revision", WORLDGEN_CONTRACT_REVISION))
 	# 旧存档缺少该字段时默认关闭封底规则，保持兼容行为。
 	var boundary_enabled := bool(incoming.get("depth_boundary_enabled", false))
 	incoming["depth_boundary_enabled"] = boundary_enabled
@@ -648,6 +652,7 @@ func get_preload_domain_identity() -> Dictionary:
 		"world_size_preset": String(current_metadata.get("world_size_preset", "legacy")),
 		"topology_version": int(current_metadata.get("topology_version", 0)),
 		"world_plan_revision": int(current_metadata.get("world_plan_revision", 0)),
+		"worldgen_contract_revision": int(current_metadata.get("worldgen_contract_revision", WORLDGEN_CONTRACT_REVISION)),
 		"primary_seed": int(current_metadata.get("primary_seed", 0)),
 		"horizontal_circumference_in_chunks": int(current_metadata.get("horizontal_circumference_in_chunks", 0)),
 		"depth_boundary_enabled": bool(current_metadata.get("depth_boundary_enabled", false)),
@@ -660,11 +665,12 @@ func get_preload_domain_identity() -> Dictionary:
 
 func get_preload_domain_signature() -> String:
 	var identity := get_preload_domain_identity()
-	return "%s|%s|%d|%d|%d|%d|%d|%d|%d" % [
+	return "%s|%s|%d|%d|%d|%d|%d|%d|%d|%d" % [
 		String(identity.get("topology_mode", TOPOLOGY_MODE_LEGACY)),
 		String(identity.get("world_size_preset", "legacy")),
 		int(identity.get("topology_version", 0)),
 		int(identity.get("world_plan_revision", 0)),
+		int(identity.get("worldgen_contract_revision", WORLDGEN_CONTRACT_REVISION)),
 		int(identity.get("primary_seed", 0)),
 		int(identity.get("horizontal_circumference_in_chunks", 0)),
 		int(identity.get("min_chunk_y", 0)),

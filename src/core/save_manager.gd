@@ -7,6 +7,7 @@ const SAVE_ROOT = "user://saves/"
 const DATA_FILENAME = "data.dat"
 const THUMBNAIL_FILENAME = "preview.jpg"
 const WORLD_DELTAS_DIRNAME = "world_deltas"
+const MAX_SAVE_SLOTS = 3
 
 # 临时存储从文件恢复的玩家数据，用于场景重载后同步
 var _cached_player_data: Dictionary = {}
@@ -29,6 +30,7 @@ func _ready() -> void:
 	_init_autosave()
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	set_process(true)
+	call_deferred("_reconcile_orphan_world_caches")
 
 func _init_autosave() -> void:
 	auto_save_timer = Timer.new()
@@ -204,6 +206,168 @@ func _build_slot_world_deltas_path(slot_dir: String, world_storage_prefix: Strin
 		return base_path
 	return base_path + token + "/"
 
+func _parse_slot_id_from_key(raw_key: String) -> int:
+	if not raw_key.begins_with("slot_"):
+		return -1
+	var suffix := raw_key.substr(5, raw_key.length() - 5)
+	if suffix == "":
+		return -1
+	var slot_id := int(suffix)
+	return slot_id if slot_id > 0 else -1
+
+func _collect_known_slot_ids() -> Array:
+	var lookup := {}
+	for slot_id in range(1, MAX_SAVE_SLOTS + 1):
+		lookup[slot_id] = true
+
+	for key_var in save_metadata.keys():
+		var slot_id_from_metadata := _parse_slot_id_from_key(String(key_var))
+		if slot_id_from_metadata > 0:
+			lookup[slot_id_from_metadata] = true
+
+	var saves_dir := DirAccess.open(SAVE_ROOT)
+	if saves_dir != null:
+		saves_dir.list_dir_begin()
+		var entry := saves_dir.get_next()
+		while entry != "":
+			if saves_dir.current_is_dir() and String(entry).begins_with("slot_"):
+				var slot_id_from_disk := _parse_slot_id_from_key(String(entry))
+				if slot_id_from_disk > 0:
+					lookup[slot_id_from_disk] = true
+			entry = saves_dir.get_next()
+		saves_dir.list_dir_end()
+
+	var slot_ids: Array = lookup.keys()
+	slot_ids.sort()
+	return slot_ids
+
+func _get_file_size_bytes(path: String) -> int:
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return 0
+	var length := int(file.get_length())
+	file.close()
+	return maxi(length, 0)
+
+func _remove_file_with_stats(path: String, stats: Dictionary) -> void:
+	var reclaimed := _get_file_size_bytes(path)
+	if DirAccess.remove_absolute(path) == OK:
+		stats["removed_files"] = int(stats.get("removed_files", 0)) + 1
+		stats["reclaimed_bytes"] = int(stats.get("reclaimed_bytes", 0)) + reclaimed
+
+func _remove_directory_recursive(path: String, stats: Dictionary) -> void:
+	if not DirAccess.dir_exists_absolute(path):
+		return
+
+	var dir := DirAccess.open(path)
+	if dir == null:
+		return
+
+	dir.list_dir_begin()
+	var entry := dir.get_next()
+	while entry != "":
+		var child_path := path + entry
+		if dir.current_is_dir():
+			_remove_directory_recursive(child_path + "/", stats)
+		elif FileAccess.file_exists(child_path):
+			_remove_file_with_stats(child_path, stats)
+		entry = dir.get_next()
+	dir.list_dir_end()
+
+	if DirAccess.remove_absolute(path.trim_suffix("/")) == OK:
+		stats["removed_dirs"] = int(stats.get("removed_dirs", 0)) + 1
+
+func _cleanup_slot_world_deltas_for_slot(slot_id: int, keep_world_storage_prefix: String = "", remove_legacy_root_files: bool = false) -> Dictionary:
+	var stats := {
+		"removed_files": 0,
+		"removed_dirs": 0,
+		"reclaimed_bytes": 0,
+	}
+	var slot_dir := _get_slot_dir(slot_id)
+	var base_dir := _get_slot_world_deltas_legacy_path(slot_dir)
+	if not DirAccess.dir_exists_absolute(base_dir):
+		return stats
+
+	var keep_token := _sanitize_world_storage_prefix(keep_world_storage_prefix)
+	var dir := DirAccess.open(base_dir)
+	if dir == null:
+		return stats
+
+	dir.list_dir_begin()
+	var entry := dir.get_next()
+	while entry != "":
+		var entry_name := String(entry)
+		var entry_path := base_dir + entry_name
+		if dir.current_is_dir():
+			if keep_token != "" and entry_name == keep_token:
+				entry = dir.get_next()
+				continue
+			_remove_directory_recursive(entry_path + "/", stats)
+		elif FileAccess.file_exists(entry_path):
+			if entry_name.begins_with("chunk_") and entry_name.ends_with(".tres"):
+				if remove_legacy_root_files or keep_token != "":
+					_remove_file_with_stats(entry_path, stats)
+		entry = dir.get_next()
+	dir.list_dir_end()
+	return stats
+
+func _collect_referenced_precomputed_signatures() -> Array:
+	var dedupe := {}
+	for slot_id_var in _collect_known_slot_ids():
+		var slot_id := int(slot_id_var)
+		var slot_data := _try_load_slot_data_for_metadata(slot_id)
+		if slot_data.is_empty():
+			continue
+		var world_metadata_variant: Variant = slot_data.get("world_metadata", {})
+		if not (world_metadata_variant is Dictionary):
+			continue
+		if not InfiniteChunkManager or not InfiniteChunkManager.has_method("build_precomputed_signature_from_world_metadata"):
+			continue
+		var signature := String(InfiniteChunkManager.call("build_precomputed_signature_from_world_metadata", world_metadata_variant)).strip_edges()
+		if signature == "":
+			continue
+		dedupe[signature] = true
+	return dedupe.keys()
+
+func _reconcile_orphan_world_caches() -> void:
+	var slot_cleanup_stats := {
+		"removed_files": 0,
+		"removed_dirs": 0,
+		"reclaimed_bytes": 0,
+	}
+
+	for slot_id_var in _collect_known_slot_ids():
+		var slot_id := int(slot_id_var)
+		var slot_data := _try_load_slot_data_for_metadata(slot_id)
+		if not slot_data.is_empty():
+			continue
+		var slot_snapshot := _cleanup_slot_world_deltas_for_slot(slot_id, "", true)
+		slot_cleanup_stats["removed_files"] = int(slot_cleanup_stats.get("removed_files", 0)) + int(slot_snapshot.get("removed_files", 0))
+		slot_cleanup_stats["removed_dirs"] = int(slot_cleanup_stats.get("removed_dirs", 0)) + int(slot_snapshot.get("removed_dirs", 0))
+		slot_cleanup_stats["reclaimed_bytes"] = int(slot_cleanup_stats.get("reclaimed_bytes", 0)) + int(slot_snapshot.get("reclaimed_bytes", 0))
+
+	var precomputed_snapshot := {}
+	if InfiniteChunkManager and InfiniteChunkManager.has_method("prune_precomputed_domains"):
+		var keep_signatures := _collect_referenced_precomputed_signatures()
+		var prune_result = InfiniteChunkManager.call("prune_precomputed_domains", keep_signatures)
+		if typeof(prune_result) == TYPE_DICTIONARY:
+			precomputed_snapshot = prune_result
+
+	var slot_removed_files := int(slot_cleanup_stats.get("removed_files", 0))
+	var slot_removed_dirs := int(slot_cleanup_stats.get("removed_dirs", 0))
+	var slot_reclaimed_bytes := int(slot_cleanup_stats.get("reclaimed_bytes", 0))
+	var removed_domains := int(precomputed_snapshot.get("removed_domains", 0))
+	var removed_markers := int(precomputed_snapshot.get("removed_markers", 0))
+	var precomputed_reclaimed := int(precomputed_snapshot.get("reclaimed_bytes", 0))
+	if slot_removed_files > 0 or slot_removed_dirs > 0 or removed_domains > 0 or removed_markers > 0:
+		print("SaveManager: Reconciled orphan world cache (slot_files=%d, slot_dirs=%d, precomputed_domains=%d, preload_markers=%d, reclaimed_bytes=%d)" % [
+			slot_removed_files,
+			slot_removed_dirs,
+			removed_domains,
+			removed_markers,
+			slot_reclaimed_bytes + precomputed_reclaimed,
+		])
+
 func _directory_contains_chunk_deltas(path: String) -> bool:
 	if not DirAccess.dir_exists_absolute(path):
 		return false
@@ -279,10 +443,99 @@ func _select_best_world_deltas_path(slot_dir: String, resolved_world_path: Strin
 
 	return best_path
 
+func _slot_file_candidates(slot_id: int) -> Array:
+	var data_path := _get_data_path(slot_id)
+	return [data_path, data_path + ".bak"]
+
+func _slot_has_new_format_data(slot_id: int) -> bool:
+	for candidate_var in _slot_file_candidates(slot_id):
+		var candidate := String(candidate_var)
+		if FileAccess.file_exists(candidate):
+			return true
+	return false
+
+func _try_load_slot_data_for_metadata(slot_id: int) -> Dictionary:
+	for candidate_var in _slot_file_candidates(slot_id):
+		var candidate := String(candidate_var)
+		var loaded = _load_binary_data(candidate)
+		if typeof(loaded) == TYPE_DICTIONARY:
+			return loaded
+	return {}
+
+func _fallback_slot_info_from_files(slot_id: int) -> Dictionary:
+	var loaded := _try_load_slot_data_for_metadata(slot_id)
+	if not loaded.is_empty():
+		var p_name := "Player"
+		var p_gen := 1
+		var p_lineage := "L-%d" % slot_id
+
+		if loaded.has("player") and typeof(loaded.get("player")) == TYPE_DICTIONARY:
+			var player_block: Dictionary = loaded.get("player", {})
+			if player_block.has("data") and typeof(player_block.get("data")) == TYPE_DICTIONARY:
+				var p_data: Dictionary = player_block.get("data", {})
+				p_name = String(p_data.get("display_name", p_name))
+				p_gen = int(p_data.get("generation", p_gen))
+				p_lineage = String(p_data.get("lineage_id", p_lineage))
+
+		var timestamp := float(loaded.get("timestamp", 0.0))
+		var display_time := "（恢复存档）"
+		if timestamp > 0.0:
+			display_time = Time.get_datetime_string_from_unix_time(int(timestamp))
+
+		var world_meta: Dictionary = loaded.get("world_metadata", {})
+		return {
+			"timestamp": timestamp,
+			"player_name": p_name,
+			"generation": p_gen,
+			"lineage_id": p_lineage,
+			"display_time": display_time,
+			"topology_mode": String(world_meta.get("topology_mode", "legacy_infinite")),
+			"world_size_preset": String(world_meta.get("world_size_preset", "legacy"))
+		}
+
+	if _slot_has_new_format_data(slot_id):
+		return {
+			"timestamp": 0.0,
+			"player_name": "可读取存档",
+			"generation": 1,
+			"lineage_id": "L-%d" % slot_id,
+			"display_time": "（元数据损坏）",
+			"topology_mode": "legacy_infinite",
+			"world_size_preset": "legacy"
+		}
+
+	return {}
+
+func _rebuild_metadata_from_slot_files() -> void:
+	var rebuilt := false
+	for slot_id in range(1, MAX_SAVE_SLOTS + 1):
+		var key := "slot_%d" % slot_id
+		if save_metadata.has(key):
+			continue
+		var fallback_info := _fallback_slot_info_from_files(slot_id)
+		if not fallback_info.is_empty():
+			save_metadata[key] = fallback_info
+			rebuilt = true
+
+	if rebuilt:
+		push_warning("SaveManager: metadata.json invalid or incomplete, rebuilt slot metadata from save files.")
+		_save_metadata_to_disk()
+
 func _load_metadata() -> void:
-	var file = FileAccess.open(SAVE_ROOT + "metadata.json", FileAccess.READ)
+	save_metadata = {}
+	var metadata_path := SAVE_ROOT + "metadata.json"
+	var file = FileAccess.open(metadata_path, FileAccess.READ)
 	if file:
-		save_metadata = JSON.parse_string(file.get_as_text())
+		var raw := file.get_as_text()
+		file.close()
+		var parsed = JSON.parse_string(raw)
+		if typeof(parsed) == TYPE_DICTIONARY:
+			save_metadata = parsed
+		else:
+			push_warning("SaveManager: metadata.json parse failed, fallback rebuild enabled.")
+
+	_rebuild_metadata_from_slot_files()
+
 	if not save_metadata:
 		save_metadata = {}
 
@@ -296,6 +549,32 @@ func get_slot_info(slot_id: int) -> Dictionary:
 	var key = "slot_%d" % slot_id
 	if save_metadata.has(key):
 		return save_metadata[key]
+
+	var fallback_info := _fallback_slot_info_from_files(slot_id)
+	if not fallback_info.is_empty():
+		save_metadata[key] = fallback_info
+		_save_metadata_to_disk()
+		return fallback_info
+	
+	# 后备：如果有旧格式存盘文件，则认为该槽位有遗留数据
+	if FileAccess.file_exists("user://saves/slot_%d/data.dat" % slot_id) or FileAccess.file_exists("user://saves/slot_%d/data.dat.bak" % slot_id):
+		return {
+			"player_name": "可读取存档",
+			"display_time": "（检测到磁盘存档）",
+			"topology_mode": "legacy_infinite",
+			"world_size_preset": "legacy",
+			"progress": 0
+		}
+
+	if FileAccess.file_exists("user://save_%d.save" % slot_id):
+		return {
+			"player_name": "旧版存档 (遗留)",
+			"display_time": "（需载入确认）",
+			"topology_mode": "legacy_infinite",
+			"world_size_preset": "legacy",
+			"progress": 0
+		}
+	
 	return {}
 
 # --- 核心保存逻辑 ---
@@ -391,8 +670,48 @@ func save_game(slot_id: int, force_sync_flush: bool = true) -> void:
 		
 	# 4. 更新元数据
 	_update_slot_metadata(slot_id, data)
+	_cleanup_slot_world_deltas_for_slot(slot_id, String(data.get("world_storage_prefix", "")), false)
+	_reconcile_orphan_world_caches()
 	
 	print("SaveManager: 存档 %d 保存成功 (Binary/Atomic)" % slot_id)
+
+func delete_save_slot(slot_id: int) -> bool:
+	if slot_id <= 0:
+		return false
+
+	if slot_id == current_slot_id:
+		if _autosave_running:
+			flush_save_pipeline_sync()
+		if auto_save_timer and not auto_save_timer.is_stopped():
+			auto_save_timer.stop()
+		current_slot_id = -1
+		clear_world_binding()
+
+	if _autosave_requested_slot == slot_id:
+		_autosave_requested_slot = -1
+		_autosave_pending = false
+
+	var cleanup_stats := {
+		"removed_files": 0,
+		"removed_dirs": 0,
+		"reclaimed_bytes": 0,
+	}
+	_remove_directory_recursive(_get_slot_dir(slot_id), cleanup_stats)
+
+	var legacy_path := "user://save_%d.save" % slot_id
+	if FileAccess.file_exists(legacy_path):
+		_remove_file_with_stats(legacy_path, cleanup_stats)
+
+	var key := "slot_%d" % slot_id
+	if save_metadata.has(key):
+		save_metadata.erase(key)
+		_save_metadata_to_disk()
+
+	_reconcile_orphan_world_caches()
+	return true
+
+func delete_game(slot_id: int) -> bool:
+	return delete_save_slot(slot_id)
 
 func _write_atomic_compressed(path: String, data: Variant) -> bool:
 	var tmp_path = path + ".tmp"
@@ -514,14 +833,22 @@ func load_game(slot_id: int) -> bool:
 	var data = _load_binary_data(path)
 	if data == null:
 		# Try Backup
-		data = _load_binary_data(path + ".bak")
+		var backup_path = path + ".bak"
+		data = _load_binary_data(backup_path)
 		if data != null:
 			push_warning("SaveManager: Main save corrupted, loaded from backup.")
 
+	var legacy_path = "user://save_%d.save" % slot_id
+	if data == null and FileAccess.file_exists(legacy_path):
+		# Try Legacy format
+		data = _load_binary_data(legacy_path)
+		if data != null:
+			push_warning("SaveManager: Loaded legacy save file from " + legacy_path)
+
 	if data == null:
 		# Only check if path missing if backup also failed
-		if not FileAccess.file_exists(path) and not FileAccess.file_exists(path + ".bak"):
-			push_error("SaveManager: 存档文件不存在 " + path)
+		if not FileAccess.file_exists(path) and not FileAccess.file_exists(path + ".bak") and not FileAccess.file_exists(legacy_path):
+			push_error("SaveManager: 存档文件不存在 " + path + " 或 " + legacy_path)
 		else:
 			push_error("SaveManager: 存档文件损坏且无备份 " + path)
 		return false

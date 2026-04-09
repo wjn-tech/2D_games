@@ -1,7 +1,7 @@
 extends Control
 
 const MENU_SHELL_THEME_PATH := "res://assets/ui/start_menu_shell/menu_theme.json"
-const WEB_MENU_RESOURCE_PATH := "res://ui/web/main_menu_shell/index.html"
+const WEB_MENU_RESOURCE_PATH := "ui/web/main_menu_shell/index.html"
 
 @onready var center_group: Control = $CenterContainer
 @onready var title_label: Label = $CenterContainer/MainColumn/Title
@@ -23,6 +23,10 @@ var _hidden_backgrounds: Array = []
 var _menu_webview_node: Node = null
 var _web_menu_active: bool = false
 var _action_locked: bool = false
+var _web_state_bootstrap_attempts: int = 0
+var _web_menu_ready: bool = false
+var _web_ready_guard_pending: bool = false
+var _native_menu_animated: bool = false
 
 
 func _ready() -> void:
@@ -37,15 +41,62 @@ func _ready() -> void:
 	_connect_button_signals()
 
 	_web_menu_active = _try_setup_web_menu_webview()
-	_set_native_menu_visible(not _web_menu_active)
 	_hide_external_backgrounds()
 	if _web_menu_active:
-		_sync_web_menu_state()
+		_web_menu_ready = false
+		_set_native_menu_visible(true)
+		_set_web_menu_visible(false)
+		_release_web_menu_focus()
+		call_deferred("_schedule_web_state_bootstrap")
+		call_deferred("_schedule_web_ready_guard")
 	else:
+		_set_native_menu_visible(true)
 		_play_entrance_animation()
+		_native_menu_animated = true
 
 	if not visibility_changed.is_connected(_on_visibility_changed):
 		visibility_changed.connect(_on_visibility_changed)
+
+
+func _schedule_web_state_bootstrap() -> void:
+	if not _web_menu_active:
+		return
+	_web_state_bootstrap_attempts = 0
+	call_deferred("_bootstrap_web_state_sync")
+
+
+func _schedule_web_ready_guard() -> void:
+	if not _web_menu_active or _web_ready_guard_pending:
+		return
+	_web_ready_guard_pending = true
+	await get_tree().create_timer(1.8).timeout
+	_web_ready_guard_pending = false
+	if not is_instance_valid(self):
+		return
+	if _web_menu_active and not _web_menu_ready:
+		push_warning("MainMenu: Web menu did not become ready in time, using native menu fallback.")
+		_web_menu_active = false
+		_set_web_menu_visible(false)
+		_release_web_menu_focus()
+		_set_native_menu_visible(true)
+		if not _native_menu_animated:
+			_play_entrance_animation()
+			_native_menu_animated = true
+
+
+func _bootstrap_web_state_sync() -> void:
+	if not _web_menu_active or not is_instance_valid(_menu_webview_node):
+		return
+
+	_sync_web_menu_state()
+
+	if _web_state_bootstrap_attempts >= 5:
+		return
+
+	_web_state_bootstrap_attempts += 1
+	await get_tree().create_timer(0.35 * float(_web_state_bootstrap_attempts)).timeout
+	if is_instance_valid(self):
+		call_deferred("_bootstrap_web_state_sync")
 
 
 func _load_menu_shell_theme_tokens() -> Dictionary:
@@ -214,12 +265,22 @@ func _apply_menu_shell_theme_tokens() -> void:
 
 
 func _sync_button_labels() -> void:
-	start_button.text = "开始游戏"
-	settings_button.text = "游戏设置"
-	exit_button.text = "退出游戏"
+	var english := _menu_language_is_english()
+	start_button.text = "Start Game" if english else "开始游戏"
+	settings_button.text = "Settings" if english else "游戏设置"
+	exit_button.text = "Exit" if english else "退出游戏"
 
 	var has_save := _has_any_save_slot()
-	load_button.text = "继续游戏" if has_save else "加载存档"
+	if english:
+		load_button.text = "Continue" if has_save else "Load Save"
+	else:
+		load_button.text = "继续游戏" if has_save else "加载存档"
+
+
+func _menu_language_is_english() -> bool:
+	var settings_manager := _get_settings_manager()
+	var language := String(_settings_value(settings_manager, "General", "language", "zh")).to_lower()
+	return language.begins_with("en")
 
 
 func _connect_button_signals() -> void:
@@ -235,16 +296,104 @@ func _connect_button_signals() -> void:
 
 func _has_any_save_slot() -> bool:
 	var save_manager := _get_save_manager()
-	if save_manager and save_manager.has_method("get_slot_info"):
-		for i in range(1, 4):
-			var slot_info = save_manager.call("get_slot_info", i)
+	for slot_id in _collect_save_slot_ids():
+		if save_manager and save_manager.has_method("get_slot_info"):
+			var slot_info = save_manager.call("get_slot_info", slot_id)
 			if typeof(slot_info) == TYPE_DICTIONARY and not (slot_info as Dictionary).is_empty():
 				return true
-
-	for i in range(1, 4):
-		if FileAccess.file_exists("user://save_%d.save" % i):
+		if _slot_has_disk_save(slot_id):
 			return true
 	return false
+
+
+func _slot_has_disk_save(slot_id: int) -> bool:
+	var slot_dir := "user://saves/slot_%d" % slot_id
+	if FileAccess.file_exists(slot_dir + "/data.dat"):
+		return true
+	if FileAccess.file_exists(slot_dir + "/data.dat.bak"):
+		return true
+
+	var dir := DirAccess.open(slot_dir)
+	if dir:
+		var has_any_file := false
+		dir.list_dir_begin()
+		while true:
+			var entry := dir.get_next()
+			if entry == "":
+				break
+			if dir.current_is_dir() or entry.begins_with("."):
+				continue
+			has_any_file = true
+			break
+		dir.list_dir_end()
+		if has_any_file:
+			return true
+
+	if FileAccess.file_exists("user://save_%d.save" % slot_id):
+		return true
+	return false
+
+
+func _extract_slot_id_from_key(raw_key: String) -> int:
+	if not raw_key.begins_with("slot_"):
+		return -1
+	var suffix := raw_key.substr(5, raw_key.length() - 5).strip_edges()
+	if suffix == "" or not suffix.is_valid_int():
+		return -1
+	var slot_id := int(suffix)
+	return slot_id if slot_id > 0 else -1
+
+
+func _collect_save_slot_ids() -> Array:
+	var slot_ids: Array = []
+	for slot_id in range(1, 4):
+		slot_ids.append(slot_id)
+
+	var save_manager := _get_save_manager()
+	if save_manager and _has_property(save_manager, &"save_metadata"):
+		var raw_metadata = save_manager.get("save_metadata")
+		if typeof(raw_metadata) == TYPE_DICTIONARY:
+			var metadata := raw_metadata as Dictionary
+			for key_var in metadata.keys():
+				var metadata_slot_id := _extract_slot_id_from_key(String(key_var))
+				if metadata_slot_id > 0 and not slot_ids.has(metadata_slot_id):
+					slot_ids.append(metadata_slot_id)
+
+	var saves_dir := DirAccess.open("user://saves")
+	if saves_dir:
+		saves_dir.list_dir_begin()
+		while true:
+			var entry := saves_dir.get_next()
+			if entry == "":
+				break
+			if not saves_dir.current_is_dir():
+				continue
+			var disk_slot_id := _extract_slot_id_from_key(entry)
+			if disk_slot_id > 0 and not slot_ids.has(disk_slot_id):
+				slot_ids.append(disk_slot_id)
+		saves_dir.list_dir_end()
+
+	var user_root := DirAccess.open("user://")
+	if user_root:
+		user_root.list_dir_begin()
+		while true:
+			var entry := user_root.get_next()
+			if entry == "":
+				break
+			if user_root.current_is_dir():
+				continue
+			if not entry.begins_with("save_") or not entry.ends_with(".save"):
+				continue
+			var id_text := entry.substr(5, entry.length() - 10)
+			if id_text == "" or not id_text.is_valid_int():
+				continue
+			var legacy_slot_id := int(id_text)
+			if legacy_slot_id > 0 and not slot_ids.has(legacy_slot_id):
+				slot_ids.append(legacy_slot_id)
+		user_root.list_dir_end()
+
+	slot_ids.sort()
+	return slot_ids
 
 
 func _set_native_menu_visible(make_visible: bool) -> void:
@@ -263,13 +412,56 @@ func _set_native_menu_visible(make_visible: bool) -> void:
 				item.modulate = Color(1, 1, 1, 1)
 
 
+func _set_web_menu_visible(make_visible: bool) -> void:
+	if not is_instance_valid(_menu_webview_node):
+		return
+
+	if _menu_webview_node.has_method("set_forward_input_events"):
+		_menu_webview_node.call("set_forward_input_events", make_visible)
+
+	if not make_visible and _menu_webview_node.has_method("focus_parent"):
+		_menu_webview_node.call("focus_parent")
+
+	if _menu_webview_node.has_method("set_visible"):
+		_menu_webview_node.call("set_visible", make_visible)
+		return
+
+	if _menu_webview_node is CanvasItem:
+		(_menu_webview_node as CanvasItem).visible = make_visible
+		return
+
+	if make_visible:
+		if _menu_webview_node.has_method("show"):
+			_menu_webview_node.call("show")
+	else:
+		if _menu_webview_node.has_method("hide"):
+			_menu_webview_node.call("hide")
+
+
+func _release_web_menu_focus() -> void:
+	if is_instance_valid(_menu_webview_node) and _menu_webview_node.has_method("set_forward_input_events"):
+		_menu_webview_node.call("set_forward_input_events", false)
+
+	if is_instance_valid(_menu_webview_node) and _menu_webview_node.has_method("focus_parent"):
+		_menu_webview_node.call("focus_parent")
+
+	if is_instance_valid(_menu_webview_node) and _menu_webview_node is Control:
+		var webview_control := _menu_webview_node as Control
+		if webview_control.has_focus():
+			webview_control.release_focus()
+
+	var viewport := get_viewport()
+	if viewport:
+		viewport.gui_release_focus()
+
+
 func _try_setup_web_menu_webview() -> bool:
-	if not FileAccess.file_exists(WEB_MENU_RESOURCE_PATH):
-		push_warning("MainMenu: Web menu HTML resource is missing, using native menu fallback.")
+	var webview_url := _resolve_webview_url(WEB_MENU_RESOURCE_PATH, "MainMenu")
+	if webview_url == "":
 		return false
 
 	if not ClassDB.class_exists("WebView"):
-		push_warning("MainMenu: WebView class unavailable, using native menu fallback.")
+		push_warning("MainMenu: WebView class unavailable. Check godot-wry plugin enabled, exported addons/godot_wry runtime files, WebView2 runtime, and VC++ x64 redistributable; using native menu fallback.")
 		return false
 
 	var candidate: Object = ClassDB.instantiate("WebView")
@@ -287,7 +479,11 @@ func _try_setup_web_menu_webview() -> bool:
 		if _has_property(candidate, &"full_window_size"):
 			candidate.set(&"full_window_size", false)
 		if _has_property(candidate, &"url"):
-			candidate.set(&"url", WEB_MENU_RESOURCE_PATH)
+			candidate.set(&"url", webview_url)
+	if webview.has_method("set_focused_when_created"):
+		webview.call("set_focused_when_created", false)
+	if webview.has_method("set_forward_input_events"):
+		webview.call("set_forward_input_events", false)
 
 	if webview.has_signal("ipc_message"):
 		webview.connect("ipc_message", Callable(self, "_on_menu_web_ipc_message"))
@@ -296,7 +492,7 @@ func _try_setup_web_menu_webview() -> bool:
 	move_child(webview, get_child_count() - 1)
 
 	if webview.has_method("load_url"):
-		webview.call("load_url", WEB_MENU_RESOURCE_PATH)
+		webview.call("load_url", webview_url)
 
 	_menu_webview_node = webview
 	return true
@@ -322,6 +518,11 @@ func _on_menu_web_ipc_message(message: String) -> void:
 
 	match msg_type:
 		"menu_ready":
+			if not _web_menu_active:
+				return
+			_web_menu_ready = true
+			_set_web_menu_visible(visible)
+			_set_native_menu_visible(not visible)
 			_sync_web_menu_state()
 		"menu_request_state":
 			_sync_web_menu_state()
@@ -337,6 +538,8 @@ func _on_menu_web_ipc_message(message: String) -> void:
 			_apply_settings_from_web(data.get("settings", {}))
 		"menu_reset_settings":
 			_reset_settings_from_web()
+		"menu_set_input_binding":
+			_set_input_binding_from_web(data)
 		"menu_exit":
 			_exit_game_action()
 
@@ -346,6 +549,22 @@ func _has_property(instance: Object, property_name: StringName) -> bool:
 		if StringName(entry.name) == property_name:
 			return true
 	return false
+
+
+func _resolve_webview_url(resource_path: String, owner_tag: String) -> String:
+	var relative_path := resource_path
+	if relative_path.begins_with("res://"):
+		relative_path = relative_path.substr(6, relative_path.length() - 6)
+
+	var res_path := "res://" + relative_path
+	if FileAccess.file_exists(res_path):
+		return res_path
+
+	if FileAccess.file_exists(relative_path):
+		return relative_path
+
+	push_warning("%s: WebView HTML resource is missing (check export include_filter for ui/web/*), using native menu fallback." % owner_tag)
+	return ""
 
 
 func _get_save_manager() -> Object:
@@ -363,18 +582,26 @@ func _get_settings_manager() -> Object:
 func _collect_web_save_slots() -> Array:
 	var result: Array = []
 	var save_manager := _get_save_manager()
-	for slot_id in range(1, 4):
+	for slot_id in _collect_save_slot_ids():
 		var info := {}
 		if save_manager and save_manager.has_method("get_slot_info"):
 			var raw_info = save_manager.call("get_slot_info", slot_id)
 			if typeof(raw_info) == TYPE_DICTIONARY:
 				info = raw_info
 
+		var is_empty = info.is_empty()
+		
+		# Fallback is handled inside SaveManager natively now.
+		if is_empty and _slot_has_disk_save(slot_id):
+			is_empty = false
+			if String(info.get("player_name", "")) == "":
+				info["player_name"] = "可读取存档"
+
 		result.append({
 			"id": slot_id,
-			"is_empty": info.is_empty(),
-			"player_name": String(info.get("player_name", "")),
-			"display_time": String(info.get("display_time", "")),
+			"is_empty": is_empty,
+			"player_name_b64": Marshalls.raw_to_base64(String(info.get("player_name", "")).to_utf8_buffer()),
+			"display_time_b64": Marshalls.raw_to_base64(String(info.get("display_time", "")).to_utf8_buffer()),
 			"topology_mode": String(info.get("topology_mode", "legacy_infinite")),
 			"world_size": String(info.get("world_size_preset", "legacy")),
 			"progress": int(info.get("progress", 0)),
@@ -393,8 +620,11 @@ func _settings_value(settings_manager: Object, section: String, key: String, fal
 
 func _collect_web_settings_state() -> Dictionary:
 	var settings_manager := _get_settings_manager()
-	var language := String(_settings_value(settings_manager, "General", "language", "zh"))
-	var window_mode := int(_settings_value(settings_manager, "Graphics", "window_mode", DisplayServer.WINDOW_MODE_WINDOWED))
+	var language_raw := String(_settings_value(settings_manager, "General", "language", "zh")).to_lower()
+	var language := "en" if language_raw.begins_with("en") else "zh"
+	var window_mode := DisplayServer.window_get_mode()
+	if window_mode != DisplayServer.WINDOW_MODE_WINDOWED and window_mode != DisplayServer.WINDOW_MODE_FULLSCREEN and window_mode != DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
+		window_mode = int(_settings_value(settings_manager, "Graphics", "window_mode", DisplayServer.WINDOW_MODE_WINDOWED))
 	var vsync := bool(_settings_value(settings_manager, "Graphics", "vsync", true))
 	var particles_quality := float(_settings_value(settings_manager, "Graphics", "particles_quality", 1.0))
 	var brightness := float(_settings_value(settings_manager, "Graphics", "brightness", 1.0))
@@ -434,12 +664,25 @@ func _collect_startup_debug_state() -> Dictionary:
 
 
 func _collect_web_input_bindings() -> Dictionary:
-	var actions := ["left", "right", "up", "down", "interact", "jump", "attack", "inventory"]
+	var actions := [
+		"left",
+		"right",
+		"up",
+		"down",
+		"space",
+		"interact",
+		"inventory",
+		"build",
+		"craft",
+		"settlement",
+		"mouse_left",
+		"mouse_right",
+	]
 	var bindings := {}
 	for action_name in actions:
 		if not InputMap.has_action(action_name):
 			continue
-		bindings[action_name] = _input_binding_text(action_name)
+		bindings[action_name] = _input_binding_payload(action_name)
 	return bindings
 
 
@@ -451,10 +694,162 @@ func _input_binding_text(action_name: String) -> String:
 	return text.split(" (")[0]
 
 
+func _input_binding_payload(action_name: String) -> Dictionary:
+	var events := InputMap.action_get_events(action_name)
+	if events.is_empty():
+		return {
+			"display": "无",
+			"token": "NONE",
+		}
+	var event := events[0]
+	return {
+		"display": _input_binding_text(action_name),
+		"token": _input_event_token(event),
+	}
+
+
+func _input_event_token(event: InputEvent) -> String:
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		match mouse_event.button_index:
+			MOUSE_BUTTON_LEFT:
+				return "MOUSE_LEFT"
+			MOUSE_BUTTON_RIGHT:
+				return "MOUSE_RIGHT"
+			MOUSE_BUTTON_MIDDLE:
+				return "MOUSE_MIDDLE"
+		return "NONE"
+
+	if event is InputEventKey:
+		var key_event := event as InputEventKey
+		var keycode := int(key_event.physical_keycode)
+		if keycode == KEY_NONE:
+			keycode = int(key_event.keycode)
+		if keycode == KEY_NONE:
+			return "NONE"
+		return "KEY_%s" % String(OS.get_keycode_string(keycode)).to_upper().replace(" ", "_")
+
+	return "NONE"
+
+
+func _build_input_event_from_token(token: String) -> InputEvent:
+	var normalized := token.strip_edges().to_upper()
+	if normalized == "" or normalized == "NONE":
+		return null
+
+	if normalized == "MOUSE_LEFT" or normalized == "MOUSE_RIGHT" or normalized == "MOUSE_MIDDLE":
+		var mouse_event := InputEventMouseButton.new()
+		match normalized:
+			"MOUSE_LEFT":
+				mouse_event.button_index = MOUSE_BUTTON_LEFT
+			"MOUSE_RIGHT":
+				mouse_event.button_index = MOUSE_BUTTON_RIGHT
+			"MOUSE_MIDDLE":
+				mouse_event.button_index = MOUSE_BUTTON_MIDDLE
+		return mouse_event
+
+	var key_map := {
+		"KEY_0": KEY_0,
+		"KEY_1": KEY_1,
+		"KEY_2": KEY_2,
+		"KEY_3": KEY_3,
+		"KEY_4": KEY_4,
+		"KEY_5": KEY_5,
+		"KEY_6": KEY_6,
+		"KEY_7": KEY_7,
+		"KEY_8": KEY_8,
+		"KEY_9": KEY_9,
+		"KEY_B": KEY_B,
+		"KEY_C": KEY_C,
+		"KEY_G": KEY_G,
+		"KEY_H": KEY_H,
+		"KEY_W": KEY_W,
+		"KEY_A": KEY_A,
+		"KEY_S": KEY_S,
+		"KEY_D": KEY_D,
+		"KEY_E": KEY_E,
+		"KEY_F": KEY_F,
+		"KEY_Q": KEY_Q,
+		"KEY_R": KEY_R,
+		"KEY_I": KEY_I,
+		"KEY_J": KEY_J,
+		"KEY_K": KEY_K,
+		"KEY_L": KEY_L,
+		"KEY_M": KEY_M,
+		"KEY_N": KEY_N,
+		"KEY_O": KEY_O,
+		"KEY_P": KEY_P,
+		"KEY_T": KEY_T,
+		"KEY_U": KEY_U,
+		"KEY_V": KEY_V,
+		"KEY_X": KEY_X,
+		"KEY_Y": KEY_Y,
+		"KEY_Z": KEY_Z,
+		"KEY_SPACE": KEY_SPACE,
+		"KEY_SHIFT": KEY_SHIFT,
+		"KEY_CTRL": KEY_CTRL,
+		"KEY_ALT": KEY_ALT,
+		"KEY_TAB": KEY_TAB,
+		"KEY_ENTER": KEY_ENTER,
+		"KEY_ESCAPE": KEY_ESCAPE,
+		"KEY_BACKSPACE": KEY_BACKSPACE,
+		"KEY_DELETE": KEY_DELETE,
+		"KEY_HOME": KEY_HOME,
+		"KEY_END": KEY_END,
+		"KEY_PAGEUP": KEY_PAGEUP,
+		"KEY_PAGE_UP": KEY_PAGEUP,
+		"KEY_PAGEDOWN": KEY_PAGEDOWN,
+		"KEY_PAGE_DOWN": KEY_PAGEDOWN,
+		"KEY_INSERT": KEY_INSERT,
+		"KEY_UP": KEY_UP,
+		"KEY_DOWN": KEY_DOWN,
+		"KEY_LEFT": KEY_LEFT,
+		"KEY_RIGHT": KEY_RIGHT,
+		"KEY_MINUS": KEY_MINUS,
+		"KEY_-": KEY_MINUS,
+		"KEY_EQUAL": KEY_EQUAL,
+		"KEY_=": KEY_EQUAL,
+	}
+
+	if not key_map.has(normalized):
+		return null
+
+	var keycode: int = key_map[normalized]
+	var key_event := InputEventKey.new()
+	key_event.keycode = keycode
+	key_event.physical_keycode = keycode
+	return key_event
+
+
+func _set_input_binding_from_web(data: Dictionary) -> void:
+	var action_name := String(data.get("action", "")).strip_edges()
+	if action_name == "" or not InputMap.has_action(action_name):
+		_post_web_payload({"type": "menu_notice", "level": "warn", "text": "无效输入动作，无法绑定。"})
+		return
+
+	var token := String(data.get("token", "NONE")).strip_edges().to_upper()
+	var event := _build_input_event_from_token(token)
+	if token != "NONE" and event == null:
+		_post_web_payload({"type": "menu_notice", "level": "warn", "text": "无效按键映射。"})
+		return
+
+	InputMap.action_erase_events(action_name)
+	if event != null:
+		InputMap.action_add_event(action_name, event)
+
+	var settings_manager := _get_settings_manager()
+	if settings_manager and settings_manager.has_method("save_settings"):
+		settings_manager.call("save_settings")
+
+	_sync_web_menu_state()
+	_post_web_payload({"type": "menu_notice", "level": "success", "text": "输入映射已更新。"})
+
+
 func _load_game_slot_action(slot_id: int) -> void:
 	if _action_locked:
 		return
-	if slot_id < 1 or slot_id > 3:
+	var available_slot_ids := _collect_save_slot_ids()
+	if slot_id < 1 or not available_slot_ids.has(slot_id):
 		_post_web_payload({"type": "menu_notice", "level": "warn", "text": "无效存档槽位。"})
 		return
 
@@ -464,13 +859,14 @@ func _load_game_slot_action(slot_id: int) -> void:
 		return
 
 	var slot_info = save_manager.call("get_slot_info", slot_id)
-	if typeof(slot_info) != TYPE_DICTIONARY or (slot_info as Dictionary).is_empty():
+	if (typeof(slot_info) != TYPE_DICTIONARY or (slot_info as Dictionary).is_empty()) and not _slot_has_disk_save(slot_id):
 		_post_web_payload({"type": "menu_notice", "level": "warn", "text": "该槽位为空，无法继续游戏。"})
 		return
 
 	_action_locked = true
 	for button in [start_button, load_button, settings_button, exit_button]:
 		button.disabled = true
+	_release_web_menu_focus()
 
 	if is_instance_valid(GameManager):
 		_post_web_payload({"type": "menu_transition", "active": true, "reason": "load"})
@@ -519,9 +915,13 @@ func _apply_settings_from_web(payload_settings: Variant) -> void:
 		settings_manager.call("set_value", "Audio", "sfx_vol", clampf(float(audio_data.get("sfx_vol", 1.0)), 0.0, 1.0))
 		settings_manager.call("set_value", "Audio", "ui_vol", clampf(float(audio_data.get("ui_vol", 1.0)), 0.0, 1.0))
 
+	if settings_manager.has_method("apply_all_settings"):
+		settings_manager.call("apply_all_settings")
+
 	if settings_manager.has_method("save_settings"):
 		settings_manager.call("save_settings")
 
+	_sync_button_labels()
 	_sync_web_menu_state()
 	_post_web_payload({"type": "menu_notice", "level": "success", "text": "设置已应用。"})
 
@@ -540,6 +940,7 @@ func _reset_settings_from_web() -> void:
 	if settings_manager.has_method("save_settings"):
 		settings_manager.call("save_settings")
 
+	_sync_button_labels()
 	_sync_web_menu_state()
 	_post_web_payload({"type": "menu_notice", "level": "info", "text": "设置已重置为默认值。"})
 
@@ -549,7 +950,12 @@ func _post_web_payload(payload: Dictionary) -> void:
 		return
 	if not _menu_webview_node.has_method("post_message"):
 		return
-	_menu_webview_node.call("post_message", JSON.stringify(payload))
+	var raw_str := JSON.stringify(payload)
+	var encoded := Marshalls.utf8_to_base64(raw_str)
+	_menu_webview_node.call("post_message", JSON.stringify({
+		"b64_payload": encoded,
+		"raw_payload": raw_str,
+	}))
 
 
 func _game_manager_is_starting_transition() -> bool:
@@ -595,6 +1001,7 @@ func _start_game_action(source: String) -> void:
 		button.disabled = true
 
 	if _web_menu_active and is_instance_valid(_menu_webview_node):
+		_release_web_menu_focus()
 		if is_instance_valid(GameManager):
 			_post_web_payload({"type": "menu_transition", "active": true, "reason": "start"})
 			await get_tree().create_timer(0.14).timeout
@@ -656,12 +1063,14 @@ func _exit_game_action() -> void:
 
 
 func _on_visibility_changed() -> void:
-	if is_instance_valid(_menu_webview_node):
-		_menu_webview_node.visible = visible
+	_set_web_menu_visible(visible and _web_menu_active and _web_menu_ready)
 
 	if visible:
+		if _web_menu_active and _web_menu_ready:
+			_sync_web_menu_state()
 		_show_external_backgrounds(false)
 	else:
+		_release_web_menu_focus()
 		_show_external_backgrounds(true)
 
 
@@ -696,8 +1105,8 @@ func _show_external_backgrounds(make_visible: bool) -> void:
 
 func _suspend_web_menu_for_subwindow() -> void:
 	_set_native_menu_visible(true)
-	if _web_menu_active and is_instance_valid(_menu_webview_node):
-		_menu_webview_node.visible = false
+	_set_web_menu_visible(false)
+	_release_web_menu_focus()
 
 
 func _restore_web_menu_visibility() -> void:
@@ -705,12 +1114,22 @@ func _restore_web_menu_visibility() -> void:
 	for button in [start_button, load_button, settings_button, exit_button]:
 		button.disabled = false
 	_post_web_payload({"type": "menu_transition", "active": false})
-	if _web_menu_active and is_instance_valid(_menu_webview_node):
-		_menu_webview_node.visible = true
+	if _web_menu_active and _web_menu_ready and is_instance_valid(_menu_webview_node):
+		_set_web_menu_visible(true)
 		_set_native_menu_visible(false)
 		_sync_web_menu_state()
 	else:
+		_set_web_menu_visible(false)
+		_release_web_menu_focus()
 		_set_native_menu_visible(true)
+
+
+func _exit_tree() -> void:
+	_release_web_menu_focus()
+	_set_web_menu_visible(false)
+	if is_instance_valid(_menu_webview_node):
+		_menu_webview_node.queue_free()
+		_menu_webview_node = null
 
 
 func _verify_start_feedback(attempts: int = 0) -> void:

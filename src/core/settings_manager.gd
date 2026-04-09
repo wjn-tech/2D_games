@@ -39,9 +39,12 @@ var _defaults = {
 
 var _config = ConfigFile.new()
 var _current_settings = {}
+var _active_particles_quality: float = 1.0
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	if not get_tree().node_added.is_connected(Callable(self, "_on_tree_node_added")):
+		get_tree().node_added.connect(Callable(self, "_on_tree_node_added"))
 	load_settings()
 	apply_all_settings()
 
@@ -110,23 +113,16 @@ func apply_all_settings() -> void:
 func _apply_graphics_setting(key: String, value: Variant) -> void:
 	match key:
 		"window_mode":
-			var mode = value as int
-			if mode == 3: # Fullscreen
-				DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
-			elif mode == 4: # Exclusive Fullscreen
-				DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN)
-			else:
-				DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-				# Reset size if coming back from fullscreen
-				# DisplayServer.window_set_size(Vector2i(1280, 720)) 
+			_apply_window_mode(value)
 		"vsync":
 			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if value else DisplayServer.VSYNC_DISABLED)
 		"max_fps":
 			Engine.max_fps = value if value > 0 else 0
+		"particles_quality":
+			_apply_particles_quality(float(value))
 		"brightness", "contrast", "gamma":
-			# Need a WorldEnvironment to apply this. 
-			# We can use a group "WorldEnvironment" to find it.
-			var env_node = get_tree().get_first_node_in_group("world_environment")
+			# Prefer explicit group hook, but fall back to scanning for the first WorldEnvironment node.
+			var env_node = _find_world_environment_node()
 			if env_node and env_node.environment:
 				env_node.environment.adjustment_enabled = true
 				if key == "brightness": env_node.environment.adjustment_brightness = value
@@ -139,15 +135,110 @@ func _apply_audio_setting(key: String, value: Variant) -> void:
 		"master_vol": bus_name = "Master"
 		"music_vol": bus_name = "Music"
 		"sfx_vol": bus_name = "SFX"
-		"ui_vol": bus_name = "UI"
+		"ui_vol":
+			if AudioServer.get_bus_index("UI") != -1:
+				bus_name = "UI"
+			elif AudioServer.get_bus_index("SFX") != -1:
+				bus_name = "SFX"
+			else:
+				bus_name = "Master"
 	
 	if bus_name != "":
 		var bus_idx = AudioServer.get_bus_index(bus_name)
+		if bus_idx == -1 and bus_name != "Master":
+			bus_idx = AudioServer.get_bus_index("Master")
 		if bus_idx != -1:
 			# Convert linear 0.0-1.0 to db. Silence at 0.
 			var db = linear_to_db(max(value, 0.0001))
 			AudioServer.set_bus_volume_db(bus_idx, db)
 			AudioServer.set_bus_mute(bus_idx, value <= 0.01)
+
+
+func _apply_window_mode(mode_value: Variant) -> void:
+	var target_mode := int(mode_value)
+	if target_mode != DisplayServer.WINDOW_MODE_FULLSCREEN and target_mode != DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
+		target_mode = DisplayServer.WINDOW_MODE_WINDOWED
+
+	DisplayServer.window_set_mode(target_mode)
+
+	var root_window := get_window()
+	if root_window:
+		root_window.mode = target_mode as Window.Mode
+
+	# Some environments can reject fullscreen mode switches; fall back to maximized.
+	if target_mode == DisplayServer.WINDOW_MODE_FULLSCREEN or target_mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
+		var applied_mode := DisplayServer.window_get_mode()
+		if applied_mode != target_mode and root_window:
+			root_window.mode = Window.MODE_MAXIMIZED
+
+
+func _apply_particles_quality(value: float) -> void:
+	_active_particles_quality = clampf(value, 0.0, 2.0)
+	var tree := get_tree()
+	if tree == null:
+		return
+	_apply_particles_quality_recursive(tree.root, _active_particles_quality)
+
+
+func _apply_particles_quality_recursive(node: Node, quality: float) -> void:
+	_apply_particles_quality_to_node(node, quality)
+	for child in node.get_children():
+		if child is Node:
+			_apply_particles_quality_recursive(child as Node, quality)
+
+
+func _apply_particles_quality_to_node(node: Node, quality: float) -> void:
+	if node is GPUParticles2D:
+		var gpu := node as GPUParticles2D
+		var base_amount := gpu.amount
+		if gpu.has_meta("_settings_base_amount"):
+			base_amount = int(gpu.get_meta("_settings_base_amount"))
+		else:
+			gpu.set_meta("_settings_base_amount", base_amount)
+		gpu.amount = maxi(0, int(round(float(base_amount) * quality)))
+		return
+
+	if node is CPUParticles2D:
+		var cpu := node as CPUParticles2D
+		var base_amount := cpu.amount
+		if cpu.has_meta("_settings_base_amount"):
+			base_amount = int(cpu.get_meta("_settings_base_amount"))
+		else:
+			cpu.set_meta("_settings_base_amount", base_amount)
+		cpu.amount = maxi(0, int(round(float(base_amount) * quality)))
+
+
+func _on_tree_node_added(node: Node) -> void:
+	if _active_particles_quality == 1.0:
+		return
+	_apply_particles_quality_to_node(node, _active_particles_quality)
+
+
+func _find_world_environment_node() -> Node:
+	var tree := get_tree()
+	if tree == null:
+		return null
+
+	var grouped := tree.get_first_node_in_group("world_environment")
+	if grouped:
+		return grouped
+
+	return _find_world_environment_recursive(tree.root)
+
+
+func _find_world_environment_recursive(node: Node) -> Node:
+	if node == null:
+		return null
+	if node is WorldEnvironment:
+		return node
+
+	for child in node.get_children():
+		if child is Node:
+			var found := _find_world_environment_recursive(child as Node)
+			if found:
+				return found
+
+	return null
 
 func _apply_general_setting(key: String, value: Variant) -> void:
 	match key:

@@ -57,10 +57,14 @@ func _add_action_row(action: String) -> void:
 		"right": action_name = "右移 (Right)"
 		"up": action_name = "上移 (Up)"
 		"down": action_name = "下移 (Down)"
+		"space": action_name = "跳跃 (Jump)"
 		"interact": action_name = "交互 (Interact)"
-		"jump": action_name = "跳跃 (Jump)"
-		"attack": action_name = "攻击 (Attack)"
 		"inventory": action_name = "背包 (Inventory)"
+		"build": action_name = "建造 (Build)"
+		"craft": action_name = "制作 (Craft)"
+		"settlement": action_name = "聚落 (Settlement)"
+		"mouse_left": action_name = "鼠标左键 (Mouse Left)"
+		"mouse_right": action_name = "鼠标右键 (Mouse Right)"
 	
 	label.text = action_name.capitalize() if action_name == action else action_name
 	label.size_flags_horizontal = SIZE_EXPAND_FILL

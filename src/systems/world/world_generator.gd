@@ -490,13 +490,14 @@ var _is_generating_chunk: bool = false
 var _world_topology: Node = null
 
 func _get_world_topology() -> Node:
-	if not _world_topology:
-		_world_topology = get_node_or_null("/root/WorldTopology")
+	if _world_topology and is_instance_valid(_world_topology):
+		return _world_topology
+	_world_topology = null
+	var scene_tree := get_tree()
+	if scene_tree == null or scene_tree.root == null:
+		return null
+	_world_topology = scene_tree.root.get_node_or_null("WorldTopology")
 	return _world_topology
-
-func _init() -> void:
-	# Pre-fetch topology
-	_get_world_topology()
 
 @export var world_circumference_chunks: int = 512
 @export var use_cylindrical_noise: bool = true
@@ -798,28 +799,40 @@ func _is_tree_priority_candidate(gx: int) -> bool:
 
 ## 预测该位置是否处于建筑禁止区 (建筑本身 + 左右隔离带)
 func _is_in_structure_forbidden_zone(gx: int, gy: int) -> bool:
-	var chunk_x = floor(gx / 64.0)
-	
-	# 同步 InfiniteChunkManager 的哈希逻辑
-	if not InfiniteChunkManager: return false
-	
-	# 检查当前及相邻 Chunk (因为建筑可能跨越边界或在边缘)
-	for ox in range(-2, 3): # 对应 manager 的检测范围
-		var cx = int(chunk_x + ox)
-		# 房屋目前只在 y=4~7 产生 (对应 InfiniteChunkManager 逻辑)
-		for cy in range(4, 8):
-			var hash_val = InfiniteChunkManager.get_chunk_hash(Vector2i(cx, cy))
-			if hash_val % 12 == 0: # 对应 manager 的房子概率
-				# 预测房子位置
-				var center_x_local = hash_val % 30 + 15
-				var b_x_global = cx * 64 + center_x_local
-				
-				# 房屋宽度约 35
-				var house_w = 35 
-				var margin = 2 # 房外延伸 2 格隔离带
-				
-				if gx >= b_x_global - margin and gx < b_x_global + house_w + margin:
+	if not InfiniteChunkManager:
+		return false
+
+	# If runtime tile-house structures are disabled, trees should not be blocked.
+	if InfiniteChunkManager.has_method("is_tile_house_structures_enabled"):
+		if not bool(InfiniteChunkManager.call("is_tile_house_structures_enabled")):
+			return false
+
+	# Prefer manager-provided prediction ranges to keep parity with runtime structure logic.
+	if InfiniteChunkManager.has_method("get_predicted_surface_house_ranges"):
+		var chunk_x := int(floor(float(gx) / 64.0))
+		var ranges_variant: Variant = InfiniteChunkManager.call("get_predicted_surface_house_ranges", chunk_x, 2, 2)
+		if ranges_variant is Array:
+			for range_variant in ranges_variant:
+				if not (range_variant is Dictionary):
+					continue
+				var range_data: Dictionary = range_variant
+				var start_x := int(range_data.get("start", 0))
+				var end_x := int(range_data.get("end", -1))
+				if gx >= start_x and gx < end_x:
 					return true
+			return false
+
+	# Legacy fallback path if helper methods are unavailable.
+	var chunk_x := int(floor(float(gx) / 64.0))
+	for ox in range(-2, 3):
+		var cx := chunk_x + ox
+		var hash_val: int = int(InfiniteChunkManager.get_chunk_hash(Vector2i(cx, 5)))
+		if hash_val % 12 != 0:
+			continue
+		var center_x_local: int = hash_val % 30 + 15
+		var b_x_global: int = cx * 64 + center_x_local
+		if gx >= b_x_global - 2 and gx < b_x_global + 37:
+			return true
 	return false
 
 ## 获取指定位置的生物群系 (2D 噪声 + 深度分层)
@@ -3441,7 +3454,9 @@ func _step_place_surface_trees(coord: Vector2i, result: Dictionary, column_conte
 			continue
 		var column_context: Dictionary = column_contexts[x]
 		var surface_base := float(column_context.get("surface_base", 300.0))
-		var local_y := int(floor(surface_base)) - coord.y * 64
+		# Terrain solid tiles start at surface_base + 1 (global_y > surface_base),
+		# so tree grounding must match that convention or every candidate becomes "air".
+		var local_y := int(floor(surface_base)) - coord.y * 64 + 1
 		if local_y < 5 or local_y > 60:
 			continue
 
@@ -3453,7 +3468,8 @@ func _step_place_surface_trees(coord: Vector2i, result: Dictionary, column_conte
 			continue
 
 		var global_x := coord.x * 64 + x
-		if _is_in_structure_forbidden_zone(global_x, int(surface_base)):
+		var global_ground_y := coord.y * 64 + local_y
+		if _is_in_structure_forbidden_zone(global_x, global_ground_y):
 			continue
 
 		var cluster_val := (_noise_2d_wrapped(noise_tree_cluster, float(global_x), 0.0) + 1.0) * 0.5
@@ -3875,10 +3891,12 @@ func generate_chunk_cells(coord: Vector2i, critical_only: bool = false) -> Dicti
 		# Compatibility path.
 		_apply_resource_stage(coord, result, column_contexts, boundary_config)
 		_apply_surface_features(coord, result, column_contexts)
+		_step_place_surface_trees(coord, result, column_contexts)
 		var liquid_seeds := _collect_liquid_stage_seeds(coord, result, column_contexts, boundary_config)
 		if not liquid_seeds.is_empty():
 			result["_liquid_seeds"] = liquid_seeds
 
+	result["_tree_stage_applied"] = true
 	result["_stage_families"] = TERRARIA_CORE_STAGE_SEQUENCE.duplicate(true)
 	result["_alignment_metrics"] = get_stage_alignment_metrics()
 

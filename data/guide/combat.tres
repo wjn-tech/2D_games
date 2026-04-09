@@ -1,23 +1,28 @@
-[gd_resource type="Resource" script_class="GuideSectionData" format=3 uid="uid://guide_combat_section"]
+﻿[gd_resource type="Resource" script_class="GuideSectionData" format=3 uid="uid://guide_combat_section"]
 
-[resource]
-section_id = "combat"
-title = "战斗基础"
-description = "攻击和战斗系统"
-subsections = [SubResource("GuideSubsectionData_1"), SubResource("GuideSubsectionData_2")]
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_1"]
+[ext_resource type="Script" path="res://src/ui/guide/guide_section_data.gd" id="1_guide_section_data"]
+[ext_resource type="Script" path="res://src/ui/guide/guide_subsection_data.gd" id="2_guide_subsection_data"]
+[sub_resource type="Resource" id="GuideSubsectionData_1"]
+script = ExtResource("2_guide_subsection_data")
 subsection_id = "attacking"
 title = "发动攻击"
 content = "左键点击敌人来发动攻击。\n
 不同的武器有不同的攻击速度和伤害。\n
-某些武器需要蓄力才能使用。"
+某些武器需要蓄力才能使用�?
 image = null
 
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_2"]
+[sub_resource type="Resource" id="GuideSubsectionData_2"]
+script = ExtResource("2_guide_subsection_data")
 subsection_id = "dodging"
 title = "躲避"
 content = "按下 [b]空格[/b] 或方向键可以躲避敌人攻击。\n
 完美时机的躲避可能触发反击或其他效果。\n
-躲避有冷却时间，使用后需要等待几秒才能再次躲避。"
+躲避有冷却时间，使用后需要等待几秒才能再次躲避�?
 image = null
+
+[resource]
+script = ExtResource("1_guide_section_data")
+section_id = "combat"
+title = "战斗基础"
+description = "攻击和战斗系�?
+subsections = [SubResource("GuideSubsectionData_1"), SubResource("GuideSubsectionData_2")]

@@ -3,6 +3,10 @@ extends VBoxContainer
 @onready var language_option: OptionButton = %LanguageOption
 
 func _ready() -> void:
+	refresh_ui()
+
+
+func refresh_ui() -> void:
 	# Initialize UI
 	if not language_option: return
 	
@@ -25,7 +29,8 @@ func _ready() -> void:
 	if not found:
 		language_option.selected = 0 # Default to zh if unknown
 			
-	language_option.item_selected.connect(_on_language_selected)
+	if not language_option.item_selected.is_connected(_on_language_selected):
+		language_option.item_selected.connect(_on_language_selected)
 
 func _on_language_selected(index: int) -> void:
 	var lang_code = language_option.get_item_metadata(index)

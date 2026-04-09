@@ -33,6 +33,23 @@ This document records the implemented Terraria-core stage family sequencing and 
 ### Precomputed Invalidation Update (2026-04)
 - Bumped precomputed storage schema to `2` and tightened legacy fallback validation (schema/signature/coord/identity must match).
 - Purpose: prevent stale precomputed artifacts generated under older buggy rules from being reused after generator fixes.
+- Added `worldgen_contract_revision` to preload domain identity/signature and metadata-derived signature reconstruction, so algorithm contract changes can deterministically invalidate old precomputed domains that previously produced fixed-shape ghost artifacts.
+- Current `worldgen_contract_revision` is `3`, forcing regeneration of any domains produced before the surface-tree ground-Y alignment fix.
+
+### Save Lifecycle Cache GC (2026-04)
+- `SaveManager` now runs orphan world-cache reconciliation on startup (deferred) and after successful manual save.
+- Overwriting a slot now prunes stale map delta branches under that slot's `world_deltas` root, retaining only the active `world_storage_prefix` branch.
+- Empty/deleted slot directories now trigger slot-local world-delta cleanup, so map payloads are not left behind after save destruction.
+- `InfiniteChunkManager` now exposes signature derivation from `world_metadata` and a domain-prune API; `SaveManager` supplies currently referenced signatures from surviving slot files.
+- Any `precomputed_chunks/<signature>` domain plus related preload checkpoint/completed marker files with no live slot reference are automatically removed.
+
+### Tree Generation Parity Fix (2026-04)
+- Compatibility path in `WorldGenerator.generate_chunk_cells(...)` now explicitly includes surface tree placement (`_step_place_surface_trees`) so tree cells are part of authoritative chunk payloads.
+- Chunk payloads now carry `_tree_stage_applied=true` metadata, allowing runtime enrichment to distinguish authoritative tree data from legacy payloads.
+- `InfiniteChunkManager` now backfills trees only for legacy precomputed payloads that lack `_tree_stage_applied`, restoring trees without requiring immediate cache wipe.
+- Structure-forbidden prediction used by tree generation is now delegated to `InfiniteChunkManager` helper ranges and respects `ENABLE_TILE_HOUSE_STRUCTURES`, preventing oversized false-positive no-tree zones when tile-house generation is disabled.
+- Precomputed-hit load path now keeps near-player chunks on full payload application (instead of critical extraction first), so trees remain visible immediately in the player viewport.
+- Critical extraction for precomputed reuse now preserves tree layer `10`, preventing global "treeless until enrichment" visuals when enrichment is delayed by streaming pressure.
 
 ### Runtime Streaming Guard (2026-04)
 - To prevent visible half-baked chunk states while digging, chunks within player-visible neighborhood are now generated with full pipeline in one pass (`generate_chunk_cells(..., false)`) instead of `critical -> enrichment` split.

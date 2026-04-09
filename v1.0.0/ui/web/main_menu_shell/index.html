@@ -1,0 +1,2255 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pixel Main Menu</title>
+  <style>
+    :root {
+      --black: #0f0f1b;
+      --darkBlue: #1a1a2e;
+      --navy: #16213e;
+      --purple: #4a1c6b;
+      --magenta: #c62c75;
+      --cyan: #00d9ff;
+      --gold: #ffc800;
+      --white: #f8f8f8;
+      --gray: #6b6b8d;
+      --lightCyan: #67e8f9;
+      --green: #4ade80;
+      --red: #ef4444;
+      --px: 4px;
+      --panelBorder: #5c49a6;
+    }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      image-rendering: pixelated;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--black);
+      font-family: "Press Start 2P", "Cascadia Mono", "Consolas", "Microsoft YaHei", monospace;
+      letter-spacing: 0.02em;
+      color: var(--white);
+      text-rendering: geometricPrecision;
+    }
+
+    #starfield {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 0;
+      display: block;
+    }
+
+    .crt {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background:
+        repeating-linear-gradient(
+          0deg,
+          transparent,
+          transparent 2px,
+          rgba(0, 0, 0, 0.18) 2px,
+          rgba(0, 0, 0, 0.18) 4px
+        ),
+        linear-gradient(180deg, rgba(10, 10, 26, 0.03), rgba(10, 10, 26, 0.35), rgba(10, 10, 26, 0.7));
+    }
+
+    .grid-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background-size: 60px 60px;
+      background-image:
+        linear-gradient(to right, rgba(138, 43, 226, 0.05) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(138, 43, 226, 0.05) 1px, transparent 1px);
+      opacity: 0.5;
+    }
+
+    .root {
+      position: fixed;
+      inset: 0;
+      z-index: 4;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      opacity: 0;
+      transform: translateY(10px);
+      animation: root-enter 260ms steps(8, end) forwards;
+    }
+
+    @keyframes root-enter {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .frame {
+      width: min(880px, 96vw);
+      min-height: min(620px, 90vh);
+      border: var(--px) solid var(--panelBorder);
+      outline: var(--px) solid rgba(13, 18, 38, 0.95);
+      outline-offset: calc(var(--px) * -1);
+      background:
+        linear-gradient(180deg, rgba(26, 26, 46, 0.9), rgba(15, 15, 27, 0.96)),
+        repeating-linear-gradient(
+          90deg,
+          rgba(255, 255, 255, 0.03),
+          rgba(255, 255, 255, 0.03) 2px,
+          transparent 2px,
+          transparent 6px
+        );
+      box-shadow:
+        0 0 0 var(--px) rgba(0, 217, 255, 0.22),
+        0 0 0 calc(var(--px) * 2) rgba(10, 10, 26, 0.95),
+        0 18px 40px rgba(0, 0, 0, 0.45);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .frame::before,
+    .frame::after {
+      content: "";
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background: var(--cyan);
+      z-index: 2;
+      box-shadow: 0 0 10px rgba(0, 217, 255, 0.35);
+    }
+
+    .frame::before {
+      left: 10px;
+      top: 10px;
+    }
+
+    .frame::after {
+      right: 10px;
+      bottom: 10px;
+      background: var(--gold);
+      box-shadow: 0 0 10px rgba(255, 200, 0, 0.35);
+    }
+
+    .view {
+      display: none;
+      padding: 20px;
+      min-height: 560px;
+      position: relative;
+    }
+
+    .view.active {
+      display: block;
+      animation: pop-in 180ms steps(6, end);
+    }
+
+    @keyframes pop-in {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .main-wrap {
+      max-width: 620px;
+      margin: 22px auto 0;
+      text-align: center;
+    }
+
+    .title {
+      margin: 0;
+      font-size: clamp(38px, 8vw, 76px);
+      font-weight: 800;
+      line-height: 1.05;
+      letter-spacing: 0.06em;
+      color: var(--cyan);
+      text-shadow:
+        4px 4px 0 var(--purple),
+        8px 8px 0 var(--navy),
+        0 0 18px rgba(0, 217, 255, 0.28);
+    }
+
+    .subtitle {
+      margin: 18px 0 28px;
+      color: #d8d8ef;
+      font-size: clamp(13px, 2.3vw, 18px);
+      text-shadow: 0 0 8px rgba(103, 232, 249, 0.18);
+    }
+
+    .menu-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: min(540px, 90vw);
+      margin: 0 auto;
+    }
+
+    .menu-btn {
+      border: var(--px) solid var(--purple);
+      background: linear-gradient(180deg, rgba(26, 26, 46, 0.95), rgba(20, 25, 54, 0.95));
+      color: var(--cyan);
+      min-height: 58px;
+      padding: 0 12px;
+      font-size: clamp(18px, 2.7vw, 30px);
+      font-weight: 700;
+      text-align: center;
+      cursor: pointer;
+      position: relative;
+      transition: transform 120ms steps(2, end), border-color 120ms steps(2, end), color 120ms steps(2, end), box-shadow 120ms steps(2, end);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .menu-btn::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        45deg,
+        transparent,
+        transparent 4px,
+        rgba(255, 255, 255, 0.06) 4px,
+        rgba(255, 255, 255, 0.06) 8px
+      );
+      opacity: 0;
+      transition: opacity 120ms steps(2, end);
+      pointer-events: none;
+    }
+
+    .menu-btn:hover,
+    .menu-btn:focus-visible {
+      transform: translate(-2px, -2px);
+      border-color: var(--cyan);
+      color: var(--white);
+      box-shadow: 6px 6px 0 rgba(0, 217, 255, 0.16);
+    }
+
+    .menu-btn:hover::after,
+    .menu-btn:focus-visible::after {
+      opacity: 1;
+    }
+
+    .menu-btn.primary {
+      min-height: 74px;
+      border-color: var(--gold);
+      color: #fff8e8;
+      background: linear-gradient(90deg, #8d4e13, #5a2989 55%, #2f3f94);
+      box-shadow: 0 0 0 2px rgba(255, 200, 0, 0.18);
+    }
+
+    .menu-btn.primary:hover,
+    .menu-btn.primary:focus-visible {
+      border-color: #ffe78b;
+      box-shadow: 8px 8px 0 rgba(255, 200, 0, 0.22);
+    }
+
+    .menu-btn:active {
+      transform: translate(1px, 1px);
+      box-shadow: none;
+    }
+
+    .menu-btn[disabled] {
+      opacity: 0.74;
+      pointer-events: none;
+    }
+
+    .btn-icon {
+      width: 1.1em;
+      text-align: center;
+      color: currentColor;
+      text-shadow: 0 0 8px rgba(255, 255, 255, 0.22);
+    }
+
+    .section-title {
+      margin: 6px 0 10px;
+      font-size: clamp(24px, 3.7vw, 38px);
+      color: var(--cyan);
+      text-align: center;
+      text-shadow: 3px 3px 0 rgba(74, 28, 107, 0.95);
+    }
+
+    .section-desc {
+      margin: 0 0 18px;
+      text-align: center;
+      color: var(--gray);
+      font-size: 13px;
+    }
+
+    .save-list {
+      display: grid;
+      gap: 10px;
+      max-width: 760px;
+      margin: 0 auto;
+    }
+
+    .save-item {
+      border: var(--px) solid var(--purple);
+      background: rgba(16, 24, 52, 0.88);
+      color: var(--white);
+      text-align: left;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: transform 120ms steps(2, end), border-color 120ms steps(2, end), box-shadow 120ms steps(2, end);
+    }
+
+    .save-item:hover,
+    .save-item:focus-visible {
+      transform: translate(-1px, -1px);
+      border-color: var(--cyan);
+      box-shadow: 4px 4px 0 rgba(0, 217, 255, 0.15);
+    }
+
+    .save-item.empty {
+      opacity: 0.72;
+    }
+
+    .save-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--cyan);
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+
+    .save-name {
+      color: var(--gold);
+      font-size: 15px;
+      margin-bottom: 5px;
+    }
+
+    .save-meta {
+      color: var(--gray);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .footer-row {
+      margin-top: 14px;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .flat-btn {
+      min-width: 140px;
+      border: var(--px) solid var(--purple);
+      background: rgba(18, 25, 54, 0.95);
+      color: var(--lightCyan);
+      padding: 9px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: transform 120ms steps(2, end), border-color 120ms steps(2, end), color 120ms steps(2, end), box-shadow 120ms steps(2, end);
+    }
+
+    .flat-btn:hover,
+    .flat-btn:focus-visible {
+      transform: translate(-1px, -1px);
+      border-color: var(--cyan);
+      color: var(--white);
+      box-shadow: 4px 4px 0 rgba(0, 217, 255, 0.14);
+    }
+
+    .flat-btn.primary {
+      border-color: var(--gold);
+      color: #fff9ef;
+      background: linear-gradient(90deg, #7b4719, #4e236e);
+    }
+
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+      justify-content: center;
+    }
+
+    .tab-btn {
+      border: var(--px) solid var(--purple);
+      background: rgba(18, 24, 50, 0.95);
+      color: var(--cyan);
+      padding: 7px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: transform 120ms steps(2, end), border-color 120ms steps(2, end), background 120ms steps(2, end), color 120ms steps(2, end);
+    }
+
+    .tab-btn:hover,
+    .tab-btn:focus-visible {
+      transform: translate(-1px, -1px);
+      border-color: var(--cyan);
+      color: var(--white);
+    }
+
+    .tab-btn.active {
+      border-color: var(--cyan);
+      color: var(--white);
+      background: rgba(74, 28, 107, 0.92);
+      box-shadow: 3px 3px 0 rgba(0, 217, 255, 0.16);
+    }
+
+    .settings-body {
+      border: var(--px) solid var(--purple);
+      background: rgba(9, 14, 30, 0.76);
+      padding: 10px;
+      max-width: 780px;
+      margin: 0 auto;
+      min-height: 250px;
+    }
+
+    .settings-tab-panel {
+      display: none;
+    }
+
+    .settings-tab-panel.active {
+      display: block;
+    }
+
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(107, 107, 141, 0.36);
+      font-size: 13px;
+    }
+
+    .setting-row:last-child {
+      border-bottom: none;
+    }
+
+    .setting-label {
+      color: var(--cyan);
+      flex: 1;
+      min-width: 120px;
+    }
+
+    .setting-control {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      min-width: 160px;
+    }
+
+    select,
+    input[type="range"],
+    input[type="checkbox"] {
+      accent-color: var(--cyan);
+    }
+
+    select {
+      min-width: 142px;
+      border: 2px solid var(--purple);
+      background: rgba(16, 24, 50, 0.95);
+      color: var(--white);
+      padding: 5px 6px;
+      font-size: 12px;
+    }
+
+    input[type="range"] {
+      width: 168px;
+    }
+
+    .range-value {
+      min-width: 48px;
+      color: var(--gold);
+      text-align: right;
+      font-size: 12px;
+    }
+
+    .input-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .input-item {
+      border: 2px solid rgba(121, 88, 228, 0.58);
+      background: rgba(11, 18, 38, 0.7);
+      padding: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 12px;
+    }
+
+    .input-name {
+      color: var(--lightCyan);
+    }
+
+    .input-key {
+      color: var(--gold);
+      white-space: nowrap;
+      min-width: 92px;
+      text-align: right;
+    }
+
+    .input-control {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto;
+    }
+
+    .input-item.listening {
+      border-color: var(--cyan);
+      box-shadow: 0 0 0 1px rgba(96, 230, 255, 0.35) inset;
+    }
+
+    .input-listen-btn,
+    .input-clear-btn {
+      border: 2px solid var(--panelBorder);
+      background: rgba(18, 24, 50, 0.95);
+      color: var(--lightCyan);
+      padding: 4px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: transform 120ms steps(2, end), border-color 120ms steps(2, end), color 120ms steps(2, end);
+    }
+
+    .input-clear-btn {
+      border-color: rgba(210, 117, 137, 0.72);
+      color: #ffd8de;
+    }
+
+    .input-listen-btn.listening {
+      border-color: var(--cyan);
+      color: var(--white);
+    }
+
+    .input-listen-btn:hover,
+    .input-listen-btn:focus-visible,
+    .input-clear-btn:hover,
+    .input-clear-btn:focus-visible {
+      transform: translate(-1px, -1px);
+      border-color: var(--cyan);
+      color: var(--white);
+    }
+
+    .status {
+      position: fixed;
+      left: 14px;
+      bottom: 12px;
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: rgba(171, 174, 218, 0.88);
+      font-size: 12px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: #5cf783;
+      box-shadow: 0 0 8px rgba(92, 247, 131, 0.65);
+      animation: pulse 1.35s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.75; }
+      50% { transform: scale(1.28); opacity: 1; }
+    }
+
+    .version {
+      position: fixed;
+      right: 14px;
+      bottom: 12px;
+      z-index: 5;
+      text-align: right;
+      color: rgba(171, 174, 218, 0.86);
+      font-size: 12px;
+      line-height: 1.38;
+    }
+
+    .mute {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      z-index: 6;
+      width: 44px;
+      height: 44px;
+      border: var(--px) solid var(--purple);
+      background: rgba(16, 27, 69, 0.92);
+      color: #d8cbff;
+      font-size: 20px;
+      cursor: pointer;
+      transition: transform 120ms steps(2, end), border-color 120ms steps(2, end), box-shadow 120ms steps(2, end);
+    }
+
+    .mute:hover,
+    .mute:focus-visible {
+      transform: translate(-1px, -1px);
+      border-color: var(--cyan);
+      box-shadow: 4px 4px 0 rgba(0, 217, 255, 0.16);
+    }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 66px;
+      transform: translateX(-50%);
+      z-index: 10;
+      padding: 8px 12px;
+      border: var(--px) solid var(--purple);
+      background: rgba(12, 20, 42, 0.95);
+      color: var(--white);
+      font-size: 12px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 120ms steps(2, end), transform 120ms steps(2, end);
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(-2px);
+    }
+
+    .toast.success {
+      border-color: var(--green);
+      color: var(--green);
+    }
+
+    .toast.warn {
+      border-color: var(--gold);
+      color: var(--gold);
+    }
+
+    .toast.error {
+      border-color: var(--red);
+      color: var(--red);
+    }
+
+    .dialog-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 9;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.62);
+    }
+
+    .dialog-backdrop.show {
+      display: flex;
+    }
+
+    .dialog {
+      width: min(390px, 90vw);
+      border: var(--px) solid var(--cyan);
+      background: rgba(26, 26, 46, 0.95);
+      padding: 14px;
+      text-align: center;
+      box-shadow: 0 0 0 var(--px) rgba(10, 10, 26, 0.9);
+    }
+
+    .transition-curtain {
+      position: fixed;
+      inset: 0;
+      z-index: 12;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      background:
+        repeating-linear-gradient(
+          0deg,
+          rgba(0, 0, 0, 0.96),
+          rgba(0, 0, 0, 0.96) 4px,
+          rgba(6, 6, 12, 0.98) 4px,
+          rgba(6, 6, 12, 0.98) 8px
+        );
+      transition: opacity 120ms steps(3, end);
+    }
+
+    .transition-curtain.show {
+      opacity: 1;
+    }
+
+    .transition-text {
+      border: var(--px) solid var(--cyan);
+      background: rgba(10, 14, 24, 0.94);
+      color: var(--lightCyan);
+      padding: 10px 14px;
+      font-size: 13px;
+      text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.8);
+      box-shadow: 0 0 0 var(--px) rgba(10, 10, 26, 0.95);
+    }
+
+    .dialog-title {
+      margin: 0 0 8px;
+      color: var(--cyan);
+      font-size: 18px;
+    }
+
+    .dialog-text {
+      margin: 0 0 12px;
+      color: var(--gray);
+      font-size: 13px;
+    }
+
+    .side {
+      position: fixed;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 3;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .side.left { left: 16px; }
+    .side.right { right: 16px; }
+
+    .bar {
+      width: 4px;
+      height: 8px;
+      background: rgba(143, 96, 246, 0.92);
+      animation: bar-flow 1.5s steps(6, end) infinite;
+    }
+
+    .right .bar { animation-delay: calc(var(--i) * 0.12s); }
+    .left .bar { animation-delay: calc(var(--i) * 0.09s); }
+
+    @keyframes bar-flow {
+      0%, 100% { height: 8px; opacity: 0.28; }
+      50% { height: 24px; opacity: 1; }
+    }
+
+    @media (max-width: 900px) {
+      .side {
+        display: none;
+      }
+
+      .frame {
+        min-height: min(560px, 92vh);
+      }
+
+      .view {
+        padding: 14px;
+        min-height: 520px;
+      }
+
+      .menu-btn {
+        min-height: 54px;
+        font-size: clamp(16px, 4vw, 24px);
+      }
+
+      .menu-btn.primary {
+        min-height: 66px;
+      }
+
+      .input-grid {
+        grid-template-columns: 1fr;
+      }
+
+      input[type="range"] {
+        width: 130px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="starfield"></canvas>
+  <div class="crt"></div>
+  <div class="grid-overlay"></div>
+
+  <button id="muteBtn" class="mute sfx-btn" aria-label="Toggle Mute">🔇</button>
+
+  <div class="side left" id="leftBars" aria-hidden="true"></div>
+  <div class="side right" id="rightBars" aria-hidden="true"></div>
+
+  <main class="root">
+    <section class="frame">
+      <div id="view-main" class="view active">
+        <div class="main-wrap">
+          <h1 id="titleText" class="title">星海之旅</h1>
+          <p id="subtitleText" class="subtitle">PIXEL COSMIC ODYSSEY</p>
+
+          <div class="menu-buttons">
+            <button id="startBtn" class="menu-btn primary sfx-btn" type="button">
+              <span class="btn-icon">▶</span>
+              <span id="startText">开始游戏</span>
+            </button>
+            <button id="continueBtn" class="menu-btn sfx-btn" type="button">
+              <span class="btn-icon">↻</span>
+              <span id="continueText">继续游戏</span>
+            </button>
+            <button id="settingsBtn" class="menu-btn sfx-btn" type="button">
+              <span class="btn-icon">⚙</span>
+              <span id="settingsText">游戏设置</span>
+            </button>
+            <button id="exitBtn" class="menu-btn sfx-btn" type="button">
+              <span class="btn-icon">⏻</span>
+              <span id="exitText">退出游戏</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-save" class="view">
+        <h2 id="saveTitle" class="section-title">选择存档</h2>
+        <p class="section-desc" id="saveSubtitle">选择要继续的世界会话</p>
+        <div id="saveList" class="save-list"></div>
+        <div class="footer-row">
+          <button id="saveBackBtn" class="flat-btn sfx-btn" type="button">返回主菜单</button>
+        </div>
+      </div>
+
+      <div id="view-settings" class="view">
+        <h2 id="settingsTitle" class="section-title">游戏设置</h2>
+
+        <div class="tabs">
+          <button class="tab-btn sfx-btn active" data-tab="General" type="button">General</button>
+          <button class="tab-btn sfx-btn" data-tab="Graphics" type="button">Graphics</button>
+          <button class="tab-btn sfx-btn" data-tab="Audio" type="button">Audio</button>
+          <button class="tab-btn sfx-btn" data-tab="Input" type="button">Input</button>
+        </div>
+
+        <div class="settings-body">
+          <div class="settings-tab-panel active" data-panel="General">
+            <div class="setting-row">
+              <div class="setting-label">语言</div>
+              <div class="setting-control">
+                <select id="setting-language">
+                  <option value="zh">简体中文</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-tab-panel" data-panel="Graphics">
+            <div class="setting-row">
+              <div class="setting-label">全屏</div>
+              <div class="setting-control"><input id="setting-fullscreen" type="checkbox"></div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">垂直同步</div>
+              <div class="setting-control"><input id="setting-vsync" type="checkbox"></div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">粒子质量</div>
+              <div class="setting-control">
+                <input id="setting-particles" type="range" min="0" max="2" step="0.1" value="1">
+                <span class="range-value" id="setting-particles-label">1.0</span>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">亮度</div>
+              <div class="setting-control">
+                <input id="setting-brightness" type="range" min="0.5" max="1.5" step="0.05" value="1">
+                <span class="range-value" id="setting-brightness-label">1.00</span>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">主菜单视觉质量</div>
+              <div class="setting-control">
+                <select id="setting-menu-visuals">
+                  <option value="0">低</option>
+                  <option value="1">中</option>
+                  <option value="2">高</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-tab-panel" data-panel="Audio">
+            <div class="setting-row">
+              <div class="setting-label">主音量</div>
+              <div class="setting-control">
+                <input id="setting-master" type="range" min="0" max="100" step="1" value="100">
+                <span class="range-value" id="setting-master-label">100%</span>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">音乐音量</div>
+              <div class="setting-control">
+                <input id="setting-music" type="range" min="0" max="100" step="1" value="80">
+                <span class="range-value" id="setting-music-label">80%</span>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">音效音量</div>
+              <div class="setting-control">
+                <input id="setting-sfx" type="range" min="0" max="100" step="1" value="100">
+                <span class="range-value" id="setting-sfx-label">100%</span>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">界面音量</div>
+              <div class="setting-control">
+                <input id="setting-ui" type="range" min="0" max="100" step="1" value="100">
+                <span class="range-value" id="setting-ui-label">100%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-tab-panel" data-panel="Input">
+            <div id="inputBindings" class="input-grid"></div>
+          </div>
+        </div>
+
+        <div class="footer-row">
+          <button id="settingsApplyBtn" class="flat-btn primary sfx-btn" type="button">应用设置</button>
+          <button id="settingsResetBtn" class="flat-btn sfx-btn" type="button">重置默认</button>
+          <button id="settingsBackBtn" class="flat-btn sfx-btn" type="button">返回主菜单</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="status"><span class="status-dot"></span><span id="statusText">服务器状态: 在线</span></div>
+  <div class="version"><div>v1.0.0-alpha</div><div>PIXEL VOID STUDIO</div></div>
+
+  <div id="toast" class="toast"></div>
+
+  <div id="transitionCurtain" class="transition-curtain">
+    <div id="transitionText" class="transition-text">LOADING...</div>
+  </div>
+
+  <div id="exitDialog" class="dialog-backdrop">
+    <div class="dialog">
+      <h3 id="exitDialogTitle" class="dialog-title">退出游戏</h3>
+      <p id="exitDialogText" class="dialog-text">确定要退出游戏吗？</p>
+      <div class="footer-row" style="margin-top:0">
+        <button id="dialogCancelBtn" class="flat-btn sfx-btn" type="button">取消</button>
+        <button id="dialogConfirmBtn" class="flat-btn primary sfx-btn" type="button">确认退出</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const VIEWS = {
+        main: document.getElementById("view-main"),
+        saveSelection: document.getElementById("view-save"),
+        settings: document.getElementById("view-settings")
+      };
+
+      const ui = {
+        titleText: document.getElementById("titleText"),
+        subtitleText: document.getElementById("subtitleText"),
+        startText: document.getElementById("startText"),
+        settingsText: document.getElementById("settingsText"),
+        exitText: document.getElementById("exitText"),
+        saveTitle: document.getElementById("saveTitle"),
+        settingsTitle: document.getElementById("settingsTitle"),
+        startBtn: document.getElementById("startBtn"),
+        continueBtn: document.getElementById("continueBtn"),
+        continueText: document.getElementById("continueText"),
+        settingsBtn: document.getElementById("settingsBtn"),
+        exitBtn: document.getElementById("exitBtn"),
+        saveList: document.getElementById("saveList"),
+        saveSubtitle: document.getElementById("saveSubtitle"),
+        saveBackBtn: document.getElementById("saveBackBtn"),
+        tabs: Array.from(document.querySelectorAll(".tab-btn")),
+        tabPanels: Array.from(document.querySelectorAll(".settings-tab-panel")),
+        settingsApplyBtn: document.getElementById("settingsApplyBtn"),
+        settingsResetBtn: document.getElementById("settingsResetBtn"),
+        settingsBackBtn: document.getElementById("settingsBackBtn"),
+        muteBtn: document.getElementById("muteBtn"),
+        statusText: document.getElementById("statusText"),
+        toast: document.getElementById("toast"),
+        transitionCurtain: document.getElementById("transitionCurtain"),
+        transitionText: document.getElementById("transitionText"),
+        exitDialog: document.getElementById("exitDialog"),
+        exitDialogTitle: document.getElementById("exitDialogTitle"),
+        exitDialogText: document.getElementById("exitDialogText"),
+        dialogCancelBtn: document.getElementById("dialogCancelBtn"),
+        dialogConfirmBtn: document.getElementById("dialogConfirmBtn"),
+        settings: {
+          language: document.getElementById("setting-language"),
+          fullscreen: document.getElementById("setting-fullscreen"),
+          vsync: document.getElementById("setting-vsync"),
+          particles: document.getElementById("setting-particles"),
+          particlesLabel: document.getElementById("setting-particles-label"),
+          brightness: document.getElementById("setting-brightness"),
+          brightnessLabel: document.getElementById("setting-brightness-label"),
+          menuVisuals: document.getElementById("setting-menu-visuals"),
+          master: document.getElementById("setting-master"),
+          masterLabel: document.getElementById("setting-master-label"),
+          music: document.getElementById("setting-music"),
+          musicLabel: document.getElementById("setting-music-label"),
+          sfx: document.getElementById("setting-sfx"),
+          sfxLabel: document.getElementById("setting-sfx-label"),
+          ui: document.getElementById("setting-ui"),
+          uiLabel: document.getElementById("setting-ui-label"),
+          inputBindings: document.getElementById("inputBindings")
+        }
+      };
+
+      const state = {
+        currentView: "main",
+        activeSettingsTab: "General",
+        hasSave: false,
+        saveSlots: [
+          { id: 1, is_empty: true, player_name: "", display_time: "", topology_mode: "legacy_infinite", world_size: "legacy", progress: 0 },
+          { id: 2, is_empty: true, player_name: "", display_time: "", topology_mode: "legacy_infinite", world_size: "legacy", progress: 0 },
+          { id: 3, is_empty: true, player_name: "", display_time: "", topology_mode: "legacy_infinite", world_size: "legacy", progress: 0 }
+        ],
+        settings: {
+          general: { language: "zh" },
+          graphics: { fullscreen: false, vsync: true, particles_quality: 1.0, brightness: 1.0, menu_visuals_quality: 1 },
+          audio: { master_vol: 1.0, music_vol: 0.8, sfx_vol: 1.0, ui_vol: 1.0 },
+          input: {}
+        },
+        startupDebug: {},
+        listeningInputAction: ""
+      };
+
+      const I18N = {
+        zh: {
+          title: "星海之旅",
+          subtitle: "PIXEL COSMIC ODYSSEY",
+          start: "开始游戏",
+          continue: "继续游戏",
+          load: "加载存档",
+          settings: "游戏设置",
+          exit: "退出游戏",
+          saveTitle: "选择存档",
+          saveReadable: "可读取",
+          saveEmptyTag: "[ 空 ]",
+          saveNoData: "暂无数据",
+          saveMetaTime: "时间",
+          saveMetaTopology: "拓扑",
+          saveMetaWorld: "世界",
+          saveEmptyHint: "该槽位暂无有效存档。",
+          saveSubtitleHas: "选择要继续的世界会话",
+          saveSubtitleNone: "当前没有可读取存档，你仍可查看槽位信息",
+          saveBack: "返回主菜单",
+          settingsTitle: "游戏设置",
+          settingsApply: "应用设置",
+          settingsReset: "重置默认",
+          settingsBack: "返回主菜单",
+          inputListen: "更改",
+          inputListening: "按下按键...",
+          inputClear: "清空",
+          inputCaptureHint: "正在监听输入：按下任意键或鼠标按键（Esc取消，Delete清空）",
+          inputCaptureCancel: "已取消按键监听。",
+          statusReadyHas: "状态: 菜单就绪，可开始或读取存档",
+          statusReadyNone: "状态: 菜单就绪，可开始新世界",
+          statusDiag: "启动诊断",
+          statusRecovered: "启动诊断: 已触发兼容接管，游戏应继续运行",
+          statusTransitionStart: "状态: 正在创建新世界...",
+          statusTransitionLoad: "状态: 正在读取存档...",
+          transitionStart: "STARTING NEW WORLD...",
+          transitionLoad: "LOADING SAVE SLOT...",
+          transitionDefault: "LOADING...",
+          dialogExitTitle: "退出游戏",
+          dialogExitText: "确定要退出游戏吗？",
+          dialogCancel: "取消",
+          dialogConfirm: "确认退出",
+          toastApplySettings: "设置已提交，正在应用...",
+          toastResetSettings: "正在重置设置...",
+          toastInvalidSlot: "该槽位为空，无法继续游戏。",
+          toastApplyInput: "输入映射已提交。",
+          toastNoInputMap: "当前无可展示按键映射",
+          toastUnsupportedKey: "该按键暂不支持绑定。",
+          toastInputCleared: "按键映射已清空。"
+        },
+        en: {
+          title: "STAR VOYAGE",
+          subtitle: "PIXEL COSMIC ODYSSEY",
+          start: "Start Game",
+          continue: "Continue",
+          load: "Load Save",
+          settings: "Settings",
+          exit: "Exit",
+          saveTitle: "Select Save Slot",
+          saveReadable: "Readable",
+          saveEmptyTag: "[ EMPTY ]",
+          saveNoData: "No Data",
+          saveMetaTime: "Time",
+          saveMetaTopology: "Topology",
+          saveMetaWorld: "World",
+          saveEmptyHint: "This slot has no valid save.",
+          saveSubtitleHas: "Choose a world session to continue",
+          saveSubtitleNone: "No readable saves found. You can still inspect slots.",
+          saveBack: "Back to Main Menu",
+          settingsTitle: "Settings",
+          settingsApply: "Apply",
+          settingsReset: "Reset Defaults",
+          settingsBack: "Back to Main Menu",
+          inputListen: "Rebind",
+          inputListening: "Press a key...",
+          inputClear: "Clear",
+          inputCaptureHint: "Listening: press any key or mouse button (Esc to cancel, Delete to clear)",
+          inputCaptureCancel: "Input capture canceled.",
+          statusReadyHas: "Status: Ready. Start or load a save.",
+          statusReadyNone: "Status: Ready. Start a new world.",
+          statusDiag: "Startup Diagnostic",
+          statusRecovered: "Startup Diagnostic: recovery handoff active",
+          statusTransitionStart: "Status: Creating new world...",
+          statusTransitionLoad: "Status: Loading save...",
+          transitionStart: "STARTING NEW WORLD...",
+          transitionLoad: "LOADING SAVE SLOT...",
+          transitionDefault: "LOADING...",
+          dialogExitTitle: "Exit Game",
+          dialogExitText: "Are you sure you want to exit?",
+          dialogCancel: "Cancel",
+          dialogConfirm: "Confirm Exit",
+          toastApplySettings: "Settings submitted. Applying...",
+          toastResetSettings: "Resetting settings...",
+          toastInvalidSlot: "This slot is empty and cannot be loaded.",
+          toastApplyInput: "Input mapping submitted.",
+          toastNoInputMap: "No input mappings available",
+          toastUnsupportedKey: "This key is not supported for binding.",
+          toastInputCleared: "Input mapping cleared."
+        }
+      };
+
+      const KEY_CODE_TO_TOKEN = {
+        KeyA: "KEY_A",
+        KeyB: "KEY_B",
+        KeyC: "KEY_C",
+        KeyD: "KEY_D",
+        KeyE: "KEY_E",
+        KeyF: "KEY_F",
+        KeyG: "KEY_G",
+        KeyH: "KEY_H",
+        KeyI: "KEY_I",
+        KeyJ: "KEY_J",
+        KeyK: "KEY_K",
+        KeyL: "KEY_L",
+        KeyM: "KEY_M",
+        KeyN: "KEY_N",
+        KeyO: "KEY_O",
+        KeyP: "KEY_P",
+        KeyQ: "KEY_Q",
+        KeyR: "KEY_R",
+        KeyS: "KEY_S",
+        KeyT: "KEY_T",
+        KeyU: "KEY_U",
+        KeyV: "KEY_V",
+        KeyW: "KEY_W",
+        KeyX: "KEY_X",
+        KeyY: "KEY_Y",
+        KeyZ: "KEY_Z",
+        Digit0: "KEY_0",
+        Digit1: "KEY_1",
+        Digit2: "KEY_2",
+        Digit3: "KEY_3",
+        Digit4: "KEY_4",
+        Digit5: "KEY_5",
+        Digit6: "KEY_6",
+        Digit7: "KEY_7",
+        Digit8: "KEY_8",
+        Digit9: "KEY_9",
+        ArrowUp: "KEY_UP",
+        ArrowDown: "KEY_DOWN",
+        ArrowLeft: "KEY_LEFT",
+        ArrowRight: "KEY_RIGHT",
+        Space: "KEY_SPACE",
+        ShiftLeft: "KEY_SHIFT",
+        ShiftRight: "KEY_SHIFT",
+        ControlLeft: "KEY_CTRL",
+        ControlRight: "KEY_CTRL",
+        AltLeft: "KEY_ALT",
+        AltRight: "KEY_ALT",
+        Enter: "KEY_ENTER",
+        NumpadEnter: "KEY_ENTER",
+        Escape: "KEY_ESCAPE",
+        Tab: "KEY_TAB",
+        Backspace: "KEY_BACKSPACE",
+        Delete: "KEY_DELETE",
+        Insert: "KEY_INSERT",
+        Home: "KEY_HOME",
+        End: "KEY_END",
+        PageUp: "KEY_PAGEUP",
+        PageDown: "KEY_PAGEDOWN",
+        Minus: "KEY_MINUS",
+        Equal: "KEY_EQUAL"
+      };
+
+      const INPUT_ACTION_LABELS = {
+        left: { zh: "左移", en: "Move Left" },
+        right: { zh: "右移", en: "Move Right" },
+        up: { zh: "上移", en: "Move Up" },
+        down: { zh: "下移", en: "Move Down" },
+        space: { zh: "跳跃", en: "Jump" },
+        interact: { zh: "交互", en: "Interact" },
+        inventory: { zh: "背包", en: "Inventory" },
+        build: { zh: "建造", en: "Build" },
+        craft: { zh: "制作", en: "Craft" },
+        settlement: { zh: "聚落", en: "Settlement" },
+        mouse_left: { zh: "鼠标左键", en: "Mouse Left" },
+        mouse_right: { zh: "鼠标右键", en: "Mouse Right" }
+      };
+
+      let isMuted = true;
+      let audioContext = null;
+      let lastHoverSoundAt = 0;
+      let lastHoverButton = null;
+      let lastActionAt = 0;
+      let lastActionType = "";
+      let actionLocked = false;
+      let transitionActive = false;
+      let toastTimer = 0;
+      let lastAbortReasonShown = "";
+
+      const canvas = document.getElementById("starfield");
+      const ctx = canvas.getContext("2d", { alpha: true });
+      const stars = [];
+      const meteors = [];
+      const ships = [];
+      const galaxyLayers = [[], [], []];
+      let galaxyRotation = 0;
+      let width = 1;
+      let height = 1;
+      let rafHandle = 0;
+      let lastFrameAt = 0;
+      const frameIntervalMs = 1000 / 50;
+      const PX = 4;
+
+      function postToGodot(type, body) {
+        const payload = Object.assign({ type: type }, body || {});
+        const serialized = JSON.stringify(payload);
+
+        if (typeof ipc !== "undefined" && ipc && typeof ipc.postMessage === "function") {
+          ipc.postMessage(serialized);
+          return;
+        }
+
+        if (window.ipc && typeof window.ipc.postMessage === "function") {
+          window.ipc.postMessage(serialized);
+        }
+      }
+
+      function currentLocale() {
+        const language = String((state.settings.general && state.settings.general.language) || "zh").toLowerCase();
+        return language.startsWith("en") ? "en" : "zh";
+      }
+
+      function t(key) {
+        const locale = currentLocale();
+        if (I18N[locale] && I18N[locale][key]) {
+          return I18N[locale][key];
+        }
+        return (I18N.zh && I18N.zh[key]) ? I18N.zh[key] : key;
+      }
+
+      function applyLocaleTexts() {
+        ui.titleText.textContent = t("title");
+        ui.subtitleText.textContent = t("subtitle");
+        ui.startText.textContent = t("start");
+        ui.settingsText.textContent = t("settings");
+        ui.exitText.textContent = t("exit");
+        ui.saveTitle.textContent = t("saveTitle");
+        ui.settingsTitle.textContent = t("settingsTitle");
+        ui.saveBackBtn.textContent = t("saveBack");
+        ui.settingsApplyBtn.textContent = t("settingsApply");
+        ui.settingsResetBtn.textContent = t("settingsReset");
+        ui.settingsBackBtn.textContent = t("settingsBack");
+        ui.exitDialogTitle.textContent = t("dialogExitTitle");
+        ui.exitDialogText.textContent = t("dialogExitText");
+        ui.dialogCancelBtn.textContent = t("dialogCancel");
+        ui.dialogConfirmBtn.textContent = t("dialogConfirm");
+      }
+
+      function showView(viewName) {
+        if (viewName !== "settings") {
+          stopInputCapture(false);
+        }
+        state.currentView = viewName;
+        Object.keys(VIEWS).forEach(function (key) {
+          VIEWS[key].classList.toggle("active", key === viewName);
+        });
+      }
+
+      function setActionLocked(locked) {
+        actionLocked = !!locked;
+        [ui.startBtn, ui.continueBtn, ui.settingsBtn, ui.exitBtn].forEach(function (btn) {
+          btn.disabled = actionLocked;
+        });
+      }
+
+      function setTransition(active, reason) {
+        transitionActive = !!active;
+        ui.transitionCurtain.classList.toggle("show", transitionActive);
+        if (!transitionActive) {
+          renderStartupStatus();
+          return;
+        }
+
+        let text = t("transitionDefault");
+        if (reason === "start") {
+          text = t("transitionStart");
+        } else if (reason === "load") {
+          text = t("transitionLoad");
+        }
+        ui.transitionText.textContent = text;
+        ui.statusText.textContent = reason === "start" ? t("statusTransitionStart") : t("statusTransitionLoad");
+      }
+
+      function ensureAudioContext() {
+        if (!audioContext) {
+          const Ctor = window.AudioContext || window.webkitAudioContext;
+          if (!Ctor) return null;
+          audioContext = new Ctor();
+        }
+        return audioContext;
+      }
+
+      function playHoverSound() {
+        if (isMuted) return;
+        const now = performance.now();
+        if (now - lastHoverSoundAt < 90) return;
+        lastHoverSoundAt = now;
+        const ac = ensureAudioContext();
+        if (!ac) return;
+
+        const osc = ac.createOscillator();
+        const gain = ac.createGain();
+        osc.connect(gain);
+        gain.connect(ac.destination);
+
+        osc.frequency.setValueAtTime(800, ac.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1200, ac.currentTime + 0.05);
+        gain.gain.setValueAtTime(0.08, ac.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ac.currentTime + 0.05);
+
+        osc.start(ac.currentTime);
+        osc.stop(ac.currentTime + 0.05);
+      }
+
+      function playClickSound() {
+        if (isMuted) return;
+        const ac = ensureAudioContext();
+        if (!ac) return;
+
+        const osc = ac.createOscillator();
+        const gain = ac.createGain();
+        osc.connect(gain);
+        gain.connect(ac.destination);
+
+        osc.frequency.setValueAtTime(1200, ac.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(600, ac.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.12, ac.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ac.currentTime + 0.1);
+
+        osc.start(ac.currentTime);
+        osc.stop(ac.currentTime + 0.1);
+      }
+
+      function showToast(text, level) {
+        clearTimeout(toastTimer);
+        ui.toast.className = "toast";
+        if (level) {
+          ui.toast.classList.add(level);
+        }
+        ui.toast.textContent = text;
+        ui.toast.classList.add("show");
+        toastTimer = setTimeout(function () {
+          ui.toast.classList.remove("show");
+        }, 1800);
+      }
+
+      function actionDispatch(type, body, lockMenu) {
+        const now = performance.now();
+        if (type === lastActionType && now - lastActionAt < 220) {
+          return;
+        }
+        lastActionType = type;
+        lastActionAt = now;
+
+        if (lockMenu) {
+          setActionLocked(true);
+        }
+        postToGodot(type, body || {});
+      }
+
+      function updateContinueText() {
+        ui.continueText.textContent = state.hasSave ? t("continue") : t("load");
+      }
+
+      function renderStartupStatus() {
+        const debug = state.startupDebug || {};
+        const abortReason = String(debug.last_abort_reason || "").trim();
+        const abortSource = String(debug.last_abort_source || "").trim();
+        if (abortReason) {
+          const sourceTag = abortSource ? " [" + abortSource + "]" : "";
+          const detail = abortReason + sourceTag;
+          ui.statusText.textContent = t("statusDiag") + ": " + detail;
+          if (detail !== lastAbortReasonShown) {
+            showToast(t("statusDiag") + ": " + detail, "error");
+            lastAbortReasonShown = detail;
+          }
+          return;
+        }
+
+        if (debug.emergency_recovered) {
+          ui.statusText.textContent = t("statusRecovered");
+          return;
+        }
+
+        ui.statusText.textContent = state.hasSave ? t("statusReadyHas") : t("statusReadyNone");
+      }
+
+      function renderSaveSlots() {
+        ui.saveList.innerHTML = "";
+
+        state.saveSlots.forEach(function (slot) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "save-item sfx-btn" + (slot.is_empty ? " empty" : "");
+          button.setAttribute("data-slot", String(slot.id));
+
+          const head = document.createElement("div");
+          head.className = "save-head";
+          head.innerHTML = "<span>" + t("saveTitle") + " " + slot.id + "</span><span>" + (slot.is_empty ? t("saveEmptyTag") : t("saveReadable")) + "</span>";
+
+          const name = document.createElement("div");
+          name.className = "save-name";
+          name.textContent = slot.is_empty ? t("saveNoData") : slot.player_name;
+
+          const meta = document.createElement("div");
+          meta.className = "save-meta";
+          meta.innerHTML = slot.is_empty
+            ? t("saveEmptyHint")
+            : t("saveMetaTime") + ": " + slot.display_time + "<br>" + t("saveMetaTopology") + ": " + slot.topology_mode + " | " + t("saveMetaWorld") + ": " + slot.world_size;
+
+          button.appendChild(head);
+          button.appendChild(name);
+          button.appendChild(meta);
+          ui.saveList.appendChild(button);
+        });
+
+        ui.saveSubtitle.textContent = state.hasSave
+          ? t("saveSubtitleHas")
+          : t("saveSubtitleNone");
+      }
+
+      function setSettingsFormFromState() {
+        const s = state.settings;
+        const language = String((s.general && s.general.language) || "zh").toLowerCase();
+        ui.settings.language.value = language.startsWith("en") ? "en" : "zh";
+        ui.settings.fullscreen.checked = !!s.graphics.fullscreen;
+        ui.settings.vsync.checked = !!s.graphics.vsync;
+        ui.settings.particles.value = String(Number(s.graphics.particles_quality || 1).toFixed(1));
+        ui.settings.brightness.value = String(Number(s.graphics.brightness || 1).toFixed(2));
+        ui.settings.menuVisuals.value = String(parseInt(s.graphics.menu_visuals_quality, 10) || 1);
+
+        ui.settings.master.value = String(Math.round((s.audio.master_vol || 0) * 100));
+        ui.settings.music.value = String(Math.round((s.audio.music_vol || 0) * 100));
+        ui.settings.sfx.value = String(Math.round((s.audio.sfx_vol || 0) * 100));
+        ui.settings.ui.value = String(Math.round((s.audio.ui_vol || 0) * 100));
+
+        updateRangeLabels();
+        applyLocaleTexts();
+        renderInputBindings();
+      }
+
+      function collectSettingsForm() {
+        return {
+          general: {
+            language: ui.settings.language.value
+          },
+          graphics: {
+            fullscreen: !!ui.settings.fullscreen.checked,
+            vsync: !!ui.settings.vsync.checked,
+            particles_quality: parseFloat(ui.settings.particles.value),
+            brightness: parseFloat(ui.settings.brightness.value),
+            menu_visuals_quality: parseInt(ui.settings.menuVisuals.value, 10)
+          },
+          audio: {
+            master_vol: parseFloat(ui.settings.master.value) / 100,
+            music_vol: parseFloat(ui.settings.music.value) / 100,
+            sfx_vol: parseFloat(ui.settings.sfx.value) / 100,
+            ui_vol: parseFloat(ui.settings.ui.value) / 100
+          }
+        };
+      }
+
+      function stopInputCapture(showCancelNotice) {
+        if (!state.listeningInputAction) {
+          return;
+        }
+        state.listeningInputAction = "";
+        window.removeEventListener("keydown", handleInputCaptureKeydown, true);
+        window.removeEventListener("mousedown", handleInputCaptureMousedown, true);
+        renderInputBindings();
+        if (showCancelNotice) {
+          showToast(t("inputCaptureCancel"), "info");
+        }
+      }
+
+      function keyboardEventToToken(event) {
+        const code = String(event.code || "");
+        if (KEY_CODE_TO_TOKEN[code]) {
+          return KEY_CODE_TO_TOKEN[code];
+        }
+
+        const key = String(event.key || "");
+        if (key === " ") {
+          return "KEY_SPACE";
+        }
+
+        if (key.length === 1) {
+          const upper = key.toUpperCase();
+          if (/^[A-Z0-9]$/.test(upper)) {
+            return "KEY_" + upper;
+          }
+        }
+
+        return "";
+      }
+
+      function mouseEventToToken(event) {
+        if (event.button === 0) return "MOUSE_LEFT";
+        if (event.button === 1) return "MOUSE_MIDDLE";
+        if (event.button === 2) return "MOUSE_RIGHT";
+        return "";
+      }
+
+      function submitInputBinding(actionName, token) {
+        if (!actionName) {
+          return;
+        }
+        actionDispatch("menu_set_input_binding", { action: actionName, token: token }, false);
+        if (token === "NONE") {
+          showToast(t("toastInputCleared"), "warn");
+        } else {
+          showToast(t("toastApplyInput"), "success");
+        }
+      }
+
+      function handleInputCaptureKeydown(event) {
+        if (!state.listeningInputAction || !event) {
+          return;
+        }
+
+        const actionName = state.listeningInputAction;
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (event.key === "Escape") {
+          stopInputCapture(true);
+          return;
+        }
+
+        if (event.key === "Backspace" || event.key === "Delete") {
+          stopInputCapture(false);
+          submitInputBinding(actionName, "NONE");
+          return;
+        }
+
+        const token = keyboardEventToToken(event);
+        if (!token) {
+          showToast(t("toastUnsupportedKey"), "warn");
+          return;
+        }
+
+        stopInputCapture(false);
+        submitInputBinding(actionName, token);
+      }
+
+      function handleInputCaptureMousedown(event) {
+        if (!state.listeningInputAction || !event) {
+          return;
+        }
+
+        const actionName = state.listeningInputAction;
+        const token = mouseEventToToken(event);
+        if (!token) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        stopInputCapture(false);
+        submitInputBinding(actionName, token);
+      }
+
+      function startInputCapture(actionName) {
+        if (!actionName) {
+          return;
+        }
+
+        if (state.listeningInputAction === actionName) {
+          stopInputCapture(true);
+          return;
+        }
+
+        stopInputCapture(false);
+        state.listeningInputAction = actionName;
+        renderInputBindings();
+        showToast(t("inputCaptureHint"), "info");
+
+        setTimeout(function () {
+          if (!state.listeningInputAction) {
+            return;
+          }
+          window.addEventListener("keydown", handleInputCaptureKeydown, true);
+          window.addEventListener("mousedown", handleInputCaptureMousedown, true);
+        }, 0);
+      }
+
+      function renderInputBindings() {
+        ui.settings.inputBindings.innerHTML = "";
+        const currentBindings = state.settings.input || {};
+        const preferredOrder = Object.keys(INPUT_ACTION_LABELS);
+        const actionNames = preferredOrder
+          .filter(function (name) { return Object.prototype.hasOwnProperty.call(currentBindings, name); })
+          .concat(Object.keys(currentBindings).filter(function (name) { return !preferredOrder.includes(name); }));
+
+        if (!actionNames.length) {
+          const placeholder = document.createElement("div");
+          placeholder.className = "input-item";
+          placeholder.textContent = t("toastNoInputMap");
+          ui.settings.inputBindings.appendChild(placeholder);
+          return;
+        }
+
+        actionNames.forEach(function (actionName) {
+          const keyInfo = currentBindings[actionName];
+          const keyDisplay = (keyInfo && typeof keyInfo === "object") ? String(keyInfo.display || "") : String(keyInfo || "");
+          const item = document.createElement("div");
+          const isListening = state.listeningInputAction === actionName;
+          item.className = "input-item" + (isListening ? " listening" : "");
+
+          const left = document.createElement("span");
+          left.className = "input-name";
+          const actionLabel = INPUT_ACTION_LABELS[actionName] || { zh: actionName, en: actionName };
+          left.textContent = currentLocale() === "en" ? actionLabel.en : actionLabel.zh;
+
+          const right = document.createElement("div");
+          right.className = "input-control";
+
+          const rightLabel = document.createElement("span");
+          rightLabel.className = "input-key";
+          rightLabel.textContent = keyDisplay || (currentLocale() === "en" ? "None" : "无");
+
+          const listenBtn = document.createElement("button");
+          listenBtn.type = "button";
+          listenBtn.className = "input-listen-btn sfx-btn" + (isListening ? " listening" : "");
+          listenBtn.textContent = isListening ? t("inputListening") : t("inputListen");
+          listenBtn.setAttribute("data-action", actionName);
+
+          const clearBtn = document.createElement("button");
+          clearBtn.type = "button";
+          clearBtn.className = "input-clear-btn sfx-btn";
+          clearBtn.textContent = t("inputClear");
+          clearBtn.setAttribute("data-action", actionName);
+
+          item.appendChild(left);
+          right.appendChild(rightLabel);
+          right.appendChild(listenBtn);
+          right.appendChild(clearBtn);
+          item.appendChild(right);
+          ui.settings.inputBindings.appendChild(item);
+        });
+      }
+
+      function setSettingsTab(tabName) {
+        state.activeSettingsTab = tabName;
+        ui.tabs.forEach(function (tab) {
+          tab.classList.toggle("active", tab.getAttribute("data-tab") === tabName);
+        });
+        ui.tabPanels.forEach(function (panel) {
+          panel.classList.toggle("active", panel.getAttribute("data-panel") === tabName);
+        });
+      }
+
+      function updateRangeLabels() {
+        ui.settings.particlesLabel.textContent = Number(ui.settings.particles.value).toFixed(1);
+        ui.settings.brightnessLabel.textContent = Number(ui.settings.brightness.value).toFixed(2);
+        ui.settings.masterLabel.textContent = ui.settings.master.value + "%";
+        ui.settings.musicLabel.textContent = ui.settings.music.value + "%";
+        ui.settings.sfxLabel.textContent = ui.settings.sfx.value + "%";
+        ui.settings.uiLabel.textContent = ui.settings.ui.value + "%";
+      }
+
+      function __decodeB64String(b64) {
+        if (!b64) return "";
+        try {
+          const cleanedB64 = String(b64).replace(/\s+/g, "");
+          const bin = atob(cleanedB64);
+          const bytes = new Uint8Array(bin.length);
+          for (let j = 0; j < bin.length; j++) bytes[j] = bin.charCodeAt(j);
+          return new TextDecoder("utf-8").decode(bytes);
+        } catch (_) {
+          return String(b64);
+        }
+      }
+
+      function applyMenuState(payload) {
+        if (Array.isArray(payload.save_slots)) {
+          state.saveSlots = payload.save_slots.map(function (item, index) {
+            const id = Number(item.id || index + 1);
+            return {
+              id: id,
+              is_empty: !!item.is_empty,
+              player_name: String(item.player_name_b64 ? __decodeB64String(item.player_name_b64) : item.player_name || ""),
+              display_time: String(item.display_time_b64 ? __decodeB64String(item.display_time_b64) : item.display_time || ""),
+              topology_mode: String(item.topology_mode || "legacy_infinite"),
+              world_size: String(item.world_size || "legacy"),
+              progress: Number(item.progress || 0)
+            };
+          });
+        }
+
+        if (payload.settings && typeof payload.settings === "object") {
+          state.settings = {
+            general: Object.assign({}, state.settings.general, payload.settings.general || {}),
+            graphics: Object.assign({}, state.settings.graphics, payload.settings.graphics || {}),
+            audio: Object.assign({}, state.settings.audio, payload.settings.audio || {}),
+            input: Object.assign({}, payload.settings.input || {})
+          };
+          if (state.listeningInputAction && !Object.prototype.hasOwnProperty.call(state.settings.input, state.listeningInputAction)) {
+            stopInputCapture(false);
+          }
+        }
+
+        if (payload.startup_debug && typeof payload.startup_debug === "object") {
+          state.startupDebug = Object.assign({}, payload.startup_debug);
+        }
+
+        applyLocaleTexts();
+        const computedHasSave = Array.isArray(state.saveSlots)
+          ? state.saveSlots.some(function (slot) { return !slot.is_empty; })
+          : false;
+        state.hasSave = !!payload.has_save || computedHasSave;
+        updateContinueText();
+        renderSaveSlots();
+        setSettingsFormFromState();
+        renderStartupStatus();
+      }
+
+      function decodeBase64Utf8(value) {
+        const cleanedB64 = String(value || "").replace(/\s+/g, "");
+        const bin = atob(cleanedB64);
+        const bytes = new Uint8Array(bin.length);
+        for (let j = 0; j < bin.length; j += 1) {
+          bytes[j] = bin.charCodeAt(j);
+        }
+        return new TextDecoder("utf-8").decode(bytes);
+      }
+
+      function normalizeIncomingPayload(raw) {
+        let payload = raw;
+        for (let i = 0; i < 8; i += 1) {
+          if (typeof payload === "string") {
+            try {
+              payload = JSON.parse(payload);
+              continue;
+            } catch (_) {
+              break;
+            }
+          }
+
+          if (!payload || typeof payload !== "object") {
+            break;
+          }
+
+          if (typeof payload.b64_payload === "string") {
+            try {
+              payload = JSON.parse(decodeBase64Utf8(payload.b64_payload));
+              continue;
+            } catch (_) {
+              if (typeof payload.raw_payload === "string") {
+                try {
+                  payload = JSON.parse(payload.raw_payload);
+                  continue;
+                } catch (_) {
+                  break;
+                }
+              }
+              break;
+            }
+          }
+
+          if (typeof payload.raw_payload === "string") {
+            try {
+              payload = JSON.parse(payload.raw_payload);
+              continue;
+            } catch (_) {
+              break;
+            }
+          }
+
+          if (Object.prototype.hasOwnProperty.call(payload, "data")) {
+            payload = payload.data;
+            continue;
+          }
+
+          if (Object.prototype.hasOwnProperty.call(payload, "message")) {
+            payload = payload.message;
+            continue;
+          }
+
+          if (Object.prototype.hasOwnProperty.call(payload, "payload")) {
+            payload = payload.payload;
+            continue;
+          }
+
+          if (Object.prototype.hasOwnProperty.call(payload, "detail")) {
+            payload = payload.detail;
+            continue;
+          }
+
+          break;
+        }
+
+        return payload && typeof payload === "object" ? payload : null;
+      }
+
+      function onGodotMessage(raw) {
+        const payload = normalizeIncomingPayload(raw);
+        
+        if (!payload || typeof payload !== "object") {
+          return;
+        }
+
+        if (payload.type === "menu_state") {
+          applyMenuState(payload);
+          if (!transitionActive) {
+            setActionLocked(false);
+          }
+          return;
+        }
+
+        if (payload.type === "menu_transition") {
+          setTransition(!!payload.active, String(payload.reason || ""));
+          if (!payload.active) {
+            setActionLocked(false);
+          }
+          return;
+        }
+
+        if (payload.type === "menu_notice") {
+          showToast(String(payload.text || ""), String(payload.level || ""));
+          return;
+        }
+      }
+
+      function bindMainEvents() {
+        ui.startBtn.addEventListener("click", function () {
+          setTransition(true, "start");
+          actionDispatch("menu_start", {}, true);
+        });
+
+        ui.continueBtn.addEventListener("click", function () {
+          if (actionLocked) return;
+          postToGodot("menu_request_state", {});
+          showView("saveSelection");
+        });
+
+        ui.settingsBtn.addEventListener("click", function () {
+          if (actionLocked) return;
+          postToGodot("menu_request_state", {});
+          setSettingsTab("General");
+          showView("settings");
+        });
+
+        ui.exitBtn.addEventListener("click", function () {
+          if (actionLocked) return;
+          ui.exitDialog.classList.add("show");
+        });
+
+        ui.dialogCancelBtn.addEventListener("click", function () {
+          ui.exitDialog.classList.remove("show");
+        });
+
+        ui.dialogConfirmBtn.addEventListener("click", function () {
+          ui.exitDialog.classList.remove("show");
+          actionDispatch("menu_exit", {}, true);
+        });
+
+        ui.saveBackBtn.addEventListener("click", function () {
+          showView("main");
+        });
+
+        ui.saveList.addEventListener("click", function (event) {
+          const button = event.target.closest(".save-item");
+          if (!button || actionLocked) return;
+          const slotId = parseInt(button.getAttribute("data-slot") || "-1", 10);
+          const slotData = state.saveSlots.find(function (slot) { return slot.id === slotId; });
+          if (!slotData || slotData.is_empty) {
+            showToast(t("toastInvalidSlot"), "warn");
+            return;
+          }
+          setTransition(true, "load");
+          actionDispatch("menu_load_slot", { slot_id: slotId }, true);
+        });
+
+        ui.tabs.forEach(function (tab) {
+          tab.addEventListener("click", function () {
+            setSettingsTab(tab.getAttribute("data-tab") || "General");
+          });
+        });
+
+        ui.settingsApplyBtn.addEventListener("click", function () {
+          const settingsPayload = collectSettingsForm();
+          state.settings = {
+            general: Object.assign({}, state.settings.general, settingsPayload.general || {}),
+            graphics: Object.assign({}, state.settings.graphics, settingsPayload.graphics || {}),
+            audio: Object.assign({}, state.settings.audio, settingsPayload.audio || {})
+          };
+          applyLocaleTexts();
+          updateContinueText();
+          renderSaveSlots();
+          renderInputBindings();
+          renderStartupStatus();
+          actionDispatch("menu_apply_settings", { settings: settingsPayload }, false);
+          showToast(t("toastApplySettings"), "success");
+        });
+
+        ui.settingsResetBtn.addEventListener("click", function () {
+          actionDispatch("menu_reset_settings", {}, false);
+          showToast(t("toastResetSettings"), "warn");
+        });
+
+        ui.settingsBackBtn.addEventListener("click", function () {
+          showView("main");
+        });
+
+        [ui.settings.particles, ui.settings.brightness, ui.settings.master, ui.settings.music, ui.settings.sfx, ui.settings.ui].forEach(function (slider) {
+          slider.addEventListener("input", updateRangeLabels);
+        });
+
+        ui.muteBtn.addEventListener("click", function () {
+          isMuted = !isMuted;
+          ui.muteBtn.textContent = isMuted ? "🔇" : "🔊";
+          postToGodot("menu_toggle_mute", { muted: isMuted });
+        });
+
+        ui.settings.inputBindings.addEventListener("click", function (event) {
+          const listenBtn = event.target.closest(".input-listen-btn");
+          if (listenBtn) {
+            const actionName = String(listenBtn.getAttribute("data-action") || "").trim();
+            startInputCapture(actionName);
+            return;
+          }
+
+          const clearBtn = event.target.closest(".input-clear-btn");
+          if (clearBtn) {
+            const actionName = String(clearBtn.getAttribute("data-action") || "").trim();
+            stopInputCapture(false);
+            submitInputBinding(actionName, "NONE");
+          }
+        });
+      }
+
+      function bindSfxEvents() {
+        document.addEventListener("mouseover", function (event) {
+          const button = event.target.closest(".sfx-btn");
+          if (!button) {
+            lastHoverButton = null;
+            return;
+          }
+          if (button !== lastHoverButton) {
+            lastHoverButton = button;
+            playHoverSound();
+          }
+        });
+
+        document.addEventListener("pointerdown", function (event) {
+          const button = event.target.closest(".sfx-btn");
+          if (!button) return;
+          playClickSound();
+        }, { passive: true });
+      }
+
+      function isTypingElement(target) {
+        if (!target) return false;
+        const tagName = String(target.tagName || "").toUpperCase();
+        return tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT" || target.isContentEditable === true;
+      }
+
+      function buildSideBars() {
+        const left = document.getElementById("leftBars");
+        const right = document.getElementById("rightBars");
+        for (let i = 0; i < 8; i++) {
+          const l = document.createElement("div");
+          l.className = "bar";
+          l.style.setProperty("--i", String(i));
+          left.appendChild(l);
+
+          const r = document.createElement("div");
+          r.className = "bar";
+          r.style.setProperty("--i", String(i));
+          right.appendChild(r);
+        }
+      }
+
+      function toPixel(v) {
+        return Math.floor(v / PX) * PX;
+      }
+
+      function resize() {
+        width = Math.max(window.innerWidth, 1);
+        height = Math.max(window.innerHeight, 1);
+        canvas.width = width;
+        canvas.height = height;
+      }
+
+      function resetStars() {
+        stars.length = 0;
+        for (let i = 0; i < 150; i++) {
+          stars.push({
+            x: Math.random() * width,
+            y: Math.random() * height,
+            layer: Math.floor(Math.random() * 3),
+            speed: Math.random() * 0.45 + 0.15,
+            twinkle: Math.random() * Math.PI * 2
+          });
+        }
+
+        ships.length = 0;
+        ships.push({ xFactor: 0.14, yFactor: 0.30, wave: 0.020, amp: 8, phase: 0, dir: 1 });
+        ships.push({ xFactor: 0.86, yFactor: 0.40, wave: 0.024, amp: 10, phase: Math.PI, dir: -1 });
+
+        for (let layer = 0; layer < 3; layer++) {
+          galaxyLayers[layer] = [];
+          const radius = 140 + layer * 46;
+          for (let i = 0; i < 150; i++) {
+            const t = i / 150;
+            galaxyLayers[layer].push({
+              angle: t * Math.PI * 4,
+              dist: t * radius,
+              alpha: (0.08 + t * 0.2) * (0.35 + layer * 0.16),
+              size: 1 + ((i % 5) * 0.22)
+            });
+          }
+        }
+      }
+
+      function createMeteor() {
+        if (meteors.length < 3 && Math.random() < 0.01) {
+          meteors.push({
+            x: Math.random() * width,
+            y: Math.random() * (height * 0.2),
+            length: Math.random() * 78 + 40,
+            speed: Math.random() * 7 + 4,
+            opacity: 1,
+            angle: Math.PI / 4 + Math.random() * 0.18
+          });
+        }
+      }
+
+      function drawGalaxy() {
+        galaxyRotation += 0.001;
+        for (let layer = 0; layer < 3; layer++) {
+          const centerX = width * 0.7;
+          const centerY = height * 0.3;
+          const direction = layer % 2 === 0 ? 1 : -1;
+
+          ctx.save();
+          ctx.translate(centerX, centerY);
+          ctx.rotate(galaxyRotation * direction * (1 + layer * 0.2));
+
+          for (let i = 0; i < galaxyLayers[layer].length; i++) {
+            const point = galaxyLayers[layer][i];
+            const x = toPixel(Math.cos(point.angle) * point.dist);
+            const y = toPixel(Math.sin(point.angle) * point.dist);
+            ctx.fillStyle = "rgba(138, 43, 226, " + point.alpha.toFixed(3) + ")";
+            ctx.fillRect(x, y, point.size + 1, point.size + 1);
+          }
+
+          ctx.restore();
+        }
+      }
+
+      function drawStars(frameCount) {
+        const layerColors = ["#4a1c6b", "#00d9ff", "#ffc800"];
+        for (let i = 0; i < stars.length; i++) {
+          const star = stars[i];
+          star.twinkle += 0.012;
+          const pulse = 0.3 + Math.sin(star.twinkle + frameCount * 0.03) * 0.5;
+          const size = (star.layer + 1) * PX;
+
+          const x = toPixel(star.x);
+          const y = toPixel(star.y);
+          ctx.globalAlpha = Math.max(0.18, pulse);
+          ctx.fillStyle = layerColors[star.layer];
+          ctx.fillRect(x, y, size, size);
+
+          if (star.layer >= 1) {
+            ctx.globalAlpha = Math.max(0.08, pulse * 0.35);
+            ctx.fillRect(x - PX, y, size + PX * 2, PX);
+            ctx.fillRect(x, y - PX, PX, size + PX * 2);
+          }
+
+          ctx.globalAlpha = 1;
+          star.y += star.speed + star.layer * 0.1;
+          if (star.y > height + PX) {
+            star.y = -PX;
+            star.x = Math.random() * width;
+          }
+        }
+      }
+
+      function drawMeteors() {
+        createMeteor();
+
+        for (let i = meteors.length - 1; i >= 0; i--) {
+          const m = meteors[i];
+          const tailX = m.x - Math.cos(m.angle) * m.length;
+          const tailY = m.y - Math.sin(m.angle) * m.length;
+
+          const gradient = ctx.createLinearGradient(m.x, m.y, tailX, tailY);
+          gradient.addColorStop(0, "rgba(255,255,255," + m.opacity.toFixed(3) + ")");
+          gradient.addColorStop(1, "rgba(255,255,255,0)");
+
+          ctx.strokeStyle = gradient;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(toPixel(m.x), toPixel(m.y));
+          ctx.lineTo(toPixel(tailX), toPixel(tailY));
+          ctx.stroke();
+
+          ctx.fillStyle = "rgba(255,255,255," + m.opacity.toFixed(3) + ")";
+          ctx.fillRect(toPixel(m.x), toPixel(m.y), PX, PX);
+
+          m.x += Math.cos(m.angle) * m.speed;
+          m.y += Math.sin(m.angle) * m.speed;
+          m.opacity -= 0.01;
+
+          if (m.opacity <= 0 || m.y > height + 30) {
+            meteors.splice(i, 1);
+          }
+        }
+      }
+
+      function drawShip(x, y, dir, frameCount) {
+        const flameOn = (Math.floor(frameCount / 7) % 2) === 0;
+        const px = toPixel(x);
+        const py = toPixel(y);
+
+        ctx.fillStyle = dir > 0 ? "#c62c75" : "#9b59b6";
+        ctx.fillRect(px, py, PX * 3, PX);
+        ctx.fillRect(px - PX, py + PX, PX * 5, PX);
+        ctx.fillRect(px - PX * 2, py + PX * 2, PX * 7, PX);
+
+        ctx.fillStyle = "#67e8f9";
+        ctx.fillRect(px - PX, py + PX * 3, PX, PX);
+        ctx.fillRect(px + PX * 3, py + PX * 3, PX, PX);
+
+        if (flameOn) {
+          ctx.fillStyle = "#ffc800";
+          ctx.fillRect(px, py + PX * 4, PX, PX);
+          ctx.fillRect(px + PX * 2, py + PX * 4, PX, PX);
+        }
+      }
+
+      function drawShips(frameCount) {
+        for (let i = 0; i < ships.length; i++) {
+          const s = ships[i];
+          const x = width * s.xFactor;
+          const y = height * s.yFactor + Math.sin(frameCount * s.wave + s.phase) * s.amp;
+          drawShip(x, y, s.dir, frameCount);
+        }
+      }
+
+      function frame(timestamp) {
+        if (timestamp - lastFrameAt < frameIntervalMs) {
+          rafHandle = requestAnimationFrame(frame);
+          return;
+        }
+        lastFrameAt = timestamp;
+        const frameCount = Math.floor(timestamp / 16);
+
+        const grad = ctx.createLinearGradient(0, 0, width, height);
+        grad.addColorStop(0, "#0a0a1a");
+        grad.addColorStop(0.5, "#101032");
+        grad.addColorStop(1, "#0a0a1a");
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, width, height);
+
+        drawGalaxy();
+        drawStars(frameCount);
+        drawMeteors();
+        drawShips(frameCount);
+
+        rafHandle = requestAnimationFrame(frame);
+      }
+
+      // godot_wry delivers WebView.post_message() as a document message event where payload is usually in event.detail.
+      document.addEventListener("message", function (event) {
+        if (!event) {
+          return;
+        }
+        const raw = (typeof event.detail !== "undefined") ? event.detail : event.data;
+        onGodotMessage(raw);
+      });
+
+      // Compatibility fallback for wrappers that surface message on window.
+      window.addEventListener("message", function (event) {
+        if (!event) {
+          return;
+        }
+        const raw = (typeof event.detail !== "undefined") ? event.detail : event.data;
+        onGodotMessage(raw);
+      });
+      window.godotReceive = onGodotMessage;
+
+      window.addEventListener("beforeunload", function () {
+        stopInputCapture(false);
+        if (rafHandle) {
+          cancelAnimationFrame(rafHandle);
+        }
+      });
+
+      window.addEventListener("resize", function () {
+        resize();
+        resetStars();
+      }, { passive: true });
+
+      document.addEventListener("keydown", function (event) {
+        if (!event) return;
+        const loweredKey = String(event.key || "").toLowerCase();
+        if (!isTypingElement(event.target) && (
+          loweredKey === "w" || loweredKey === "a" || loweredKey === "s" || loweredKey === "d" ||
+          loweredKey === "arrowup" || loweredKey === "arrowdown" || loweredKey === "arrowleft" || loweredKey === "arrowright" ||
+          loweredKey === " "
+        )) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      });
+
+      bindMainEvents();
+      bindSfxEvents();
+      buildSideBars();
+      resize();
+      resetStars();
+      renderSaveSlots();
+      setSettingsFormFromState();
+      updateContinueText();
+      frame(0);
+
+      postToGodot("menu_ready", {});
+      postToGodot("menu_request_state", {});
+    })();
+  </script>
+</body>
+</html>

@@ -256,10 +256,14 @@ func _on_housing_btn_pressed() -> void:
 
 func _on_inventory_btn_pressed() -> void:
 	if UIManager:
-		if UIManager.active_windows.has("Inventory"):
-			UIManager.close_window("Inventory")
+		# Use a single canonical window key to avoid duplicate Inventory/InventoryWindow instances.
+		if UIManager.active_windows.has("InventoryWindow"):
+			UIManager.close_window("InventoryWindow")
 		else:
-			UIManager.open_window("Inventory", "res://scenes/ui/InventoryWindow.tscn")
+			# Clean up any legacy key that may still exist from old builds.
+			if UIManager.active_windows.has("Inventory"):
+				UIManager.close_window("Inventory")
+			UIManager.open_window("InventoryWindow", "res://scenes/ui/InventoryWindow.tscn")
 
 func _setup_guide_system() -> void:
 	## Setup the gameplay guide window and connect button signal

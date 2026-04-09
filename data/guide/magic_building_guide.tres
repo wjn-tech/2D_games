@@ -1,27 +1,33 @@
-[gd_resource type="Resource" script_class="GuideSectionData" format=3 uid="uid://guide_magic_build_section"]
+﻿[gd_resource type="Resource" script_class="GuideSectionData" format=3 uid="uid://guide_magic_build_section"]
 
+[ext_resource type="Script" path="res://src/ui/guide/guide_section_data.gd" id="1_guide_section_data"]
+[ext_resource type="Script" path="res://src/ui/guide/guide_subsection_data.gd" id="2_guide_subsection_data"]
 [ext_resource type="Texture2D" path="res://data/guide/images/Magic Interface.png" id="1_magic_ui"]
 
-[resource]
-section_id = "magic_building_guide"
-title = "魔法搭建指南"
-description = "从需求到成型法术的实战搭建流程"
-subsections = [SubResource("GuideSubsectionData_1"), SubResource("GuideSubsectionData_2"), SubResource("GuideSubsectionData_3")]
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_1"]
+[sub_resource type="Resource" id="GuideSubsectionData_1"]
+script = ExtResource("2_guide_subsection_data")
 subsection_id = "build_goal"
-title = "1) 先定目标，再选模块"
-content = "在搭建前先回答三个问题：\n1. 你要打单体还是清怪？\n2. 你要远程压制还是贴脸爆发？\n3. 你能接受多高的法力消耗？\n\n先有目标，再决定使用投射、修饰和触发模块，效率会高很多。"
+title = "1) 先定目标，再选模�?
+content = "在搭建前先回答三个问题：\n1. 你要打单体还是清怪？\n2. 你要远程压制还是贴脸爆发？\n3. 你能接受多高的法力消耗？\n\n先有目标，再决定使用投射、修饰和触发模块，效率会高很多�?
 image = ExtResource("1_magic_ui")
 
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_2"]
+[sub_resource type="Resource" id="GuideSubsectionData_2"]
+script = ExtResource("2_guide_subsection_data")
 subsection_id = "build_pipeline"
-title = "2) 推荐搭建流水线"
-content = "推荐按以下顺序构建：\n[b]源/触发 -> 主效果 -> 修饰器 -> 分支逻辑[/b]\n\n示例：\nGenerator -> Projectile -> modifier_damage -> modifier_speed\n\n每接入一个新节点就测试一次，避免最后一次性排错。"
+title = "2) 推荐搭建流水�?
+content = "推荐按以下顺序构建：\n[b]�?触发 -> 主效�?-> 修饰�?-> 分支逻辑[/b]\n\n示例：\nGenerator -> Projectile -> modifier_damage -> modifier_speed\n\n每接入一个新节点就测试一次，避免最后一次性排错�?
 image = null
 
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_3"]
+[sub_resource type="Resource" id="GuideSubsectionData_3"]
+script = ExtResource("2_guide_subsection_data")
 subsection_id = "build_debug"
 title = "3) 常见故障排查"
-content = "如果法术异常，优先检查：\n[b]1.[/b] 起点是否存在（Generator 或触发器）\n[b]2.[/b] 节点连接方向是否正确\n[b]3.[/b] 是否被高消耗修饰器拖垮\n[b]4.[/b] 是否存在无输出的孤立分支\n\n建议保留一个“稳定版”构型，实验失败后可快速回退。"
+content = "如果法术异常，优先检查：\n[b]1.[/b] 起点是否存在（Generator 或触发器）\n[b]2.[/b] 节点连接方向是否正确\n[b]3.[/b] 是否被高消耗修饰器拖垮\n[b]4.[/b] 是否存在无输出的孤立分支\n\n建议保留一个“稳定版”构型，实验失败后可快速回退�?
 image = null
+
+[resource]
+script = ExtResource("1_guide_section_data")
+section_id = "magic_building_guide"
+title = "魔法搭建指南"
+description = "从需求到成型法术的实战搭建流�?
+subsections = [SubResource("GuideSubsectionData_1"), SubResource("GuideSubsectionData_2"), SubResource("GuideSubsectionData_3")]

@@ -1,0 +1,1455 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gameplay Guide Shell</title>
+  <style>
+    :root {
+      --px-bg-dark: #0A0E1A;
+      --px-bg-panel: #121830;
+      --px-bg-hover: #1A2040;
+      --px-bg-selected: #1A2850;
+      --px-border-cyan: #00E5FF;
+      --px-border-soft: #2A3050;
+      --px-border-gold: #FFD700;
+      --px-text-primary: #FFFFFF;
+      --px-text-secondary: #8888AA;
+      --px-text-accent: #00E5FF;
+      --px-danger: #FF4444;
+      --px-info: #44AAFF;
+      --px-font-pixel: "Press Start 2P", "Consolas", "Microsoft YaHei", monospace;
+      --px-font-body: "DotGothic16", "Consolas", "Microsoft YaHei", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      image-rendering: pixelated;
+    }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: radial-gradient(circle at 20% 18%, #1A2348 0%, #0A0E1A 56%, #060912 100%);
+      color: var(--px-text-primary);
+      font-family: var(--px-font-body);
+    }
+
+    .root {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px;
+      animation: fade-in 0.18s linear;
+    }
+
+    .backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.66);
+    }
+
+    @keyframes fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .window {
+      position: relative;
+      width: min(1200px, 98vw);
+      height: min(750px, 96vh);
+      border: 2px solid var(--px-border-cyan);
+      background: #0A0E1A;
+      box-shadow: 2px 2px 0 #000;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      z-index: 1;
+    }
+
+    .window::before,
+    .window::after {
+      content: "";
+      position: absolute;
+      width: 6px;
+      height: 6px;
+      background: var(--px-border-cyan);
+      pointer-events: none;
+      z-index: 4;
+    }
+
+    .window::before {
+      top: -2px;
+      left: -2px;
+      box-shadow: calc(100% + 4px) 0 0 0 var(--px-border-cyan), 0 calc(100% + 4px) 0 0 var(--px-border-cyan);
+    }
+
+    .window::after {
+      right: -2px;
+      bottom: -2px;
+      background: var(--px-border-gold);
+      box-shadow: 0 0 6px rgba(255, 215, 0, 0.32);
+    }
+
+    .header {
+      min-height: 54px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--px-border-soft);
+      background: #121830;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .header-left {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-icon {
+      color: var(--px-text-accent);
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+
+    .title-main {
+      font-family: var(--px-font-pixel);
+      font-size: 12px;
+      color: var(--px-text-primary);
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .title-sub {
+      margin-top: 2px;
+      font-size: 10px;
+      color: var(--px-text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .pixel-btn {
+      border: 2px solid var(--px-border-cyan);
+      background: #1A2040;
+      color: var(--px-text-accent);
+      font-family: var(--px-font-pixel);
+      font-size: 10px;
+      line-height: 1;
+      min-height: 30px;
+      padding: 0 10px;
+      cursor: pointer;
+      box-shadow: 2px 2px 0 #000;
+      transition: none;
+      white-space: nowrap;
+    }
+
+    .pixel-btn:hover,
+    .pixel-btn:focus-visible {
+      background: #243060;
+      box-shadow: 1px 1px 0 #000;
+      transform: translate(1px, 1px);
+      outline: none;
+    }
+
+    .pixel-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: 2px 2px 0 #000;
+    }
+
+    .close-btn {
+      width: 34px;
+      min-width: 34px;
+      padding: 0;
+      justify-content: center;
+      display: inline-flex;
+      align-items: center;
+      color: #FF6666;
+      border-color: #FF4444;
+      background: rgba(255, 68, 68, 0.12);
+    }
+
+    .body {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      overflow: hidden;
+    }
+
+    .sidebar {
+      width: auto;
+      min-width: 0;
+      border-right: 1px solid var(--px-border-soft);
+      background: #121830;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .sidebar-head {
+      padding: 8px;
+      border-bottom: 1px solid var(--px-border-soft);
+    }
+
+    .sidebar-title {
+      font-family: var(--px-font-pixel);
+      font-size: 10px;
+      color: var(--px-text-primary);
+    }
+
+    .sidebar-meta {
+      margin-top: 4px;
+      font-size: 10px;
+      color: var(--px-text-secondary);
+    }
+
+    .search-wrap {
+      position: relative;
+      padding: 8px;
+      border-bottom: 1px solid var(--px-border-soft);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #555577;
+      font-family: var(--px-font-pixel);
+      font-size: 10px;
+      pointer-events: none;
+    }
+
+    .search {
+      background: #0A0E1A;
+      border: 1px solid #2A3050;
+      color: var(--px-text-primary);
+      font-family: var(--px-font-body);
+      font-size: 12px;
+      line-height: 1;
+      width: 100%;
+      height: 30px;
+      padding: 0 8px 0 26px;
+      outline: none;
+      box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.5);
+    }
+
+    .search:focus {
+      border-color: var(--px-border-cyan);
+      box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 229, 255, 0.3);
+    }
+
+    .search::placeholder {
+      color: #555577;
+    }
+
+    .catalog {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 4px 0;
+      scrollbar-width: thin;
+      scrollbar-color: #2A3050 #0A0E1A;
+    }
+
+    .catalog::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .catalog::-webkit-scrollbar-track {
+      background: #0A0E1A;
+      border: 1px solid #2A3050;
+    }
+
+    .catalog::-webkit-scrollbar-thumb {
+      background: #2A3050;
+      border: 1px solid #3A4070;
+    }
+
+    .catalog-empty {
+      color: var(--px-text-secondary);
+      text-align: center;
+      padding: 20px 10px;
+      font-size: 11px;
+      line-height: 1.8;
+    }
+
+    .tree-row {
+      min-height: 28px;
+      padding: 6px 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border-left: 2px solid transparent;
+      cursor: pointer;
+      background: transparent;
+    }
+
+    .tree-row:hover {
+      background: var(--px-bg-hover);
+      border-left-color: var(--px-border-cyan);
+    }
+
+    .tree-row.active {
+      background: var(--px-bg-selected);
+      border-left-color: var(--px-border-cyan);
+    }
+
+    .tree-arrow {
+      width: 12px;
+      text-align: center;
+      color: #8888AA;
+      font-family: var(--px-font-pixel);
+      font-size: 8px;
+      flex-shrink: 0;
+    }
+
+    .tree-dot {
+      width: 8px;
+      height: 8px;
+      flex-shrink: 0;
+      background: #333355;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.45);
+    }
+
+    .tree-row.active .tree-dot {
+      background: var(--px-border-cyan);
+      box-shadow: 0 0 4px rgba(0, 229, 255, 0.5);
+    }
+
+    .tree-label {
+      min-width: 0;
+      flex: 1;
+      font-size: 11px;
+      color: #AAAACC;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      line-height: 1.3;
+    }
+
+    .tree-row.dir .tree-label {
+      color: #CCCCDD;
+    }
+
+    .tree-count {
+      margin-left: auto;
+      flex-shrink: 0;
+      font-family: var(--px-font-pixel);
+      font-size: 8px;
+      color: #77779C;
+    }
+
+    .content-area {
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: #0A0E1A;
+    }
+
+    .breadcrumb-wrap {
+      min-height: 34px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--px-border-soft);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .breadcrumb {
+      min-width: 0;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 10px;
+      color: var(--px-text-secondary);
+    }
+
+    .breadcrumb span {
+      color: var(--px-text-accent);
+    }
+
+    .breadcrumb-sep {
+      color: #555577;
+      margin: 0 4px;
+    }
+
+    .badge-row {
+      max-width: 45%;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 4px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 5px;
+      font-size: 9px;
+      font-family: var(--px-font-pixel);
+      border: 1px solid var(--px-border-cyan);
+      color: var(--px-border-cyan);
+      background: rgba(0, 229, 255, 0.08);
+      line-height: 1.5;
+    }
+
+    .main-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 12px;
+      scrollbar-width: thin;
+      scrollbar-color: #2A3050 #0A0E1A;
+      background-image: radial-gradient(circle, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      background-size: 4px 4px;
+    }
+
+    .main-scroll::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .main-scroll::-webkit-scrollbar-track {
+      background: #0A0E1A;
+      border: 1px solid #2A3050;
+    }
+
+    .main-scroll::-webkit-scrollbar-thumb {
+      background: #2A3050;
+      border: 1px solid #3A4070;
+    }
+
+    .page-title {
+      margin: 0 0 14px;
+      display: inline-block;
+      position: relative;
+      font-family: var(--px-font-pixel);
+      font-size: clamp(13px, 1.8vw, 16px);
+      color: var(--px-text-primary);
+      line-height: 1.6;
+      word-break: break-word;
+    }
+
+    .page-title::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -5px;
+      height: 2px;
+      background: repeating-linear-gradient(90deg, var(--px-border-cyan) 0px, var(--px-border-cyan) 4px, transparent 4px, transparent 6px);
+    }
+
+    .image-wrap {
+      display: none;
+      border: 1px solid #2A3050;
+      background: #0F152B;
+      margin: 0 0 12px;
+      min-height: 160px;
+      max-height: 300px;
+      overflow: hidden;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 2px 2px 0 #000;
+    }
+
+    .page-image {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      image-rendering: auto;
+      display: block;
+    }
+
+    .pixel-content {
+      color: #CCCCDD;
+      font-size: 12px;
+      line-height: 2;
+      word-break: break-word;
+    }
+
+    .pixel-content p {
+      margin: 0 0 12px;
+    }
+
+    .pixel-content strong {
+      color: var(--px-text-accent);
+    }
+
+    .pixel-content em {
+      color: #B0B0CF;
+    }
+
+    .pixel-content ul {
+      list-style: none;
+      padding-left: 16px;
+      margin: 0 0 12px;
+      display: grid;
+      gap: 4px;
+    }
+
+    .pixel-content ul li {
+      position: relative;
+      padding-left: 12px;
+      line-height: 1.8;
+    }
+
+    .pixel-content ul li::before {
+      content: "▸";
+      position: absolute;
+      left: 0;
+      color: var(--px-border-cyan);
+    }
+
+    .kv-grid {
+      border: 1px solid #2A3050;
+      background: rgba(18, 24, 48, 0.7);
+      padding: 8px;
+      margin: 0 0 12px;
+      display: grid;
+      gap: 6px;
+    }
+
+    .kv-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      line-height: 1.8;
+      font-size: 12px;
+    }
+
+    .kv-key {
+      min-width: 68px;
+      color: var(--px-text-accent);
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .kv-value {
+      min-width: 0;
+      flex: 1;
+      color: #D5D8EF;
+    }
+
+    .callout {
+      border: 1px solid;
+      padding: 8px 10px;
+      margin: 0 0 10px;
+      font-size: 12px;
+      line-height: 1.8;
+    }
+
+    .callout-title {
+      font-family: var(--px-font-pixel);
+      font-size: 9px;
+      margin: 0 0 4px;
+    }
+
+    .callout-body {
+      margin: 0;
+      color: #D8DCEF;
+    }
+
+    .callout.info {
+      border-color: var(--px-info);
+      background: rgba(68, 170, 255, 0.08);
+    }
+
+    .callout.info .callout-title {
+      color: #88CCFF;
+    }
+
+    .callout.warn {
+      border-color: var(--px-danger);
+      background: rgba(255, 68, 68, 0.08);
+    }
+
+    .callout.warn .callout-title {
+      color: #FF8888;
+    }
+
+    .content-empty {
+      color: var(--px-text-secondary);
+      text-align: center;
+      padding: 24px 8px;
+      font-size: 11px;
+      line-height: 1.8;
+    }
+
+    .actionbar {
+      min-height: 52px;
+      padding: 8px 10px;
+      border-top: 1px solid var(--px-border-soft);
+      background: #0A0E1A;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .action-left,
+    .action-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .action-center {
+      width: min(250px, 46%);
+      min-width: 130px;
+    }
+
+    .progress-track {
+      background: #0A0E1A;
+      border: 1px solid #2A3050;
+      height: 12px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .progress-fill {
+      width: 0;
+      height: 100%;
+      background: repeating-linear-gradient(90deg, var(--px-border-cyan) 0px, var(--px-border-cyan) 4px, #0088AA 4px, #0088AA 6px);
+      transition: width 0.18s linear;
+    }
+
+    .indicator {
+      min-width: 54px;
+      text-align: center;
+      font-family: var(--px-font-pixel);
+      font-size: 9px;
+      color: #8888AA;
+      line-height: 1.8;
+    }
+
+    @media (max-width: 960px) {
+      .window {
+        width: 100%;
+        height: 100%;
+      }
+
+      .body {
+        grid-template-columns: 220px minmax(0, 1fr);
+      }
+
+      .sidebar {
+        border-right: 1px solid var(--px-border-soft);
+      }
+    }
+
+    @media (max-width: 640px) {
+      .body {
+        grid-template-columns: 180px minmax(0, 1fr);
+      }
+
+      .header {
+        min-height: 50px;
+        padding: 6px 8px;
+      }
+
+      .title-main {
+        font-size: 10px;
+      }
+
+      .title-sub {
+        font-size: 9px;
+      }
+
+      .pixel-btn {
+        font-size: 9px;
+        min-height: 28px;
+        padding: 0 8px;
+      }
+
+      .breadcrumb-wrap {
+        padding: 6px 8px;
+      }
+
+      .main-scroll {
+        padding: 8px;
+      }
+
+      .pixel-content,
+      .kv-row,
+      .callout {
+        font-size: 11px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="root">
+    <div id="backdrop" class="backdrop"></div>
+
+    <section class="window">
+      <header class="header">
+        <div class="header-left">
+          <span class="header-icon">📖</span>
+          <div>
+            <div id="titleMain" class="title-main">冒险手册</div>
+            <div class="title-sub">星海之旅 · 新手引导</div>
+          </div>
+        </div>
+        <button id="closeBtn" class="pixel-btn close-btn" type="button" title="关闭">✕</button>
+      </header>
+
+      <div class="body">
+        <aside class="sidebar">
+          <div class="sidebar-head">
+            <div class="sidebar-title">目录导航</div>
+            <div id="catalogMeta" class="sidebar-meta">正在加载目录...</div>
+          </div>
+
+          <label class="search-wrap" for="searchInput">
+            <span class="search-icon">⌕</span>
+            <input id="searchInput" class="search" type="text" placeholder="搜索手册内容...">
+          </label>
+
+          <div id="catalog" class="catalog"></div>
+        </aside>
+
+        <main class="content-area">
+          <div class="breadcrumb-wrap">
+            <div id="pagePath" class="breadcrumb"></div>
+            <div id="pageBadges" class="badge-row"></div>
+          </div>
+
+          <div class="main-scroll">
+            <h1 id="pageTitle" class="page-title">请选择目录中的页面</h1>
+
+            <div id="imageWrap" class="image-wrap">
+              <img id="pageImage" class="page-image" alt="guide-image">
+            </div>
+
+            <article id="pageContent" class="pixel-content"></article>
+          </div>
+        </main>
+      </div>
+
+      <footer class="actionbar">
+        <div class="action-left">
+          <button id="homeBtn" class="pixel-btn" type="button">◄ 目录</button>
+          <button id="focusSearchBtn" class="pixel-btn" type="button">⌕ 搜索</button>
+        </div>
+
+        <div class="action-center">
+          <div class="progress-track">
+            <div id="progressFill" class="progress-fill"></div>
+          </div>
+        </div>
+
+        <div class="action-right">
+          <button id="prevBtn" class="pixel-btn" type="button" title="上一页">◄</button>
+          <span id="indicator" class="indicator">0/0</span>
+          <button id="nextBtn" class="pixel-btn" type="button" title="下一页">►</button>
+        </div>
+      </footer>
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      const BRIDGE_HANDSHAKE_MAX_ATTEMPTS = 8;
+      const BRIDGE_HANDSHAKE_INTERVAL_MS = 800;
+      const INFO_KEYS = ["定位", "交互建议", "玩法价值", "应对方式", "建议", "补充说明", "获取方式", "法术效果", "效果", "说明"];
+      const WARN_KEYS = ["风险点", "警告", "注意", "危险"];
+
+      const state = {
+        pages: [],
+        catalog: [],
+        currentPageIndex: -1,
+        title: "冒险手册",
+        texts: {
+          close: "✕",
+          prev: "上一页",
+          next: "下一页",
+        },
+        searchQuery: "",
+        collapsedNodes: {},
+        bridgeReady: false,
+        handshakeAttempts: 0,
+        handshakeTimerId: 0,
+      };
+
+      const dom = {
+        backdrop: document.getElementById("backdrop"),
+        titleMain: document.getElementById("titleMain"),
+        closeBtn: document.getElementById("closeBtn"),
+        homeBtn: document.getElementById("homeBtn"),
+        focusSearchBtn: document.getElementById("focusSearchBtn"),
+        prevBtn: document.getElementById("prevBtn"),
+        nextBtn: document.getElementById("nextBtn"),
+        progressFill: document.getElementById("progressFill"),
+        indicator: document.getElementById("indicator"),
+        searchInput: document.getElementById("searchInput"),
+        catalogMeta: document.getElementById("catalogMeta"),
+        catalog: document.getElementById("catalog"),
+        pagePath: document.getElementById("pagePath"),
+        pageBadges: document.getElementById("pageBadges"),
+        pageTitle: document.getElementById("pageTitle"),
+        imageWrap: document.getElementById("imageWrap"),
+        pageImage: document.getElementById("pageImage"),
+        pageContent: document.getElementById("pageContent"),
+      };
+
+      function safeParse(raw) {
+        let data = raw;
+        for (let i = 0; i < 6; i += 1) {
+          if (typeof data === "string") {
+            try {
+              data = JSON.parse(data);
+            } catch (_) {
+              return null;
+            }
+          } else {
+            break;
+          }
+        }
+        return data && typeof data === "object" ? data : null;
+      }
+
+      function maybeDecodeBase64(text) {
+        if (typeof text !== "string" || text.length === 0) return null;
+        try {
+          return safeParse(atob(text));
+        } catch (_) {
+          return null;
+        }
+      }
+
+      function unwrapPayload(raw) {
+        let payload = safeParse(raw);
+        for (let i = 0; i < 10; i += 1) {
+          if (!payload || typeof payload !== "object") return null;
+          if (payload.type) return payload;
+
+          if (typeof payload.raw_payload === "string") {
+            payload = safeParse(payload.raw_payload);
+            continue;
+          }
+
+          if (typeof payload.b64_payload === "string") {
+            payload = maybeDecodeBase64(payload.b64_payload);
+            continue;
+          }
+
+          let stepped = false;
+          ["detail", "data", "payload", "message"].forEach(function (key) {
+            if (stepped) return;
+            if (typeof payload[key] !== "undefined") {
+              payload = payload[key];
+              stepped = true;
+            }
+          });
+
+          if (stepped) continue;
+          return payload;
+        }
+        return payload;
+      }
+
+      function postToGodot(type, body) {
+        const payload = JSON.stringify(Object.assign({ type: type }, body || {}));
+        let delivered = false;
+
+        try {
+          if (typeof ipc !== "undefined" && ipc && typeof ipc.postMessage === "function") {
+            ipc.postMessage(payload);
+            delivered = true;
+          }
+        } catch (_) {}
+
+        try {
+          if (!delivered && window.ipc && typeof window.ipc.postMessage === "function") {
+            window.ipc.postMessage(payload);
+            delivered = true;
+          }
+        } catch (_) {}
+
+        try {
+          if (!delivered && window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === "function") {
+            window.chrome.webview.postMessage(payload);
+            delivered = true;
+          }
+        } catch (_) {}
+
+        try {
+          if (!delivered && window.external && typeof window.external.invoke === "function") {
+            window.external.invoke(payload);
+            delivered = true;
+          }
+        } catch (_) {}
+
+        return delivered;
+      }
+
+      function stopBridgeHandshake() {
+        if (state.handshakeTimerId) {
+          window.clearInterval(state.handshakeTimerId);
+          state.handshakeTimerId = 0;
+        }
+      }
+
+      function startBridgeHandshake() {
+        stopBridgeHandshake();
+        state.handshakeAttempts = 0;
+
+        const sendHandshake = function () {
+          if (state.bridgeReady) {
+            stopBridgeHandshake();
+            return;
+          }
+
+          state.handshakeAttempts += 1;
+          postToGodot("guide_ready", { attempt: state.handshakeAttempts });
+          postToGodot("guide_request_state", { attempt: state.handshakeAttempts });
+
+          if (state.handshakeAttempts >= BRIDGE_HANDSHAKE_MAX_ATTEMPTS) {
+            stopBridgeHandshake();
+          }
+        };
+
+        sendHandshake();
+        state.handshakeTimerId = window.setInterval(sendHandshake, BRIDGE_HANDSHAKE_INTERVAL_MS);
+      }
+
+      function escapeHtml(text) {
+        return String(text || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function inlineBbcodeToHtml(text) {
+        let html = escapeHtml(text || "");
+        html = html.replace(/\[b\]([\s\S]*?)\[\/b\]/gi, "<strong>$1</strong>");
+        html = html.replace(/\[i\]([\s\S]*?)\[\/i\]/gi, "<em>$1</em>");
+        html = html.replace(/\[center\]([\s\S]*?)\[\/center\]/gi, "<span style=\"display:block;text-align:center;\">$1</span>");
+        html = html.replace(/\[color=([^\]]+)\]([\s\S]*?)\[\/color\]/gi, function (_, color, content) {
+          const safeColor = String(color || "").replace(/[^#a-zA-Z0-9(),.%\s-]/g, "");
+          return "<span style=\"color:" + safeColor + "\">" + content + "</span>";
+        });
+        return html;
+      }
+
+      function isWarnKey(key) {
+        return WARN_KEYS.some(function (word) { return key.indexOf(word) >= 0; });
+      }
+
+      function isInfoKey(key) {
+        return INFO_KEYS.some(function (word) { return key.indexOf(word) >= 0; });
+      }
+
+      function parseListItem(line) {
+        return line.match(/^(?:[-*•]|\d+[\.|\)])\s*(.+)$/);
+      }
+
+      function renderCallout(type, title, body) {
+        const kindClass = type === "warn" ? "warn" : "info";
+        return ""
+          + "<div class=\"callout " + kindClass + "\">"
+          + "<div class=\"callout-title\">" + inlineBbcodeToHtml(title) + "</div>"
+          + "<p class=\"callout-body\">" + inlineBbcodeToHtml(body) + "</p>"
+          + "</div>";
+      }
+
+      function renderStructuredContent(rawText) {
+        const normalized = String(rawText || "")
+          .replace(/\r/g, "")
+          .replace(/\[br\]/gi, "\n");
+
+        const chunks = normalized
+          .split(/\n\s*\n/)
+          .map(function (entry) { return entry.trim(); })
+          .filter(Boolean);
+
+        if (chunks.length === 0) {
+          return "<div class=\"content-empty\">暂无正文内容。</div>";
+        }
+
+        const htmlBlocks = [];
+
+        chunks.forEach(function (chunk) {
+          const lines = chunk.split("\n")
+            .map(function (line) { return line.trim(); })
+            .filter(Boolean);
+
+          if (lines.length === 0) {
+            return;
+          }
+
+          const paragraphs = [];
+          const listItems = [];
+          const kvItems = [];
+          const callouts = [];
+
+          lines.forEach(function (line) {
+            const listMatch = parseListItem(line);
+            if (listMatch) {
+              listItems.push(listMatch[1].trim());
+              return;
+            }
+
+            // Handle BBCode key-value rows like: [b]法术名：[/b] Projectile Blackhole
+            const bbKv = line.match(/^\[b\]\s*([^:：\]]+?)\s*[：:]\s*\[\/b\]\s*(.+)$/i);
+            if (bbKv) {
+              const key = bbKv[1].trim();
+              const value = bbKv[2].trim();
+              if (isWarnKey(key)) {
+                callouts.push({ type: "warn", title: key, body: value });
+                return;
+              }
+              if (isInfoKey(key)) {
+                callouts.push({ type: "info", title: key, body: value });
+                return;
+              }
+              kvItems.push({ key: key, value: value });
+              return;
+            }
+
+            // Handle BBCode heading rows like: [b]补充说明：[/b]
+            const bbHeading = line.match(/^\[b\]\s*([^\]]+?)\s*[：:]?\s*\[\/b\]\s*$/i);
+            if (bbHeading) {
+              const headingText = bbHeading[1].trim();
+              paragraphs.push("[b]" + headingText + "[/b]");
+              return;
+            }
+
+            const kv = line.match(/^([^：:]{1,12})[：:]\s*(.+)$/);
+            if (kv) {
+              const key = kv[1].trim();
+              const value = kv[2].trim();
+              if (isWarnKey(key)) {
+                callouts.push({ type: "warn", title: key, body: value });
+                return;
+              }
+              if (isInfoKey(key)) {
+                callouts.push({ type: "info", title: key, body: value });
+                return;
+              }
+              kvItems.push({ key: key, value: value });
+              return;
+            }
+
+            const warnPrefix = line.match(/^(警告|注意|风险点|危险)\s*[：:]\s*(.+)$/);
+            if (warnPrefix) {
+              callouts.push({ type: "warn", title: warnPrefix[1], body: warnPrefix[2] });
+              return;
+            }
+
+            const infoPrefix = line.match(/^(提示|建议)\s*[：:]\s*(.+)$/);
+            if (infoPrefix) {
+              callouts.push({ type: "info", title: infoPrefix[1], body: infoPrefix[2] });
+              return;
+            }
+
+            paragraphs.push(line);
+          });
+
+          paragraphs.forEach(function (line) {
+            htmlBlocks.push("<p>" + inlineBbcodeToHtml(line) + "</p>");
+          });
+
+          if (listItems.length > 0) {
+            const listHtml = listItems.map(function (item) {
+              return "<li>" + inlineBbcodeToHtml(item) + "</li>";
+            }).join("");
+            htmlBlocks.push("<ul>" + listHtml + "</ul>");
+          }
+
+          if (kvItems.length > 0) {
+            const kvRows = kvItems.map(function (item) {
+              return ""
+                + "<div class=\"kv-row\">"
+                + "<div class=\"kv-key\">" + inlineBbcodeToHtml(item.key) + "</div>"
+                + "<div class=\"kv-value\">" + inlineBbcodeToHtml(item.value) + "</div>"
+                + "</div>";
+            }).join("");
+            htmlBlocks.push("<div class=\"kv-grid\">" + kvRows + "</div>");
+          }
+
+          callouts.forEach(function (item) {
+            htmlBlocks.push(renderCallout(item.type, item.title, item.body));
+          });
+        });
+
+        if (htmlBlocks.length === 0) {
+          return "<div class=\"content-empty\">暂无正文内容。</div>";
+        }
+
+        return htmlBlocks.join("");
+      }
+
+      function buildPathText(path) {
+        const parts = String(path || "")
+          .split("/")
+          .map(function (part) { return part.trim(); })
+          .filter(Boolean);
+
+        if (parts.length === 0) {
+          return "";
+        }
+
+        const result = [];
+        for (let i = 0; i < parts.length; i += 1) {
+          if (i > 0) {
+            result.push("<span class=\"breadcrumb-sep\">›</span>");
+          }
+          result.push("<span>" + escapeHtml(parts[i]) + "</span>");
+        }
+        return result.join("");
+      }
+
+      function buildBadges(path) {
+        const parts = String(path || "")
+          .split("/")
+          .map(function (part) { return part.trim(); })
+          .filter(Boolean);
+
+        if (parts.length === 0) {
+          dom.pageBadges.innerHTML = "";
+          return;
+        }
+
+        const badges = parts.slice(-2).map(function (item) {
+          return "<span class=\"badge\">" + escapeHtml(item) + "</span>";
+        });
+
+        dom.pageBadges.innerHTML = badges.join("");
+      }
+
+      function nodeIdFor(parentId, index) {
+        if (!parentId) return String(index);
+        return parentId + "." + String(index);
+      }
+
+      function seedCollapsedNodes(nodes, parentId) {
+        if (!Array.isArray(nodes)) return;
+        nodes.forEach(function (node, index) {
+          const id = nodeIdFor(parentId, index);
+          if (typeof state.collapsedNodes[id] === "undefined") {
+            state.collapsedNodes[id] = Boolean(node && node.collapsed);
+          }
+          const children = node && Array.isArray(node.children) ? node.children : [];
+          seedCollapsedNodes(children, id);
+        });
+      }
+
+      function matchNode(node, query) {
+        if (!query) return true;
+        const text = String((node && node.text) || "").toLowerCase();
+        if (text.indexOf(query) >= 0) return true;
+        const children = node && Array.isArray(node.children) ? node.children : [];
+        for (let i = 0; i < children.length; i += 1) {
+          if (matchNode(children[i], query)) return true;
+        }
+        return false;
+      }
+
+      function createTreeRow(node, depth, id, query) {
+        const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+        const collapsed = Boolean(state.collapsedNodes[id]);
+        const selectable = Boolean(node.selectable) && Number.isInteger(node.page_index) && node.page_index >= 0;
+        const isActive = selectable && Number(node.page_index) === state.currentPageIndex;
+
+        const row = document.createElement("div");
+        row.className = "tree-row " + (selectable ? "leaf" : "dir");
+        if (isActive) row.classList.add("active");
+        row.style.paddingLeft = String(8 + depth * 16) + "px";
+
+        const arrow = document.createElement("span");
+        arrow.className = "tree-arrow";
+        arrow.textContent = hasChildren ? (collapsed ? "▶" : "▼") : "";
+        if (hasChildren) {
+          arrow.addEventListener("click", function (event) {
+            event.stopPropagation();
+            state.collapsedNodes[id] = !collapsed;
+            renderCatalog();
+          });
+        }
+
+        const dot = document.createElement("span");
+        dot.className = "tree-dot";
+
+        const label = document.createElement("span");
+        label.className = "tree-label";
+        if (!query) {
+          label.textContent = String(node.text || "");
+        } else {
+          const text = String(node.text || "");
+          const hitIndex = text.toLowerCase().indexOf(query);
+          if (hitIndex >= 0) {
+            const before = escapeHtml(text.slice(0, hitIndex));
+            const hit = escapeHtml(text.slice(hitIndex, hitIndex + query.length));
+            const after = escapeHtml(text.slice(hitIndex + query.length));
+            label.innerHTML = before + "<span style=\"color:#FFFFFF\">" + hit + "</span>" + after;
+          } else {
+            label.textContent = text;
+          }
+        }
+
+        const count = document.createElement("span");
+        count.className = "tree-count";
+        count.textContent = hasChildren ? String(node.children.length) : "";
+
+        row.appendChild(arrow);
+        row.appendChild(dot);
+        row.appendChild(label);
+        row.appendChild(count);
+
+        if (selectable) {
+          row.addEventListener("click", function () {
+            postToGodot("guide_select_page", { index: Number(node.page_index) });
+          });
+        } else if (hasChildren) {
+          row.addEventListener("click", function () {
+            state.collapsedNodes[id] = !collapsed;
+            renderCatalog();
+          });
+        }
+
+        return { row: row, collapsed: collapsed, hasChildren: hasChildren };
+      }
+
+      function renderTreeNodes(nodes, depth, parentId) {
+        if (!Array.isArray(nodes)) return;
+        const query = state.searchQuery.trim().toLowerCase();
+
+        nodes.forEach(function (node, index) {
+          if (!node || !matchNode(node, query)) return;
+
+          const id = nodeIdFor(parentId, index);
+          const view = createTreeRow(node, depth, id, query);
+          dom.catalog.appendChild(view.row);
+
+          if (view.hasChildren && !view.collapsed) {
+            renderTreeNodes(node.children, depth + 1, id);
+          }
+        });
+      }
+
+      function renderCatalog() {
+        dom.catalog.innerHTML = "";
+
+        if (!Array.isArray(state.catalog) || state.catalog.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "catalog-empty";
+          empty.textContent = "目录加载中...";
+          dom.catalog.appendChild(empty);
+          dom.catalogMeta.textContent = "正在加载目录...";
+          return;
+        }
+
+        renderTreeNodes(state.catalog, 0, "");
+
+        const total = state.pages.length;
+        dom.catalogMeta.textContent = "共 " + total + " 页" + (state.searchQuery ? " · 筛选中" : "");
+
+        if (!dom.catalog.firstChild) {
+          const empty = document.createElement("div");
+          empty.className = "catalog-empty";
+          empty.textContent = "没有匹配的目录项";
+          dom.catalog.appendChild(empty);
+        }
+      }
+
+      function renderPage() {
+        const total = state.pages.length;
+        let currentIndex = Number.isInteger(state.currentPageIndex) ? state.currentPageIndex : -1;
+
+        if (currentIndex < 0 && total > 0) currentIndex = 0;
+        if (currentIndex >= total) currentIndex = total - 1;
+
+        const page = total > 0 && currentIndex >= 0 ? state.pages[currentIndex] : null;
+        const pageNum = currentIndex >= 0 ? currentIndex + 1 : 0;
+
+        dom.indicator.textContent = String(pageNum) + "/" + String(total);
+        dom.prevBtn.disabled = !(currentIndex > 0);
+        dom.nextBtn.disabled = !(currentIndex >= 0 && currentIndex < total - 1);
+
+        const ratio = total > 0 ? (pageNum / total) * 100 : 0;
+        dom.progressFill.style.width = String(Math.max(0, Math.min(100, ratio))) + "%";
+
+        if (!page) {
+          dom.pagePath.innerHTML = "";
+          dom.pageBadges.innerHTML = "";
+          dom.pageTitle.textContent = "请选择目录中的页面";
+          dom.pageContent.innerHTML = "<div class=\"content-empty\">暂无内容</div>";
+          dom.imageWrap.style.display = "none";
+          dom.pageImage.removeAttribute("src");
+          return;
+        }
+
+        dom.pagePath.innerHTML = buildPathText(String(page.path || ""));
+        buildBadges(String(page.path || ""));
+        dom.pageTitle.textContent = String(page.title || "");
+        dom.pageContent.innerHTML = renderStructuredContent(String(page.content || ""));
+
+        if (typeof page.image_data_url === "string" && page.image_data_url.length > 0) {
+          dom.pageImage.src = page.image_data_url;
+          dom.imageWrap.style.display = "flex";
+        } else {
+          dom.imageWrap.style.display = "none";
+          dom.pageImage.removeAttribute("src");
+        }
+      }
+
+      function renderTexts() {
+        dom.titleMain.textContent = String(state.title || "冒险手册");
+        dom.closeBtn.textContent = String((state.texts && state.texts.close) || "✕");
+        dom.prevBtn.title = String((state.texts && state.texts.prev) || "上一页");
+        dom.nextBtn.title = String((state.texts && state.texts.next) || "下一页");
+      }
+
+      function renderAll() {
+        renderTexts();
+        renderCatalog();
+        renderPage();
+      }
+
+      function applyState(payload) {
+        state.bridgeReady = true;
+        stopBridgeHandshake();
+
+        state.pages = Array.isArray(payload.pages) ? payload.pages : [];
+        state.catalog = Array.isArray(payload.catalog) ? payload.catalog : [];
+        state.currentPageIndex = Number.isInteger(payload.current_page_index) ? payload.current_page_index : -1;
+        state.title = typeof payload.title === "string" ? payload.title : "冒险手册";
+        state.texts = payload.texts && typeof payload.texts === "object" ? payload.texts : state.texts;
+
+        seedCollapsedNodes(state.catalog, "");
+        renderAll();
+      }
+
+      function onGodotMessage(raw) {
+        const payload = unwrapPayload(raw);
+        if (!payload || !payload.type) return;
+        if (payload.type === "guide_state") {
+          applyState(payload);
+        }
+      }
+
+      dom.closeBtn.addEventListener("click", function () {
+        postToGodot("guide_close", {});
+      });
+
+      dom.backdrop.addEventListener("click", function () {
+        postToGodot("guide_close", {});
+      });
+
+      dom.prevBtn.addEventListener("click", function () {
+        postToGodot("guide_prev_page", {});
+      });
+
+      dom.nextBtn.addEventListener("click", function () {
+        postToGodot("guide_next_page", {});
+      });
+
+      dom.homeBtn.addEventListener("click", function () {
+        if (state.pages.length > 0) {
+          postToGodot("guide_select_page", { index: 0 });
+        }
+      });
+
+      dom.focusSearchBtn.addEventListener("click", function () {
+        dom.searchInput.focus();
+        dom.searchInput.select();
+      });
+
+      dom.searchInput.addEventListener("input", function (event) {
+        state.searchQuery = String((event && event.target && event.target.value) || "");
+        renderCatalog();
+      });
+
+      function isTypingElement(target) {
+        if (!target) return false;
+        const tagName = String(target.tagName || "").toUpperCase();
+        return tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT" || target.isContentEditable === true;
+      }
+
+      document.addEventListener("keydown", function (event) {
+        if (!event) return;
+
+        const loweredKey = String(event.key || "").toLowerCase();
+        if (!isTypingElement(event.target) && (
+          loweredKey === "w" || loweredKey === "a" || loweredKey === "s" || loweredKey === "d" ||
+          loweredKey === "arrowup" || loweredKey === "arrowdown" || loweredKey === "arrowleft" || loweredKey === "arrowright" ||
+          loweredKey === " "
+        )) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+
+        if (event.key === "Escape") {
+          postToGodot("guide_close", {});
+          event.preventDefault();
+          return;
+        }
+
+        if (event.key === "ArrowLeft") {
+          postToGodot("guide_prev_page", {});
+          event.preventDefault();
+          return;
+        }
+
+        if (event.key === "ArrowRight") {
+          postToGodot("guide_next_page", {});
+          event.preventDefault();
+          return;
+        }
+
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+          dom.searchInput.focus();
+          dom.searchInput.select();
+          event.preventDefault();
+        }
+      });
+
+      document.addEventListener("message", function (event) {
+        const raw = event && (typeof event.detail !== "undefined" ? event.detail : event.data);
+        onGodotMessage(raw);
+      });
+
+      window.addEventListener("message", function (event) {
+        const raw = event && (typeof event.detail !== "undefined" ? event.detail : event.data);
+        onGodotMessage(raw);
+      });
+
+      if (window.chrome && window.chrome.webview && typeof window.chrome.webview.addEventListener === "function") {
+        window.chrome.webview.addEventListener("message", function (event) {
+          onGodotMessage(event ? event.data : null);
+        });
+      }
+
+      window.godotReceive = onGodotMessage;
+
+      renderAll();
+      startBridgeHandshake();
+    })();
+  </script>
+</body>
+</html>

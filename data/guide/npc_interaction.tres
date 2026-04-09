@@ -1,67 +1,80 @@
-[gd_resource type="Resource" script_class="GuideSectionData" format=3 uid="uid://guide_npc_section"]
+﻿[gd_resource type="Resource" script_class="GuideSectionData" format=3 uid="uid://guide_npc_section"]
+
+[ext_resource type="Script" path="res://src/ui/guide/guide_section_data.gd" id="1_guide_section_data"]
+[ext_resource type="Script" path="res://src/ui/guide/guide_subsection_data.gd" id="2_guide_subsection_data"]
+[sub_resource type="Resource" id="GuideSubsectionData_1"]
+script = ExtResource("2_guide_subsection_data")
+subsection_id = "merchant"
+title = "商人（Merchant�?
+content = "定位：中立交�?NPC。\n交互建议：优先出售冗余资源，换取当前阶段最缺物资。\n玩法价值：稳定补给与经济循环核心�?
+image = null
+
+[sub_resource type="Resource" id="GuideSubsectionData_2"]
+script = ExtResource("2_guide_subsection_data")
+subsection_id = "princess"
+title = "公主（Princess�?
+content = "定位：剧�?社交向友�?NPC。\n交互建议：优先推进对话线，解锁后续社交与城镇内容。\n玩法价值：推动中后期叙事与城镇生态�?
+image = null
+
+[sub_resource type="Resource" id="GuideSubsectionData_3"]
+script = ExtResource("2_guide_subsection_data")
+subsection_id = "slime"
+title = "史莱姆（Slime�?
+content = "定位：早期近战骚扰敌人。\n应对方式：保持中距离，连续小伤害压制。\n风险点：被围时容易吃到连续击退�?
+image = null
+
+[sub_resource type="Resource" id="GuideSubsectionData_4"]
+script = ExtResource("2_guide_subsection_data")
+subsection_id = "bog_slime"
+title = "沼泽史莱姆（Bog Slime�?
+content = "定位：控制倾向敌人。\n应对方式：优先清理，避免被减速后遭其他敌人集火。\n风险点：持续干扰移动节奏�?
+image = null
+
+[sub_resource type="Resource" id="GuideSubsectionData_5"]
+script = ExtResource("2_guide_subsection_data")
+subsection_id = "zombie"
+title = "僵尸（Zombie�?
+content = "定位：耐打型近战敌人。\n应对方式：风筝拉扯，利用地形隔断其追击。\n风险点：数量多时压迫感强�?
+image = null
+
+[sub_resource type="Resource" id="GuideSubsectionData_6"]
+script = ExtResource("2_guide_subsection_data")
+subsection_id = "skeleton"
+title = "骷髅（Skeleton�?
+content = "定位：远�?投射威胁。\n应对方式：横向移动躲弹，靠近后快速击破。\n风险点：与近战单位混编时危险显著上升�?
+image = null
+
+[sub_resource type="Resource" id="GuideSubsectionData_7"]
+script = ExtResource("2_guide_subsection_data")
+subsection_id = "cave_bat"
+title = "洞穴蝙蝠（Cave Bat�?
+content = "定位：机动骚扰敌人。\n应对方式：用范围型或高速弹体提高命中。\n风险点：狭窄洞穴中难以规避�?
+image = null
+
+[sub_resource type="Resource" id="GuideSubsectionData_8"]
+script = ExtResource("2_guide_subsection_data")
+subsection_id = "frost_bat"
+title = "冰霜蝙蝠（Frost Bat�?
+content = "定位：机�?冰霜压力单位。\n应对方式：优先击杀，避免被减速导致失位。\n风险点：低机动配装下非常克制玩家�?
+image = null
+
+[sub_resource type="Resource" id="GuideSubsectionData_9"]
+script = ExtResource("2_guide_subsection_data")
+subsection_id = "demon_eye"
+title = "恶魔之眼（Demon Eye�?
+content = "定位：高压突进敌人。\n应对方式：预判其冲刺轨迹，侧移躲避后反打。\n风险点：夜间或复杂战场中容错率低�?
+image = null
+
+[sub_resource type="Resource" id="GuideSubsectionData_10"]
+script = ExtResource("2_guide_subsection_data")
+subsection_id = "antlion"
+title = "蚁狮（Antlion�?
+content = "定位：中远程压制/地形威胁敌人。\n应对方式：借掩体推进，优先处理其射线或投射压制。\n风险点：在开阔区域对站会吃满伤害�?
+image = null
 
 [resource]
+script = ExtResource("1_guide_section_data")
 section_id = "npc_interaction"
 title = "NPC交互"
 description = "了解不同 NPC 的行为特征与应对方式"
 subsections = [SubResource("GuideSubsectionData_1"), SubResource("GuideSubsectionData_2"), SubResource("GuideSubsectionData_3"), SubResource("GuideSubsectionData_4"), SubResource("GuideSubsectionData_5"), SubResource("GuideSubsectionData_6"), SubResource("GuideSubsectionData_7"), SubResource("GuideSubsectionData_8"), SubResource("GuideSubsectionData_9"), SubResource("GuideSubsectionData_10")]
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_1"]
-subsection_id = "merchant"
-title = "商人（Merchant）"
-content = "定位：中立交易 NPC。\n交互建议：优先出售冗余资源，换取当前阶段最缺物资。\n玩法价值：稳定补给与经济循环核心。"
-image = null
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_2"]
-subsection_id = "princess"
-title = "公主（Princess）"
-content = "定位：剧情/社交向友善 NPC。\n交互建议：优先推进对话线，解锁后续社交与城镇内容。\n玩法价值：推动中后期叙事与城镇生态。"
-image = null
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_3"]
-subsection_id = "slime"
-title = "史莱姆（Slime）"
-content = "定位：早期近战骚扰敌人。\n应对方式：保持中距离，连续小伤害压制。\n风险点：被围时容易吃到连续击退。"
-image = null
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_4"]
-subsection_id = "bog_slime"
-title = "沼泽史莱姆（Bog Slime）"
-content = "定位：控制倾向敌人。\n应对方式：优先清理，避免被减速后遭其他敌人集火。\n风险点：持续干扰移动节奏。"
-image = null
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_5"]
-subsection_id = "zombie"
-title = "僵尸（Zombie）"
-content = "定位：耐打型近战敌人。\n应对方式：风筝拉扯，利用地形隔断其追击。\n风险点：数量多时压迫感强。"
-image = null
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_6"]
-subsection_id = "skeleton"
-title = "骷髅（Skeleton）"
-content = "定位：远程/投射威胁。\n应对方式：横向移动躲弹，靠近后快速击破。\n风险点：与近战单位混编时危险显著上升。"
-image = null
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_7"]
-subsection_id = "cave_bat"
-title = "洞穴蝙蝠（Cave Bat）"
-content = "定位：机动骚扰敌人。\n应对方式：用范围型或高速弹体提高命中。\n风险点：狭窄洞穴中难以规避。"
-image = null
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_8"]
-subsection_id = "frost_bat"
-title = "冰霜蝙蝠（Frost Bat）"
-content = "定位：机动+冰霜压力单位。\n应对方式：优先击杀，避免被减速导致失位。\n风险点：低机动配装下非常克制玩家。"
-image = null
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_9"]
-subsection_id = "demon_eye"
-title = "恶魔之眼（Demon Eye）"
-content = "定位：高压突进敌人。\n应对方式：预判其冲刺轨迹，侧移躲避后反打。\n风险点：夜间或复杂战场中容错率低。"
-image = null
-
-[sub_resource type="Resource" class_name="GuideSubsectionData" id="GuideSubsectionData_10"]
-subsection_id = "antlion"
-title = "蚁狮（Antlion）"
-content = "定位：中远程压制/地形威胁敌人。\n应对方式：借掩体推进，优先处理其射线或投射压制。\n风险点：在开阔区域对站会吃满伤害。"
-image = null

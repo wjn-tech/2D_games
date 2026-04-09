@@ -9,7 +9,7 @@ func refresh_ui() -> void:
 	
 	_add_checkbox("全屏 (Fullscreen)", "Graphics", "window_mode", 
 		func(v): return DisplayServer.WINDOW_MODE_FULLSCREEN if v else DisplayServer.WINDOW_MODE_WINDOWED, 
-		func(v): return v == DisplayServer.WINDOW_MODE_FULLSCREEN
+		func(v): return v == DisplayServer.WINDOW_MODE_FULLSCREEN or v == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN
 	)
 	
 	_add_checkbox("垂直同步 (VSync)", "Graphics", "vsync")

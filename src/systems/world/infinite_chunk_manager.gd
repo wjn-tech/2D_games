@@ -37,6 +37,7 @@ const PRELOAD_CHECKPOINT_DIR := "user://saves/preload_checkpoints/"
 const PRELOAD_COMPLETED_DIR := "user://saves/preload_completed/"
 const PRECOMPUTED_CHUNK_ROOT_DIR := "user://saves/precomputed_chunks/"
 const PRECOMPUTED_STORAGE_SCHEMA_VERSION := 2
+const WORLDGEN_CONTRACT_REVISION := 3
 const PRECOMPUTED_LEGACY_FILE_EXT := ".bin"
 const PRECOMPUTED_COMPACT_FILE_EXT := ".cbin"
 const PRECOMPUTED_WRITE_LEGACY_COMPAT := false
@@ -298,6 +299,177 @@ func _ensure_preload_dirs() -> void:
 		DirAccess.make_dir_recursive_absolute(PRELOAD_COMPLETED_DIR)
 	if not DirAccess.dir_exists_absolute(PRECOMPUTED_CHUNK_ROOT_DIR):
 		DirAccess.make_dir_recursive_absolute(PRECOMPUTED_CHUNK_ROOT_DIR)
+
+func _get_file_size_bytes(path: String) -> int:
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return 0
+	var length := int(file.get_length())
+	file.close()
+	return maxi(length, 0)
+
+func _remove_file_with_stats(path: String, result: Dictionary) -> void:
+	var reclaimed := _get_file_size_bytes(path)
+	if DirAccess.remove_absolute(path) == OK:
+		result["removed_files"] = int(result.get("removed_files", 0)) + 1
+		result["reclaimed_bytes"] = int(result.get("reclaimed_bytes", 0)) + reclaimed
+
+func _remove_directory_recursive(path: String, result: Dictionary) -> void:
+	if not DirAccess.dir_exists_absolute(path):
+		return
+
+	var dir := DirAccess.open(path)
+	if dir == null:
+		return
+
+	dir.list_dir_begin()
+	var entry := dir.get_next()
+	while entry != "":
+		var child_path := path + entry
+		if dir.current_is_dir():
+			_remove_directory_recursive(child_path + "/", result)
+		elif FileAccess.file_exists(child_path):
+			_remove_file_with_stats(child_path, result)
+		entry = dir.get_next()
+	dir.list_dir_end()
+
+	if DirAccess.remove_absolute(path.trim_suffix("/")) == OK:
+		result["removed_dirs"] = int(result.get("removed_dirs", 0)) + 1
+
+func build_precomputed_signature_from_world_metadata(world_metadata: Dictionary) -> String:
+	if world_metadata.is_empty():
+		return ""
+
+	var topology_mode := String(world_metadata.get("topology_mode", "legacy_infinite"))
+	if topology_mode != "planetary_v1":
+		return ""
+
+	var world_size_preset := String(world_metadata.get("world_size_preset", "legacy"))
+	var topology_version := int(world_metadata.get("topology_version", 0))
+	var world_plan_revision := int(world_metadata.get("world_plan_revision", 0))
+	var worldgen_contract_revision := int(world_metadata.get("worldgen_contract_revision", WORLDGEN_CONTRACT_REVISION))
+	var primary_seed := int(world_metadata.get("primary_seed", world_metadata.get("world_seed", 0)))
+	var circumference_chunks := int(world_metadata.get("horizontal_circumference_in_chunks", 0))
+	var depth_reference_surface_y := int(world_metadata.get("depth_reference_surface_y", 300))
+	var bedrock_hard_floor_depth := int(world_metadata.get("bedrock_hard_floor_depth", 0))
+	var hard_floor_global_y := depth_reference_surface_y + bedrock_hard_floor_depth
+	var min_chunk_y := 0
+	var max_chunk_y := int(floor(float(hard_floor_global_y) / float(CHUNK_SIZE)))
+	if max_chunk_y < min_chunk_y:
+		max_chunk_y = min_chunk_y
+
+	return "%s|%s|%d|%d|%d|%d|%d|%d|%d|%d" % [
+		topology_mode,
+		world_size_preset,
+		topology_version,
+		world_plan_revision,
+		worldgen_contract_revision,
+		primary_seed,
+		circumference_chunks,
+		min_chunk_y,
+		max_chunk_y,
+		bedrock_hard_floor_depth,
+	]
+
+func prune_precomputed_domains(keep_signatures: Array) -> Dictionary:
+	_ensure_preload_dirs()
+	var keep_tokens := {}
+	for raw_signature in keep_signatures:
+		var signature := String(raw_signature).strip_edges()
+		if signature == "":
+			continue
+		keep_tokens[_sanitize_storage_token(signature)] = true
+
+	var result := {
+		"removed_domains": 0,
+		"removed_files": 0,
+		"removed_dirs": 0,
+		"removed_markers": 0,
+		"reclaimed_bytes": 0,
+	}
+
+	var precomputed_root := DirAccess.open(PRECOMPUTED_CHUNK_ROOT_DIR)
+	if precomputed_root != null:
+		precomputed_root.list_dir_begin()
+		var domain_entry := precomputed_root.get_next()
+		while domain_entry != "":
+			if precomputed_root.current_is_dir():
+				var token := String(domain_entry).strip_edges()
+				if token != "" and not keep_tokens.has(token):
+					_remove_directory_recursive(PRECOMPUTED_CHUNK_ROOT_DIR + token + "/", result)
+					result["removed_domains"] = int(result.get("removed_domains", 0)) + 1
+			domain_entry = precomputed_root.get_next()
+		precomputed_root.list_dir_end()
+
+	var marker_dirs := [
+		{"root": PRELOAD_CHECKPOINT_DIR, "prefix": "checkpoint_"},
+		{"root": PRELOAD_COMPLETED_DIR, "prefix": "completed_"},
+	]
+	for marker_dir_var in marker_dirs:
+		var marker_dir: Dictionary = marker_dir_var
+		var root := String(marker_dir.get("root", ""))
+		var prefix := String(marker_dir.get("prefix", ""))
+		var dir := DirAccess.open(root)
+		if dir == null:
+			continue
+		dir.list_dir_begin()
+		var entry := dir.get_next()
+		while entry != "":
+			if dir.current_is_dir():
+				entry = dir.get_next()
+				continue
+			if not entry.begins_with(prefix) or not entry.ends_with(".bin"):
+				entry = dir.get_next()
+				continue
+			var token := entry.trim_prefix(prefix).trim_suffix(".bin")
+			if keep_tokens.has(token):
+				entry = dir.get_next()
+				continue
+			_remove_file_with_stats(root + entry, result)
+			result["removed_markers"] = int(result.get("removed_markers", 0)) + 1
+			entry = dir.get_next()
+		dir.list_dir_end()
+
+	if _preload_active_domain_signature != "":
+		var active_token := _sanitize_storage_token(_preload_active_domain_signature)
+		if not keep_tokens.has(active_token):
+			_reset_preload_runtime_state()
+
+	return result
+
+func purge_precomputed_signature(signature: String) -> Dictionary:
+	var trimmed := signature.strip_edges()
+	var result := {
+		"removed_domains": 0,
+		"removed_files": 0,
+		"removed_dirs": 0,
+		"removed_markers": 0,
+		"reclaimed_bytes": 0,
+	}
+	if trimmed == "":
+		return result
+
+	_ensure_preload_dirs()
+	var root := _get_precomputed_chunk_root(trimmed)
+	var had_domain := DirAccess.dir_exists_absolute(root)
+	if had_domain:
+		_remove_directory_recursive(root, result)
+		result["removed_domains"] = 1
+
+	var checkpoint_path := _get_preload_checkpoint_path(trimmed)
+	if FileAccess.file_exists(checkpoint_path):
+		_remove_file_with_stats(checkpoint_path, result)
+		result["removed_markers"] = int(result.get("removed_markers", 0)) + 1
+
+	var completed_path := _get_preload_completed_path(trimmed)
+	if FileAccess.file_exists(completed_path):
+		_remove_file_with_stats(completed_path, result)
+		result["removed_markers"] = int(result.get("removed_markers", 0)) + 1
+
+	if _preload_active_domain_signature == trimmed:
+		_reset_preload_runtime_state()
+
+	return result
 
 func _get_preload_checkpoint_path(signature: String) -> String:
 	var token := _sanitize_storage_token(signature)
@@ -1085,7 +1257,10 @@ func _parse_delta_local_pos_key(key: Variant) -> Variant:
 	return null
 
 func _get_world_topology() -> Node:
-	return get_node_or_null("/root/WorldTopology")
+	var scene_tree := get_tree()
+	if scene_tree == null or scene_tree.root == null:
+		return null
+	return scene_tree.root.get_node_or_null("WorldTopology")
 
 func _canonical_chunk_coord(coord: Vector2i) -> Vector2i:
 	var world_topology = _get_world_topology()
@@ -1728,6 +1903,11 @@ func _build_chunk_on_main_thread(coord: Vector2i, session_id: int) -> void:
 		var precomputed_resolution := _resolve_precomputed_chunk_cells(_preload_active_domain_signature, _preload_active_domain_identity, coord)
 		var precomputed_cells: Dictionary = precomputed_resolution.get("cells", {})
 		if bool(precomputed_resolution.get("hit", false)) and not precomputed_cells.is_empty():
+			# Keep near-player visual parity: if we already have full precomputed cells,
+			# apply them directly instead of stripping to critical-only payload.
+			if _should_generate_full_chunk_for_player_view(coord):
+				_finalize_chunk_load(coord, precomputed_cells, [], false, true)
+				return
 			var critical_precomputed_cells := _extract_critical_cells(precomputed_cells)
 			_finalize_chunk_load(coord, critical_precomputed_cells, [], false, true)
 			_precomputed_enrichment_cells[coord] = precomputed_cells
@@ -1796,7 +1976,15 @@ func _build_chunk_enrichment_on_main_thread(coord: Vector2i, session_id: int) ->
 		var cached_cells: Variant = _precomputed_enrichment_cells.get(coord, {})
 		_precomputed_enrichment_cells.erase(coord)
 		if cached_cells is Dictionary and not cached_cells.is_empty():
-			_apply_chunk_enrichment(coord, cached_cells, [])
+			var cached_dict: Dictionary = cached_cells
+			if not bool(cached_dict.get("_tree_stage_applied", false)):
+				var cached_ground_y: Array = []
+				if coord.y >= 4 and coord.y <= 6:
+					for x in range(64):
+						cached_ground_y.append(_get_top_tile_y(cached_dict, x))
+				if not cached_ground_y.is_empty():
+					_apply_trees(coord, cached_dict, cached_ground_y)
+			_apply_chunk_enrichment(coord, cached_dict, [])
 			return
 
 	# 阶段 2：补齐次要内容（矿物、地表装饰、树木和结构）。
@@ -1809,7 +1997,7 @@ func _build_chunk_enrichment_on_main_thread(coord: Vector2i, session_id: int) ->
 			natural_ground_y.append(_get_top_tile_y(cells, x))
 
 	_apply_structures(coord, cells, spawned_entities)
-	if not natural_ground_y.is_empty():
+	if not natural_ground_y.is_empty() and not bool(cells.get("_tree_stage_applied", false)):
 		_apply_trees(coord, cells, natural_ground_y)
 	_apply_chunk_enrichment(coord, cells, spawned_entities)
 
@@ -1856,6 +2044,37 @@ func _is_surface_structure_anchor(chunk_x: int) -> bool:
 	if score < _get_surface_structure_score(chunk_x + 1):
 		return false
 	return true
+
+func is_tile_house_structures_enabled() -> bool:
+	return ENABLE_TILE_HOUSE_STRUCTURES
+
+func get_predicted_surface_house_ranges(center_chunk_x: int, search_radius: int = 2, margin: int = 2) -> Array:
+	var ranges: Array = []
+	if not ENABLE_TILE_HOUSE_STRUCTURES:
+		return ranges
+
+	var probe_radius := maxi(search_radius, 0)
+	var safe_margin := maxi(margin, 0)
+	for ox in range(-probe_radius, probe_radius + 1):
+		var chunk_x := center_chunk_x + ox
+		if not _is_surface_structure_anchor(chunk_x):
+			continue
+
+		# Align with structure placement logic: deterministic local center from chunk hash.
+		var hash_val := get_chunk_hash(Vector2i(chunk_x, 5))
+		var center_x_local := hash_val % 30 + 15
+		var global_house_x_tiles := chunk_x * 64 + center_x_local
+
+		# Keep parity with spawn safety guard used in runtime structure generation.
+		if abs(global_house_x_tiles) < 120:
+			continue
+
+		ranges.append({
+			"start": global_house_x_tiles - safe_margin,
+			"end": global_house_x_tiles + 35 + safe_margin,
+		})
+
+	return ranges
 
 func _get_chunk_world_origin(c_coord: Vector2i) -> Vector2:
 	return Vector2(c_coord.x * CHUNK_SIZE * TILE_SIZE, c_coord.y * CHUNK_SIZE * TILE_SIZE)
@@ -2320,10 +2539,16 @@ func _apply_chunk_enrichment(coord: Vector2i, cells: Dictionary, new_entities: A
 		LiquidManager.ingest_generated_liquids(coord, cells, chunk)
 
 func _extract_critical_cells(cells: Dictionary) -> Dictionary:
-	var critical := {0: {}, 1: {}, 2: {}}
+	var critical := {0: {}, 1: {}, 2: {}, 10: {}}
 	var layer0: Variant = cells.get(0, {})
 	if layer0 is Dictionary:
 		critical[0] = layer0.duplicate(true)
+
+	# Keep surface trees in critical payload for precomputed reuse path,
+	# otherwise visible chunks can appear completely treeless until enrichment catches up.
+	var layer10: Variant = cells.get(10, {})
+	if layer10 is Dictionary:
+		critical[10] = layer10.duplicate(true)
 	return critical
 
 func is_chunk_loaded(coord: Vector2i) -> bool:

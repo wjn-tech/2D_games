@@ -1,7 +1,7 @@
 [gd_scene load_steps=12 format=3 uid="uid://inventory_window_001"]
 
 [ext_resource type="Script" path="res://src/ui/inventory/inventory_ui.gd" id="1_script"]
-[ext_resource type="Theme" uid="uid://pixel_theme_001" path="res://ui/theme/pixel_theme.tres" id="2_theme"]
+[ext_resource type="Theme" uid="uid://inventory_theme_001" path="res://ui/theme/inventory_theme.tres" id="2_theme"]
 [ext_resource type="PackedScene" uid="uid://dcoaig4fe2rea" path="res://scenes/ItemSlot.tscn" id="3_slot_scene"]
 [ext_resource type="PackedScene" uid="uid://stat_block_001" path="res://scenes/ui/inventory/StatBlock.tscn" id="4_stat_block"]
 [ext_resource type="PackedScene" uid="uid://equipment_slot_001" path="res://scenes/ui/inventory/EquipmentSlot.tscn" id="5_equip_slot"]

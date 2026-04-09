@@ -50,14 +50,7 @@ static func cast_spell(wand_data: WandData, source_entity: Node2D, direction: Ve
 
 	if not program.is_valid:
 		print("SpellProcessor: Program invalid! Errors: ", program.compilation_errors)
-		if wand_data.id != "starter_wand":
-			return 0.0
-
-	if program.root_tier.instructions.is_empty() and wand_data.id == "starter_wand":
-		var fallback = SpellInstruction.new()
-		fallback.type = SpellInstruction.TYPE_PROJECTILE
-		fallback.params = {"speed": 800.0, "damage": 10.0, "mana_cost": 0.0}
-		program.root_tier.instructions.append(fallback)
+		return 0.0
 
 	if program.root_tier.instructions.is_empty():
 		print("SpellProcessor: empty root tier after compile")
@@ -470,9 +463,7 @@ static func _get_base_mana_cost(wand_data: WandData) -> float:
 		return float(wand_data.embryo.base_mana_cost)
 	return 0.0
 
-static func _get_cycle_mana_cost(wand_data: WandData, compiled_cost: float) -> float:
-	if wand_data and wand_data.id == "starter_wand":
-		return 0.0
+static func _get_cycle_mana_cost(_wand_data: WandData, compiled_cost: float) -> float:
 	return compiled_cost
 
 static func _apply_cycle_mana_cost(wand_data: WandData, cost: float) -> void:

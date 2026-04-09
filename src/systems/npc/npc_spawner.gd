@@ -96,16 +96,26 @@ func _build_registry() -> void:
 	print("NPCSpawner: Spawn table JSON unavailable or invalid, using built-in fallback rules.")
 	_build_fallback_registry()
 
+func _load_json_dict(path: String) -> Dictionary:
+	var res = ResourceLoader.load(path)
+	if res is JSON:
+		if typeof(res.data) == TYPE_DICTIONARY:
+			return res.data
+		return {}
+	
+	if FileAccess.file_exists(path):
+		var file := FileAccess.open(path, FileAccess.READ)
+		if file != null:
+			var parsed = JSON.parse_string(file.get_as_text())
+			if typeof(parsed) == TYPE_DICTIONARY:
+				return parsed
+	return {}
+
 func _load_terrain_taxonomy() -> void:
 	terrain_taxonomy.clear()
-	if not FileAccess.file_exists(TERRAIN_TAXONOMY_PATH):
+	var parsed = _load_json_dict(TERRAIN_TAXONOMY_PATH)
+	if parsed.is_empty():
 		print("NPCSpawner: Terrain taxonomy missing: ", TERRAIN_TAXONOMY_PATH)
-		return
-	var file := FileAccess.open(TERRAIN_TAXONOMY_PATH, FileAccess.READ)
-	if file == null:
-		return
-	var parsed = JSON.parse_string(file.get_as_text())
-	if typeof(parsed) != TYPE_DICTIONARY:
 		return
 	var root: Dictionary = parsed
 	var terrains_var = root.get("terrains", [])
@@ -233,15 +243,8 @@ func _build_fallback_registry() -> void:
 	spawn_table.append(eye)
 
 func _load_spawn_table_from_json(path: String) -> bool:
-	if not FileAccess.file_exists(path):
-		return false
-
-	var file := FileAccess.open(path, FileAccess.READ)
-	if file == null:
-		return false
-
-	var parsed = JSON.parse_string(file.get_as_text())
-	if typeof(parsed) != TYPE_DICTIONARY:
+	var parsed = _load_json_dict(path)
+	if parsed.is_empty():
 		return false
 
 	var config: Dictionary = parsed
@@ -307,15 +310,11 @@ func _load_spawn_table_from_json(path: String) -> bool:
 	return not spawn_table.is_empty()
 
 func _log_terrain_coverage_snapshot() -> void:
-	if not FileAccess.file_exists(TERRAIN_TAXONOMY_PATH):
+	var parsed = _load_json_dict(TERRAIN_TAXONOMY_PATH)
+	if parsed.is_empty():
 		print("NPCSpawner: Terrain taxonomy file not found, skip coverage snapshot: ", TERRAIN_TAXONOMY_PATH)
 		return
-	var file := FileAccess.open(TERRAIN_TAXONOMY_PATH, FileAccess.READ)
-	if file == null:
-		return
-	var parsed = JSON.parse_string(file.get_as_text())
-	if typeof(parsed) != TYPE_DICTIONARY:
-		return
+	
 	var root: Dictionary = parsed
 	var terrains_var = root.get("terrains", [])
 	if not (terrains_var is Array):

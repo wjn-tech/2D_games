@@ -85,6 +85,8 @@ powershell -ExecutionPolicy Bypass -File tools/validate_hostile_spawn_table.ps1
 
 If the JSON file is missing or invalid, the spawner falls back to built-in defaults with matching values so gameplay stays functional.
 
+Implementation note: the loader treats `res://` config paths as packaged resources first (`ResourceLoader.exists`) and falls back to filesystem checks, preventing export-runtime path mismatches from disabling spawn/drop JSON pipelines.
+
 ## Hostile Drop Localization Reference
 
 - Hostile drop localization map: `res://data/npcs/hostile_drop_localization.json`

@@ -22,20 +22,19 @@ static func _ensure_loaded() -> void:
 		return
 	_loaded = true
 
-	if not FileAccess.file_exists(LOOT_TABLE_PATH):
-		_cache = {}
+	_cache = {}
+	var res = ResourceLoader.load(LOOT_TABLE_PATH)
+	if res is JSON:
+		if typeof(res.data) == TYPE_DICTIONARY:
+			_cache = res.data
 		return
 
-	var file := FileAccess.open(LOOT_TABLE_PATH, FileAccess.READ)
-	if file == null:
-		_cache = {}
-		return
-
-	var parsed = JSON.parse_string(file.get_as_text())
-	if parsed is Dictionary:
-		_cache = parsed
-	else:
-		_cache = {}
+	if FileAccess.file_exists(LOOT_TABLE_PATH):
+		var file := FileAccess.open(LOOT_TABLE_PATH, FileAccess.READ)
+		if file != null:
+			var parsed = JSON.parse_string(file.get_as_text())
+			if typeof(parsed) == TYPE_DICTIONARY:
+				_cache = parsed
 
 static func _resolve_entry(rule_id: String, monster_type: String) -> Dictionary:
 	var overrides: Dictionary = _cache.get("rule_overrides", {})

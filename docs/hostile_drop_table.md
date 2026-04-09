@@ -34,6 +34,7 @@
 
 - Hostile default pools disallow terrain block items: `grass`, `dirt`, `stone`, `sand`, `snow`, `mud`, `ice`, `hard_rock`, `wood`.
 - Signature drops are unique across the 8 hostile monster types.
+- Export compatibility: resolver existence checks use `ResourceLoader.exists` for `res://data/npcs/hostile_loot_table.json` before opening text content, avoiding export-only false negatives from filesystem-only checks.
 
 ## Validation Commands
 
